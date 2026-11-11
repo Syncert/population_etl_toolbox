@@ -1035,7 +1035,11 @@ losses such as `FEMA_NRI:expected_annual_loss_inland_flooding`, and the
 annualized frequency of inland flooding, tornado, wildfire, hurricane and
 heat wave. From OpenFEMA: `FEMA_NRI:major_disaster_declarations`,
 `FEMA_NRI:emergency_declarations` and `FEMA_NRI:fire_management_declarations`
-per county and calendar year.
+per county and calendar year, and one count per FEMA incident type, keyed by
+the type's own words: `FEMA_NRI:incident_declarations_flood`,
+`FEMA_NRI:incident_declarations_hurricane`,
+`FEMA_NRI:incident_declarations_severe_storm` and so on. An incident type
+FEMA adds is served under its own key with no code change.
 
 - **Expected annual loss is a model, not a measurement.** FEMA multiplies
   annualized frequency, exposure and a historic loss ratio; the unit is
@@ -1048,7 +1052,9 @@ per county and calendar year.
   vulnerability and resilience are relative ranks, not measures.
 - **A declaration count is this warehouse's count.** It counts distinct
   declarations of the type that designated the county in the calendar year
-  of the declaration date; `dimensions.declarations` lists them. Statewide
+  of the declaration date; `dimensions.declarations` lists them. An
+  incident-type count covers all three declaration types (major disaster,
+  emergency, fire management), so one declaration counts once. Statewide
   and tribal-area designations are not counted toward a county, and a year
   with no declaration has no row. OpenFEMA still designates Connecticut's
   legacy counties, which the shared geography may not hold.

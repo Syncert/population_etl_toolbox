@@ -34,6 +34,7 @@ and its pages are withdrawn.
 | `expected_annual_loss_<hazard>` (18 hazards) | `<HAZARD>_EALT` (rated by `<HAZARD>_EALR`) | dollars per year |
 | `annualized_frequency_<hazard>` (inland flooding, tornado, wildfire, hurricane, heat wave) | `<HAZARD>_AFREQ` | events per year |
 | `major_disaster_declarations`, `emergency_declarations`, `fire_management_declarations` | distinct `disasterNumber` per county, calendar year of `declarationDate` and `declarationType` (DR, EM, FM) | declarations |
+| `incident_declarations_<incident type>` (for example `incident_declarations_flood`, `incident_declarations_dam_levee_break`) | distinct `disasterNumber` of any declaration type per county, calendar year of `declarationDate` and FEMA `incidentType`; the key is the type lower-cased with every run of other characters as `_` | declarations |
 
 The NRI's `RISK_*` scores and ratings, social vulnerability and community
 resilience are relative ranks and are not read.

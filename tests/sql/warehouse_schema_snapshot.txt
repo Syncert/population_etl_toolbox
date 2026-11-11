@@ -8359,6 +8359,63 @@ v gold_fema_nri.declaration_count
     body             ELSE 'fire_management_declarations'::text
     body         END), geo_id, (EXTRACT(year FROM declaration_date)::integer);
 
+v gold_fema_nri.declaration_count_by_incident
+    column metric_key text
+    column incident_type text
+    column geo_id text
+    column geo_sk bigint
+    column year integer
+    column value bigint
+    column declarations text
+    column last_refresh timestamp with time zone
+    column capture_id uuid
+    column run_id uuid
+    column published_at timestamp with time zone
+    body WITH current_revision AS (
+    body          SELECT DISTINCT ON (revision.declaration_id) revision.declaration_id,
+    body             revision.revision_hash,
+    body             revision.run_id,
+    body             revision.capture_id,
+    body             revision.record_index,
+    body             revision.declaration_string,
+    body             revision.disaster_number,
+    body             revision.declaration_type,
+    body             revision.declaration_date,
+    body             revision.incident_type,
+    body             revision.state_fips,
+    body             revision.county_fips,
+    body             revision.place_code,
+    body             revision.designated_area,
+    body             revision.last_refresh,
+    body             revision.geo_id,
+    body             revision.geo_sk,
+    body             revision.geography_status,
+    body             revision.created_at
+    body            FROM silver_fema_nri.declaration_revision revision
+    body              JOIN control.fema_nri_run run ON run.run_id = revision.run_id
+    body           WHERE run.status = 'published'::text
+    body           ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+    body         ), latest_read AS (
+    body          SELECT max(fema_nri_run.published_at) AS published_at
+    body            FROM control.fema_nri_run
+    body           WHERE fema_nri_run.stream = 'declarations'::text AND fema_nri_run.status = 'published'::text
+    body         )
+    body  SELECT 'incident_declarations_'::text || btrim(lower(regexp_replace(incident_type, '[^A-Za-z0-9]+'::text, '_'::text, 'g'::text)), '_'::text) AS metric_key,
+    body     incident_type,
+    body     geo_id,
+    body     min(geo_sk) AS geo_sk,
+    body     EXTRACT(year FROM declaration_date)::integer AS year,
+    body     count(DISTINCT disaster_number) AS value,
+    body     string_agg(DISTINCT declaration_string, ', '::text ORDER BY declaration_string) AS declarations,
+    body     max(last_refresh) AS last_refresh,
+    body     min(capture_id::text)::uuid AS capture_id,
+    body     min(run_id::text)::uuid AS run_id,
+    body     ( SELECT latest_read.published_at
+    body            FROM latest_read) AS published_at
+    body    FROM current_revision
+    body   WHERE geography_status = 'resolved'::text
+    body   GROUP BY ('incident_declarations_'::text || btrim(lower(regexp_replace(incident_type, '[^A-Za-z0-9]+'::text, '_'::text, 'g'::text)), '_'::text)), incident_type, geo_id, (EXTRACT(year FROM declaration_date)::integer);
+
 v gold_fema_nri.measure_definition
     column measure text
     column measure_label text
@@ -8399,7 +8456,14 @@ v gold_fema_nri.measure_definition
     body     'declarations'::text AS unit,
     body     'declarations'::text AS stream,
     body     (((('FEMA disaster declarations (OpenFEMA DisasterDeclarationsSummaries): the number of '::text || 'distinct declarations of this type that designated this county, by the calendar '::text) || 'year of the declaration date; a statewide or tribal-area designation is not '::text) || 'counted toward a county, and a year with no declaration has no row. This product '::text) || 'uses the Federal Emergency Management Agency''s OpenFEMA API, but is not endorsed '::text) || 'by FEMA.'::text AS observation_basis
-    body    FROM ( VALUES ('major_disaster_declarations'::text,'Major disaster declarations'::text,'DR'::text), ('emergency_declarations'::text,'Emergency declarations'::text,'EM'::text), ('fire_management_declarations'::text,'Fire management assistance declarations'::text,'FM'::text)) declaration(measure, label, declaration_type);
+    body    FROM ( VALUES ('major_disaster_declarations'::text,'Major disaster declarations'::text,'DR'::text), ('emergency_declarations'::text,'Emergency declarations'::text,'EM'::text), ('fire_management_declarations'::text,'Fire management assistance declarations'::text,'FM'::text)) declaration(measure, label, declaration_type)
+    body UNION ALL
+    body  SELECT DISTINCT 'incident_declarations_'::text || btrim(lower(regexp_replace(revision.incident_type, '[^A-Za-z0-9]+'::text, '_'::text, 'g'::text)), '_'::text) AS measure,
+    body     'Disaster declarations for incident type: '::text || revision.incident_type AS measure_label,
+    body     'declarations'::text AS unit,
+    body     'declarations'::text AS stream,
+    body     (((((('FEMA disaster declarations (OpenFEMA DisasterDeclarationsSummaries): the number of '::text || 'distinct declarations of any type (major disaster, emergency or fire management) '::text) || 'whose incident type, as FEMA published it, is '::text) || revision.incident_type) || ', that designated this county, by the calendar year of the declaration date; '::text) || 'a statewide or tribal-area designation is not counted toward a county, and a '::text) || 'year with no declaration has no row. This product uses the Federal Emergency '::text) || 'Management Agency''s OpenFEMA API, but is not endorsed by FEMA.'::text AS observation_basis
+    body    FROM silver_fema_nri.declaration_revision revision;
 
 v gold_fema_nri.measure_export
     column source_object_key text
@@ -8626,7 +8690,24 @@ v gold_fema_nri.observation_revision
     body             md5((((counted.metric_key || '|'::text) || counted.geo_id) || '|'::text) || counted.year::text) AS md5,
     body             counted.capture_id,
     body             counted.run_id
-    body            FROM gold_fema_nri.declaration_count counted) observation
+    body            FROM gold_fema_nri.declaration_count counted
+    body         UNION ALL
+    body          SELECT incident.metric_key,
+    body             incident.year,
+    body             incident.geo_id,
+    body             incident.geo_sk,
+    body             'resolved'::text,
+    body             incident.value::numeric AS value,
+    body             'valid'::text,
+    body             NULL::text,
+    body             NULL::text,
+    body             incident.declarations,
+    body             'OpenFEMA '::text || to_char((incident.last_refresh AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text),
+    body             incident.published_at,
+    body             md5((((incident.metric_key || '|'::text) || incident.geo_id) || '|'::text) || incident.year::text) AS md5,
+    body             incident.capture_id,
+    body             incident.run_id
+    body            FROM gold_fema_nri.declaration_count_by_incident incident) observation
     body      JOIN gold_fema_nri.measure_definition definition ON definition.measure = observation.metric_key
     body   WHERE observation.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]);
 

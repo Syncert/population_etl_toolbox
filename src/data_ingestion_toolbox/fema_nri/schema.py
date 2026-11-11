@@ -32,6 +32,7 @@ REQUIRED_RELATIONS = (
     "gold_fema_nri.measure_definition",
     "gold_fema_nri.nri_observation",
     "gold_fema_nri.declaration_count",
+    "gold_fema_nri.declaration_count_by_incident",
     "gold_fema_nri.observation_revision",
     "gold_fema_nri.observation_latest",
     "gold_fema_nri.measure_export",

@@ -23,6 +23,14 @@ events follow real weather and disaster history. Three asks: how often
 hazardous weather events and disasters occur in a place, storm activity and
 rainfall, and temperature and weather averages.
 
+Progress: plan merged 2026-11-11 (#353). Slice 4 built 2026-11-11:
+`gold_fema_nri.declaration_count_by_incident` and one
+`incident_declarations_<type>` measure per FEMA incident type, served
+through the existing FEMA_NRI observation views (evidence:
+`test_declarations_are_counted_per_incident_type` and the harvest test in
+`tests/integration/database/test_fema_nri_capture_replay.py`). OFFICE_LAB
+speed gate and glossary requeue pending after merge.
+
 Open decision for Nick (asked in the project thread, 2026-11-11): how storm
 events reported by NWS forecast zone are placed on counties (Slice 1).
 Everything else in this plan does not depend on the answer.
