@@ -420,6 +420,12 @@ the 1991-2020 normals archive through the one-slot `noaa_normals_files` pool
 and places each station in the newest county boundary vintage loaded
 ([operations](../user-guides/NOAA_NORMALS_PIPELINE_OPERATIONS.md)).
 
+Trigger `noaa_storm_events_ingest` once after county boundaries load: it
+reads the NWS zone-county files and every yearly Storm Events details file
+(77 files, about 350 MB compressed) through the one-slot
+`noaa_storm_events_files` pool
+([operations](../user-guides/NOAA_STORM_EVENTS_PIPELINE_OPERATIONS.md)).
+
 Trigger `noaa_climdiv_ingest` once after county boundaries load: it reads
 the six nClimDiv county files (about 41 MB each) through the one-slot
 `noaa_climdiv_files` pool and writes every county month from 1895

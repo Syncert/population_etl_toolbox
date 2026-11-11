@@ -64,6 +64,8 @@ from __future__ import annotations
 #:   station have no row.
 #: * ``NOAA_CLIMDIV`` -- NCEI's own county series; NCEI publishes no state
 #:   or national figure in the county files, so none is served.
+#: * ``NOAA_STORM_EVENTS`` -- counts and impacts for counties (county and
+#:   matched zone events), states and the nation (the 50 states and DC).
 #: * ``FCC_BDC`` -- the FCC's own nation, state, county and place
 #:   availability summaries; CBSA, district and tribal rows are not kept.
 #: * ``FEMA_NRI`` -- the NRI county layer and county declaration counts;
@@ -121,6 +123,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "NOAA_NORMALS": frozenset({"COUNTY"}),
     "NOAA_CLIMDIV": frozenset({"COUNTY"}),
+    "NOAA_STORM_EVENTS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "EPA_AQS": frozenset({"COUNTY"}),
     "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),

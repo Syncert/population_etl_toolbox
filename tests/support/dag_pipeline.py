@@ -52,6 +52,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "epa_aqs_files",
     "noaa_normals_files",
     "noaa_climdiv_files",
+    "noaa_storm_events_files",
     "census_lodes_files",
     "census_cbp_files",
     "irs_soi_files",
@@ -1321,6 +1322,38 @@ def stub_noaa_climdiv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(climdiv_capture, "fetch_county_file", fetch_county_file)
 
 
+def stub_noaa_storm_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed zone-county and 1950, 1995 and 2024 details files."""
+    from data_ingestion_toolbox.noaa_storm_events import capture as storm_capture
+    from data_ingestion_toolbox.noaa_storm_events.client import (
+        SourceFile,
+        StormEventsResponse,
+        check_details_file,
+        check_zone_file,
+        listed_details_files,
+        listed_zone_files,
+    )
+    from tests.support.noaa_storm_events import fixture_files, page
+
+    reviewed = fixture_files()
+
+    def fetch_listing(**_kwargs: Any) -> list[SourceFile]:
+        zones = sorted(name for name in reviewed if name.endswith(".dbx"))
+        details = sorted(name for name in reviewed if name.endswith(".csv.gz"))
+        return listed_zone_files(page(zones)) + listed_details_files(page(details))
+
+    def fetch_file(file: SourceFile, **_kwargs: Any) -> StormEventsResponse:
+        if file.kind == "details":
+            check_details_file(reviewed[file.name], file)
+        else:
+            check_zone_file(reviewed[file.name], file)
+        return StormEventsResponse(file.name, reviewed[file.name], {}, 200)
+
+    monkeypatch.setattr(storm_capture, "fetch_listing", fetch_listing)
+    monkeypatch.setattr(storm_capture, "fetch_file", fetch_file)
+    monkeypatch.setattr(storm_capture, "_pause", lambda _seconds: None)
+
+
 def stub_fcc_bdc(monkeypatch: pytest.MonkeyPatch) -> None:
     """Answer the FCC broadband map API from the recorded fixtures, with stand-in credentials."""
     from data_ingestion_toolbox.fcc_bdc import capture as bdc_capture
@@ -1938,6 +1971,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("epa_aqs", stub_epa_aqs),
         ("noaa_normals", stub_noaa_normals),
         ("noaa_climdiv", stub_noaa_climdiv),
+        ("noaa_storm_events", stub_noaa_storm_events),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
         ("elections", stub_elections),

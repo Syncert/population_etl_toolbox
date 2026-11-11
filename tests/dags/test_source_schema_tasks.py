@@ -26,6 +26,7 @@ from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
 from data_ingestion_toolbox.noaa_climdiv import schema as noaa_climdiv_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
+from data_ingestion_toolbox.noaa_storm_events import schema as noaa_storm_events_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
 from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
@@ -148,6 +149,13 @@ SOURCES = [
         "ingest_batch_",
         noaa_climdiv_schema,
         "NOAA_CLIMDIV",
+    ),
+    (
+        "noaa_storm_events_ingest",
+        "ensure_noaa_storm_events_schema",
+        "ingest_batch_",
+        noaa_storm_events_schema,
+        "NOAA_STORM_EVENTS",
     ),
     (
         "fcc_bdc_ingest",

@@ -997,6 +997,48 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="NOAA_CLIMDIV",
     ),
     WarehouseSource(
+        code="NOAA_STORM_EVENTS",
+        name="Storm Events Database",
+        publisher="NOAA NCEI",
+        topic="Environment",
+        module="noaa_storm_events",
+        dag="noaa_storm_events_ingest",
+        cadence="Monthly, 20th 16:00 UTC",
+        release="Monthly; current year added to, earlier years restamped when revised",
+        grains={"nation": "d", "state": "d", "county": "d"},
+        years=[(1950, 2026)],
+        years_note=(
+            "1950-1954 tornado only; 1955-1995 tornado, thunderstorm wind and hail; "
+            "1996 onward all 48 event types"
+        ),
+        datasets=[
+            "StormEvents_details yearly files",
+            "NWS zone-county correlation files",
+        ],
+        measures=(
+            "Events reported per year and event type, with deaths, injuries and property "
+            "and crop damage as NCEI publishes them, and every event with its date, "
+            "magnitude and narrative."
+        ),
+        raw=[],
+        control=["control.noaa_storm_events_file"],
+        silver=[
+            "silver_noaa_storm_events.event",
+            "silver_noaa_storm_events.event_revision",
+            "silver_noaa_storm_events.event_place",
+            "silver_noaa_storm_events.place_year",
+            "silver_noaa_storm_events.zone_county",
+        ],
+        gold=[
+            "gold_noaa_storm_events.observation_revision",
+            "gold_noaa_storm_events.observation_latest",
+            "gold_noaa_storm_events.event_detail",
+            "gold_noaa_storm_events.state_coverage",
+        ],
+        credential="none",
+        catalog_source_code="NOAA_STORM_EVENTS",
+    ),
+    WarehouseSource(
         code="NCES_CCD",
         name="Common Core of Data, public schools",
         publisher="NCES",

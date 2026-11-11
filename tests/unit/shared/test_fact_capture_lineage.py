@@ -112,6 +112,16 @@ FACTS = [
         "silver_noaa_climdiv.county_month",
         "valid",
     ),
+    # A storm event is a record, not one number: each figure on it says
+    # whether NCEI published it (`damage_property_status` and its CHECK), and
+    # the counts served are derived from the events.
+    FactContract(
+        "NOAA_STORM_EVENTS",
+        SRC / "noaa_storm_events/DDL/silver_noaa_storm_events.sql",
+        "silver_noaa_storm_events.event",
+        "valid",
+        can_withhold=False,
+    ),
     FactContract(
         "EPA_AQS",
         SRC / "epa_aqs/DDL/silver_epa_aqs.sql",

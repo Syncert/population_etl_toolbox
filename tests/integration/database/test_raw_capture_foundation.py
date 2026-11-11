@@ -133,6 +133,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "epa_aqs_file"),
         ("control", "noaa_normals_file"),
         ("control", "noaa_climdiv_file"),
+        ("control", "noaa_storm_events_file"),
         ("control", "census_lodes_slice"),
         ("control", "census_lodes_file"),
         ("control", "census_cbp_file"),

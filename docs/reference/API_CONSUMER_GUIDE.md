@@ -1162,6 +1162,35 @@ labelled year 2020 like the annual rows.
   `M`, `V`, `Y`) carries no number; an `X` normal is NCEI's rounded zero and
   keeps its flag.
 
+### Reading a NOAA Storm Events row: events reported in a place and year
+
+`NOAA_STORM_EVENTS` serves counts of hazardous weather events from NCEI's
+Storm Events Database, 1950 onward, for counties, states and the nation:
+one measure per event type as NCEI names it (`storm_events_tornado`,
+`storm_events_thunderstorm_wind`, `storm_events_flash_flood` ...), all types
+(`storm_events_all_types`), and six impact sums
+(`storm_event_deaths_direct`, `storm_event_deaths_indirect`,
+`storm_event_injuries_direct`, `storm_event_injuries_indirect`,
+`storm_event_property_damage`, `storm_event_crop_damage`). One row per place,
+year and measure; the period is the calendar year of the event's begin date.
+
+- **Which types a year can hold.** 1950-1954 tornado only; 1955-1995
+  tornado, thunderstorm wind and hail; 1996 onward all 48 types of NWS
+  Directive 10-1605. In a year that records a type, a place with no row had
+  no such event reported; outside it the type was not recorded.
+- **Where an event counts.** A county counts the events reported for it and
+  the events reported for an NWS forecast zone that includes part of it
+  (`dimensions.county_reported` and `dimensions.zone_reported`). A zone event
+  counts in every county of the zone, and only when its zone code and name
+  match a published NWS zone-county file; other zone events count at state
+  and nation level only.
+- **Deaths, injuries and damage are not split.** A county's figures sum the
+  events reported for that county only. A blank figure is not reported and
+  is not counted; `dimensions.events_counted` is how many events had it.
+  Dollars are as reported in the event's year.
+- **The current year is partial.** `dimensions.coverage_note` names the NCEI
+  file the figure is counted from while NCEI is still adding events.
+
 ### Reading a NOAA nClimDiv row: a county month as NCEI publishes it
 
 `NOAA_CLIMDIV` serves six monthly county series from NCEI's nClimDiv county
@@ -1602,6 +1631,7 @@ prevent:
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
+| NOAA Storm Events | `Storm Events <file name>` | The day NCEI created the year's file, in its name (`StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz`); a restamped year is recounted |
 | NOAA nClimDiv | `nClimDiv <file name>` | NCEI's release day and version in the file name (`climdiv-pcpncy-v1.0.0-20261105`); a month a later release changes is kept as replaced |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |

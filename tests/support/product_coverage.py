@@ -786,6 +786,39 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="noaa_storm_events.event_counts",
+        source="NOAA_STORM_EVENTS",
+        publisher_schema="gold_noaa_storm_events",
+        datasets=("storm-events-details:v1.0", "nws-zone-county"),
+        fixtures=(
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d1950_c20260323.csv.gz",
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d1995_c20260323.csv.gz",
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz",
+            "tests/fixtures/noaa_storm_events/bp16ap26.dbx",
+            "tests/fixtures/noaa_storm_events/bp18mr25.dbx",
+        ),
+        serving_relations=(
+            "gold_noaa_storm_events.observation_revision",
+            "gold_noaa_storm_events.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_storm_events_pipeline.py::"
+            "test_event_counts_reach_the_neutral_api_as_counted"
+        ),
+        api_absence_reason=(
+            "The Storm Events Database publishes no source-specific HTTP route: each "
+            "count and impact is the neutral observation shape with its event type and "
+            "how many events were county- or zone-reported as declared dimensions, so "
+            "`/api/v1/observations` serves it; the event records are "
+            "`gold_noaa_storm_events.event_detail`."
+        ),
+    ),
+    DataProductE2E(
         product_id="fcc_bdc.broadband_availability",
         source="FCC_BDC",
         publisher_schema="gold_fcc_bdc",

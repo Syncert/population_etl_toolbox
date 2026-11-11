@@ -109,6 +109,7 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
     ('00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'success'),
+    ('00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
     ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
@@ -159,6 +160,8 @@ INSERT INTO control.ingestion_request (
      'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
     ('00000000-0000-4000-9000-000000000cd1', '00000000-0000-4000-8000-000000000cd1',
      'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB, 'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', 'captured'),
+    ('00000000-0000-4000-9000-0000000005e1', '00000000-0000-4000-8000-0000000005e1',
+     'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB, '230c6a6c4345a9b26b793deab0f1c9a61b7ce7d9670561465f7a1d702edf6153', 'captured'),
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
@@ -245,6 +248,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000cd1', '00000000-0000-4000-9000-000000000cd1',
      '00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB,
      'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000005e1', '00000000-0000-4000-9000-0000000005e1',
+     '00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB,
+     '230c6a6c4345a9b26b793deab0f1c9a61b7ce7d9670561465f7a1d702edf6153', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
      '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
@@ -1043,6 +1050,59 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NOAA Storm Events -- one published county-reported tornado and its counts.
+-- NATIONAL, STATE and COUNTY are served by the pipeline; the seed holds the
+-- county count only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_storm_events_file (
+    run_id, file_kind, file_name, data_year, stamp, capture_id, payload_checksum,
+    row_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000005e1', 'details', 'StormEvents_details-ftp_v1.0_d2098_c20981231.csv.gz',
+    2098, '20981231', '00000000-0000-4000-a000-0000000005e1',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event (
+    event_id, year, begin_date, begin_time, end_time, begin_date_time, end_date_time,
+    cz_timezone, state_name, state_fips, event_type, event_type_key, cz_type, cz_fips,
+    cz_name, cz_name_key, wfo, deaths_direct, damage_property_published, damage_property_usd,
+    damage_property_status, damage_crops_status, source, magnitude_type, flood_cause,
+    category, tor_f_scale, begin_location, end_location, episode_narrative, event_narrative,
+    data_source, event_status, placement_status, row_hash, run_id, capture_id, source_line,
+    source_record_id
+) VALUES (
+    209800001, 2098, '2098-06-01', '1500', '1510', '01-JUN-98 15:00:00', '01-JUN-98 15:10:00',
+    'CST-6', 'WISCONSIN', '55', 'Tornado', 'tornado', 'C', '025', 'DANE', 'DANE', 'MKX', 0,
+    '6.00K', 6000, 'reported', 'not_reported', 'Public', '', '', '', 'EF0', '', '', '', '',
+    'CSV', 'current', 'county', '0f3b5e9a2c7d4e1f8a6b0c9d2e7f4a1b',
+    '00000000-0000-4000-8000-0000000005e1', '00000000-0000-4000-a000-0000000005e1', 2,
+    'c3e1a5b7d9f0e2c4a6b8d0f1e3c5a7b9'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event_place (event_id, geo_id, geo_sk, year, metric_key, basis)
+SELECT 209800001, geo_id, geo_sk, 2098, 'storm_events_tornado', 'county_reported'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event_type (event_type_key, event_type, first_seen_run_id)
+VALUES ('tornado', 'Tornado', '00000000-0000-4000-8000-0000000005e1')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.place_year (
+    metric_key, geo_type, geo_id, geo_sk, year, event_type, value, events_counted,
+    county_reported, zone_reported, run_id
+)
+SELECT counted.metric_key, 'county', entity.geo_id, entity.geo_sk, 2098, counted.event_type,
+       1, 1, 1, 0, '00000000-0000-4000-8000-0000000005e1'
+FROM silver_ref.dim_geo_entity AS entity
+CROSS JOIN (VALUES ('storm_events_tornado', 'Tornado'), ('storm_events_all_types', NULL)) AS counted(metric_key, event_type)
+WHERE entity.geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- FCC Broadband Data Collection -- one county's availability shares for
 -- one technology, served from views over a published read. COUNTY only.
 -- ---------------------------------------------------------------------------
@@ -1366,6 +1426,7 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_climdiv.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_storm_events.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fema_nri.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_elections.metric_publisher
