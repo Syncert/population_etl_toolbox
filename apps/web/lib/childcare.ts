@@ -303,7 +303,8 @@ export function nationalChildcareTrend(
   const month = monthOfRow(newest);
   if (Number(month.slice(0, 4)) <= studyYear) return EMPTY_TREND;
   const baseMonth = `${studyYear}${month.slice(4)}`;
-  const then = indexValue(monthly.find((row) => monthOfRow(row) === baseMonth));
+  const baseRow = monthly.find((row) => monthOfRow(row) === baseMonth);
+  const then = indexValue(baseRow);
   if (then === null) {
     return {
       ...EMPTY_TREND,
@@ -313,14 +314,18 @@ export function nationalChildcareTrend(
   const now = indexValue(newest)!;
   const percent = Math.round((now / then - 1) * 1000) / 10;
   const verb = percent > 0 ? `rose ${percent.toFixed(1)}%` : percent < 0 ? `fell ${Math.abs(percent).toFixed(1)}%` : "did not change";
-  const index = (value: number) => formatNumber(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  // Each index value as stored: as many decimals as the published value has, no more.
+  const index = (row: ObservationRow | undefined, value: number) => {
+    const decimals = (String(row?.value ?? "").split(".")[1] || "").length;
+    return formatNumber(value, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  };
   const ratio = formatNumber(now / then, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   const unit = String(newest.unit || newest.units || "").trim();
   return {
     text: `Nationally, prices for day care and preschool ${verb} from ${monthName(baseMonth)} to ${monthName(month)}.`,
     formula:
       `How the national change is worked out: the ${CHILDCARE_CPI_CREDIT} (series ${CHILDCARE_CPI_SERIES}${unit ? `, ${unit}` : ""}), ` +
-      `was ${index(now)} in ${monthName(month)} and ${index(then)} in ${monthName(baseMonth)}; ${index(now)} ÷ ${index(then)} = ${ratio}, ` +
+      `was ${index(newest, now)} in ${monthName(month)} and ${index(baseRow, then)} in ${monthName(baseMonth)}; ${index(newest, now)} ÷ ${index(baseRow, then)} = ${ratio}, ` +
       `a change of ${percent > 0 ? "+" : ""}${percent.toFixed(1)}%. It is the nation's change, not ${county}'s: ` +
       `the county's prices above are the Women's Bureau's for ${studyYear}, as published, and are not adjusted by it.`,
     gap: "",

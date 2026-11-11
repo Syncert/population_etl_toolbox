@@ -136,7 +136,7 @@ describe("the national childcare price change", () => {
     expect(trend.percent).toBe(20);
     expect(trend.text).toBe("Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.");
     expect(trend.formula).toContain("(series CUUR0000SEEB03, Index Dec 1990=100)");
-    expect(trend.formula).toContain("300.000 ÷ 250.000 = 1.200, a change of +20.0%");
+    expect(trend.formula).toContain("300 ÷ 250 = 1.200, a change of +20.0%");
     expect(trend.formula).toContain("not Dane County's");
     expect(trend.gap).toBe("");
   });
@@ -157,6 +157,13 @@ describe("the national childcare price change", () => {
     expect(nationalChildcareTrend([cpi("2022-08", "250")], 2022, "X")).toEqual({ text: "", formula: "", gap: "", percent: null });
     expect(nationalChildcareTrend(rows, null, "X").text).toBe("");
     expect(nationalChildcareTrend([], 2022, "X").gap).toContain("no month published yet");
+  });
+
+  it("shows each index value exactly as stored, with no added decimals", () => {
+    const trend = nationalChildcareTrend([cpi("2022-10", "338.2"), cpi("2026-10", "407.8")], 2022, "Dane County");
+    expect(trend.text).toBe("Nationally, prices for day care and preschool rose 20.6% from October 2022 to October 2026.");
+    expect(trend.formula).toContain("was 407.8 in October 2026 and 338.2 in October 2022; 407.8 ÷ 338.2 = 1.206, a change of +20.6%.");
+    expect(nationalChildcareTrend([cpi("2022-10", "338.215"), cpi("2026-10", "407.844")], 2022, "X").formula).toContain("407.844 ÷ 338.215");
   });
 
   it("names months in words", () => {
