@@ -365,10 +365,10 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Credential:** none
 - **Years:** NRI December 2025 (v1.20.0), one vintage; declarations counted by calendar year
 - **Datasets:** NRI county layer (ArcGIS); OpenFEMA DisasterDeclarationsSummaries v2
-- **Measures:** Expected annual loss (total and 18 hazards), annualized frequency (5 hazards); major disaster, emergency and fire management declaration counts.
+- **Measures:** Expected annual loss (total and 18 hazards), annualized frequency (5 hazards); major disaster, emergency and fire management declaration counts; declaration counts by FEMA incident type.
 - **Capture and control:** `control.fema_nri_run`, `control.fema_nri_page`
 - **Silver:** `silver_fema_nri.nri_fact`, `silver_fema_nri.declaration_revision`
-- **Gold:** `gold_fema_nri.nri_observation`, `gold_fema_nri.declaration_count`, `gold_fema_nri.observation_revision`, `gold_fema_nri.observation_latest`
+- **Gold:** `gold_fema_nri.nri_observation`, `gold_fema_nri.declaration_count`, `gold_fema_nri.declaration_count_by_incident`, `gold_fema_nri.observation_revision`, `gold_fema_nri.observation_latest`
 - **Status (live count 2026-10-31):** Loaded. County 1959–2026.
 
 ## Elections and government

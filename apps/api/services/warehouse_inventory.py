@@ -811,7 +811,8 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         ],
         measures=(
             "Expected annual loss (total and 18 hazards), annualized frequency (5 hazards); major "
-            "disaster, emergency and fire management declaration counts."
+            "disaster, emergency and fire management declaration counts; declaration counts by FEMA "
+            "incident type."
         ),
         raw=[],
         control=["control.fema_nri_run", "control.fema_nri_page"],
@@ -819,6 +820,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         gold=[
             "gold_fema_nri.nri_observation",
             "gold_fema_nri.declaration_count",
+            "gold_fema_nri.declaration_count_by_incident",
             "gold_fema_nri.observation_revision",
             "gold_fema_nri.observation_latest",
         ],

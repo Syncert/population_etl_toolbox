@@ -23,9 +23,16 @@ events follow real weather and disaster history. Three asks: how often
 hazardous weather events and disasters occur in a place, storm activity and
 rainfall, and temperature and weather averages.
 
-Open decision for Nick (asked in the project thread, 2026-11-11): how storm
-events reported by NWS forecast zone are placed on counties (Slice 1).
-Everything else in this plan does not depend on the answer.
+Progress: plan merged 2026-11-11 (#353). Slice 4 built 2026-11-11:
+`gold_fema_nri.declaration_count_by_incident` and one
+`incident_declarations_<type>` measure per FEMA incident type, served
+through the existing FEMA_NRI observation views (evidence:
+`test_declarations_are_counted_per_incident_type` and the harvest test in
+`tests/integration/database/test_fema_nri_capture_replay.py`). OFFICE_LAB
+speed gate and glossary requeue pending after merge.
+
+Decided by Nick 2026-11-11 16:16Z: zone-reported storm events are counted in
+every county the zone covers (Option A in Slice 1).
 
 ## What is already loaded (checked in the repo on 2026-11-11, dev 809652be)
 
@@ -131,7 +138,7 @@ OpenFEMA NFIP flood insurance claims (a follow-up plan if wanted).
 - Placement on counties: `C` events by state and county FIPS through the
   shared geography reference; `M` (marine) events are kept but not placed on
   counties. `Z` events per Nick's decision:
-  - **Option A (recommended):** placed in every county the NWS
+  - **Option A (chosen by Nick, 2026-11-11):** placed in every county the NWS
     zone-county file links to the zone, using the correlation file version
     valid on the event date, and labelled "reported for a forecast zone that
     includes part of this county". Counts only; deaths and damage stay at the
