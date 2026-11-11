@@ -969,6 +969,38 @@ r control.nces_ccd_file
     index nces_ccd_file_component_idx CREATE INDEX nces_ccd_file_component_idx ON control.nces_ccd_file USING btree (component, school_year, status)
     index nces_ccd_file_pkey CREATE UNIQUE INDEX nces_ccd_file_pkey ON control.nces_ccd_file USING btree (run_id)
 
+r control.noaa_climdiv_file
+    column run_id uuid NOT NULL
+    column file_element text NOT NULL
+    column file_name text NOT NULL
+    column version text NOT NULL
+    column release_stamp text NOT NULL
+    column capture_id uuid
+    column payload_checksum text
+    column line_count integer NOT NULL DEFAULT 0
+    column value_count integer NOT NULL DEFAULT 0
+    column written_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint noaa_climdiv_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint noaa_climdiv_file_capture_unless_already_loaded CHECK (((status = 'already_loaded'::text) = (capture_id IS NULL)))
+    constraint noaa_climdiv_file_file_element_check CHECK ((file_element = ANY (ARRAY['pcpn'::text, 'tmpc'::text, 'tmax'::text, 'tmin'::text, 'hddc'::text, 'cddc'::text])))
+    constraint noaa_climdiv_file_file_name_check CHECK ((file_name ~ '^climdiv-[a-z]{4}cy-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]{8}$'::text))
+    constraint noaa_climdiv_file_line_count_check CHECK ((line_count >= 0))
+    constraint noaa_climdiv_file_payload_checksum_check CHECK (((payload_checksum IS NULL) OR (payload_checksum ~ '^[0-9a-f]{64}$'::text)))
+    constraint noaa_climdiv_file_pkey PRIMARY KEY (run_id, file_element)
+    constraint noaa_climdiv_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint noaa_climdiv_file_release_stamp_check CHECK ((release_stamp ~ '^[0-9]{8}$'::text))
+    constraint noaa_climdiv_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint noaa_climdiv_file_status_check CHECK ((status = ANY (ARRAY['already_loaded'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint noaa_climdiv_file_value_count_check CHECK ((value_count >= 0))
+    constraint noaa_climdiv_file_written_count_check CHECK ((written_count >= 0))
+    index noaa_climdiv_file_capture_idx CREATE INDEX noaa_climdiv_file_capture_idx ON control.noaa_climdiv_file USING btree (capture_id)
+    index noaa_climdiv_file_name_idx CREATE INDEX noaa_climdiv_file_name_idx ON control.noaa_climdiv_file USING btree (file_name, status)
+    index noaa_climdiv_file_pkey CREATE UNIQUE INDEX noaa_climdiv_file_pkey ON control.noaa_climdiv_file USING btree (run_id, file_element)
+
 r control.noaa_normals_file
     column run_id uuid NOT NULL
     column archive_version text NOT NULL
@@ -11225,6 +11257,218 @@ v gold_nces_ccd.school_placement
     body    FROM silver_nces_ccd.school_location location
     body      JOIN selected ON selected.run_id = location.run_id;
 
+v gold_noaa_climdiv.measure_definition
+    column measure text
+    column measure_label text
+    column unit text
+    column file_element text
+    column observation_basis text
+    column time_grain text
+    body SELECT measure,
+    body     measure_label,
+    body     unit,
+    body     file_element,
+    body     (((((('NOAA nClimDiv county series: the value NCEI publishes for the county and calendar '::text || 'month, an area-weighted average of its 5 km nClimGrid grid interpolated from '::text) || 'GHCN-Daily stations. '::text) || statistic) || ' NCEI revises the latest two '::text) || 'calendar years every month; an earlier value changes only with a new version. '::text) || 'Monthly values are not added into annual figures here. Source: NOAA National '::text) || 'Centers for Environmental Information, nClimDiv.'::text AS observation_basis,
+    body     'MONTHLY'::text AS time_grain
+    body    FROM ( VALUES ('monthly_precipitation_total'::text,'Monthly precipitation (nClimDiv county)'::text,'inches'::text,'pcpn'::text,'Total precipitation for the month, inches to hundredths.'::text), ('monthly_average_temperature'::text,'Monthly average temperature (nClimDiv county)'::text,'degrees Fahrenheit'::text,'tmpc'::text,'Average temperature for the month, degrees F to tenths.'::text), ('monthly_maximum_temperature'::text,'Monthly average daily maximum temperature (nClimDiv county)'::text,'degrees Fahrenheit'::text,'tmax'::text,'Average of daily maximum temperatures, degrees F to tenths.'::text), ('monthly_minimum_temperature'::text,'Monthly average daily minimum temperature (nClimDiv county)'::text,'degrees Fahrenheit'::text,'tmin'::text,'Average of daily minimum temperatures, degrees F to tenths.'::text), ('monthly_heating_degree_days'::text,'Monthly heating degree days, base 65 F (nClimDiv county)'::text,'degree days (base 65 F)'::text,'hddc'::text,'Heating degree days for the month, base 65 F; not published for Alaska or Hawaii.'::text), ('monthly_cooling_degree_days'::text,'Monthly cooling degree days, base 65 F (nClimDiv county)'::text,'degree days (base 65 F)'::text,'cddc'::text,'Cooling degree days for the month, base 65 F; not published for Alaska or Hawaii.'::text)) measure(measure, measure_label, unit, file_element, statistic);
+
+v gold_noaa_climdiv.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    column time_grain text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'noaa_climdiv_county:v1'::text AS schema_version,
+    body     time_grain
+    body    FROM gold_noaa_climdiv.measure_definition;
+
+v gold_noaa_climdiv.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'NOAA_CLIMDIV'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (NOAA NCEI)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY[export.time_grain] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_noaa_climdiv', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'NOAA National Centers for Environmental Information'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/'::text AS reference_url
+    body    FROM ( SELECT definition.measure AS metric_key,
+    body             'nClimDiv '::text || newest.file_name AS source_watermark,
+    body             newest.run_id AS source_run_id,
+    body             newest.published_at AS publication_time,
+    body             COALESCE(( SELECT array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL) AS array_agg
+    body                    FROM ( SELECT sample.geo_type,
+    body                             sample.value
+    body                            FROM gold_noaa_climdiv.observation_latest sample
+    body                           WHERE sample.metric_key = definition.measure
+    body                          LIMIT 1) latest), ARRAY[]::text[]) AS valid_geo_grains
+    body            FROM gold_noaa_climdiv.measure_definition definition
+    body              JOIN LATERAL ( SELECT file.file_name,
+    body                     file.run_id,
+    body                     file.published_at
+    body                    FROM control.noaa_climdiv_file file
+    body                   WHERE file.file_element = definition.file_element AND file.status = 'published'::text
+    body                   ORDER BY file.published_at DESC
+    body                  LIMIT 1) newest ON true) served
+    body      JOIN gold_noaa_climdiv.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE cardinality(served.valid_geo_grains) > 0;
+
+v gold_noaa_climdiv.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column month smallint
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column source_line integer
+    body SELECT current.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     current.year,
+    body     current.month,
+    body     make_date(current.year, current.month::integer, 1) AS period_start,
+    body     (make_date(current.year, current.month::integer, 1) + '1 mon -1 days'::interval)::date AS period_end,
+    body     current.geo_id,
+    body     current.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     current.value_source,
+    body     current.value,
+    body     current.value_status,
+    body     'nClimDiv '::text || file.file_name AS release_key,
+    body     file.published_at,
+    body     current.source_record_id,
+    body     current.capture_id,
+    body     current.run_id,
+    body     current.source_line
+    body    FROM silver_noaa_climdiv.county_month current
+    body      JOIN gold_noaa_climdiv.measure_definition definition ON definition.measure = current.measure
+    body      JOIN control.noaa_climdiv_file file ON file.run_id = current.run_id AND file.file_element = definition.file_element
+    body   WHERE file.status = 'published'::text AND (current.geography_status <> ALL (ARRAY['unmapped'::text, 'ambiguous'::text, 'unsupported'::text])) AND current.value_status = 'valid'::text;
+
+v gold_noaa_climdiv.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column month smallint
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column source_line integer
+    body SELECT value_row.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     value_row.year,
+    body     value_row.month,
+    body     make_date(value_row.year, value_row.month::integer, 1) AS period_start,
+    body     (make_date(value_row.year, value_row.month::integer, 1) + '1 mon -1 days'::interval)::date AS period_end,
+    body     value_row.geo_id,
+    body     value_row.geo_sk,
+    body     'county'::text AS geo_type,
+    body     gold_glossary.geo_grain('county'::text) AS geo_level,
+    body     value_row.value_source,
+    body     value_row.value,
+    body     value_row.value_status,
+    body     'nClimDiv '::text || file.file_name AS release_key,
+    body     file.published_at,
+    body     value_row.source_record_id,
+    body     value_row.capture_id,
+    body     value_row.run_id,
+    body     value_row.source_line
+    body    FROM ( SELECT current.measure,
+    body             current.year,
+    body             current.month,
+    body             current.geo_id,
+    body             current.geo_sk,
+    body             current.geography_status,
+    body             current.value_source,
+    body             current.value,
+    body             current.value_status,
+    body             current.source_record_id,
+    body             current.capture_id,
+    body             current.run_id,
+    body             current.source_line
+    body            FROM silver_noaa_climdiv.county_month current
+    body         UNION ALL
+    body          SELECT revision.measure,
+    body             revision.year,
+    body             revision.month,
+    body             revision.geo_id,
+    body             revision.geo_sk,
+    body             revision.geography_status,
+    body             revision.value_source,
+    body             revision.value,
+    body             revision.value_status,
+    body             revision.source_record_id,
+    body             revision.capture_id,
+    body             revision.run_id,
+    body             revision.source_line
+    body            FROM silver_noaa_climdiv.county_month_revision revision) value_row
+    body      JOIN gold_noaa_climdiv.measure_definition definition ON definition.measure = value_row.measure
+    body      JOIN control.noaa_climdiv_file file ON file.run_id = value_row.run_id AND file.file_element = definition.file_element
+    body   WHERE file.status = 'published'::text AND (value_row.geography_status <> ALL (ARRAY['unmapped'::text, 'ambiguous'::text, 'unsupported'::text])) AND value_row.value_status = 'valid'::text;
+
 v gold_noaa_normals.measure_definition
     column measure text
     column measure_label text
@@ -15155,6 +15399,88 @@ r silver_nces_ccd.school_location
     index nces_ccd_location_school_idx CREATE INDEX nces_ccd_location_school_idx ON silver_nces_ccd.school_location USING btree (ncessch)
     index nces_ccd_location_state_idx CREATE INDEX nces_ccd_location_state_idx ON silver_nces_ccd.school_location USING btree (state_fips, run_id)
     index school_location_pkey CREATE UNIQUE INDEX school_location_pkey ON silver_nces_ccd.school_location USING btree (run_id, ncessch)
+
+r silver_noaa_climdiv.county_month
+    column ncei_state_code text NOT NULL
+    column county_fips text NOT NULL
+    column measure text NOT NULL
+    column year integer NOT NULL
+    column month smallint NOT NULL
+    column state_fips text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_line integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint county_month_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint county_month_county_fips_check CHECK ((county_fips ~ '^[0-9]{3}$'::text))
+    constraint county_month_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint county_month_measure_check CHECK ((measure = ANY (ARRAY['monthly_precipitation_total'::text, 'monthly_average_temperature'::text, 'monthly_maximum_temperature'::text, 'monthly_minimum_temperature'::text, 'monthly_heating_degree_days'::text, 'monthly_cooling_degree_days'::text])))
+    constraint county_month_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = 'not_yet_published'::text)))
+    constraint county_month_month_check CHECK (((month >= 1) AND (month <= 12)))
+    constraint county_month_ncei_state_code_check CHECK ((ncei_state_code ~ '^[0-9]{2}$'::text))
+    constraint county_month_pkey PRIMARY KEY (ncei_state_code, county_fips, measure, year, month)
+    constraint county_month_source_line_check CHECK ((source_line >= 1))
+    constraint county_month_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{32}$'::text))
+    constraint county_month_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    constraint county_month_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint county_month_year_check CHECK ((year >= 1895))
+    constraint noaa_climdiv_missing_has_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint noaa_climdiv_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint noaa_climdiv_resolved_has_geo CHECK (((geography_status = 'resolved'::text) = ((geo_id IS NOT NULL) AND (geo_sk IS NOT NULL))))
+    constraint noaa_climdiv_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index county_month_pkey CREATE UNIQUE INDEX county_month_pkey ON silver_noaa_climdiv.county_month USING btree (ncei_state_code, county_fips, measure, year, month)
+    index noaa_climdiv_county_month_geo_idx CREATE INDEX noaa_climdiv_county_month_geo_idx ON silver_noaa_climdiv.county_month USING btree (geo_id, measure, year, month)
+    index noaa_climdiv_county_month_period_idx CREATE INDEX noaa_climdiv_county_month_period_idx ON silver_noaa_climdiv.county_month USING btree (measure, year, month)
+    index noaa_climdiv_county_month_run_idx CREATE INDEX noaa_climdiv_county_month_run_idx ON silver_noaa_climdiv.county_month USING btree (run_id)
+
+r silver_noaa_climdiv.county_month_revision
+    column ncei_state_code text NOT NULL
+    column county_fips text NOT NULL
+    column measure text NOT NULL
+    column year integer NOT NULL
+    column month smallint NOT NULL
+    column state_fips text NOT NULL
+    column geo_id text
+    column geo_sk bigint
+    column geography_status text NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_line integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL
+    column superseded_by_run_id uuid NOT NULL
+    column superseded_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint county_month_revision_pkey PRIMARY KEY (ncei_state_code, county_fips, measure, year, month, run_id)
+    index county_month_revision_pkey CREATE UNIQUE INDEX county_month_revision_pkey ON silver_noaa_climdiv.county_month_revision USING btree (ncei_state_code, county_fips, measure, year, month, run_id)
+    index noaa_climdiv_revision_geo_idx CREATE INDEX noaa_climdiv_revision_geo_idx ON silver_noaa_climdiv.county_month_revision USING btree (geo_id, measure, year, month)
+
+r silver_noaa_climdiv.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_noaa_climdiv.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_noaa_climdiv.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_noaa_climdiv.quarantine USING btree (quarantine_sk)
 
 r silver_noaa_normals.quarantine
     column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_noaa_normals.quarantine_quarantine_sk_seq'::regclass)

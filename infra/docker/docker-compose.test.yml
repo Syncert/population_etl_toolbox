@@ -59,6 +59,7 @@ services:
       - ../../sql/migrations/040_fbi_return_a_county_code.sql:/docker-entrypoint-initdb.d/122b_migration_040.sql:ro
       - ../../src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql:/docker-entrypoint-initdb.d/122_silver_epa_aqs.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql:/docker-entrypoint-initdb.d/123_silver_noaa_normals.sql:ro
+      - ../../src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql:/docker-entrypoint-initdb.d/123a_silver_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql:/docker-entrypoint-initdb.d/124_silver_nces_ccd.sql:ro
       - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
       - ../../src/data_ingestion_toolbox/fcc_bdc/DDL/silver_fcc_bdc.sql:/docker-entrypoint-initdb.d/125_silver_fcc_bdc.sql:ro
@@ -99,6 +100,7 @@ services:
       - ../../src/data_ingestion_toolbox/elections/gold_elections/DDL/governor_fiscal.sql:/docker-entrypoint-initdb.d/171e_gold_elections_governor_fiscal.sql:ro
       - ../../src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql:/docker-entrypoint-initdb.d/172_gold_epa_aqs.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql:/docker-entrypoint-initdb.d/173_gold_noaa_normals.sql:ro
+      - ../../src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql:/docker-entrypoint-initdb.d/173a_gold_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql:/docker-entrypoint-initdb.d/174_gold_nces_ccd.sql:ro
       - ../../src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql:/docker-entrypoint-initdb.d/175_gold_fcc_bdc.sql:ro
       - ../../src/data_ingestion_toolbox/fred/gold_fred/DDL/publisher.sql:/docker-entrypoint-initdb.d/175_publisher_fred.sql:ro
@@ -127,6 +129,7 @@ services:
       - ../../src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/publisher.sql:/docker-entrypoint-initdb.d/201b_publisher_census_govfin.sql:ro
       - ../../src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql:/docker-entrypoint-initdb.d/202_publisher_epa_aqs.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql:/docker-entrypoint-initdb.d/203_publisher_noaa_normals.sql:ro
+      - ../../src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql:/docker-entrypoint-initdb.d/203a_publisher_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql:/docker-entrypoint-initdb.d/204_publisher_nces_ccd.sql:ro
       - ../../sql/migrations/016_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/205_migration_016.sql:ro
       - ../../src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/publisher.sql:/docker-entrypoint-initdb.d/205_publisher_fcc_bdc.sql:ro

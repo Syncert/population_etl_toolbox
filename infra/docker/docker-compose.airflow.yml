@@ -91,6 +91,7 @@ services:
       airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
       airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';
       airflow pools set noaa_normals_files 1 'NOAA climate normals archive (serialized)';
+      airflow pools set noaa_climdiv_files 1 'NOAA nClimDiv county files (serialized)';
       airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)';
       airflow pools set census_cbp_files 1 'Census County Business Patterns files (serialized)';
       airflow pools set irs_soi_files 1 'IRS SOI migration files (serialized)';

@@ -753,6 +753,39 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="noaa_climdiv.county_monthly_series",
+        source="NOAA_CLIMDIV",
+        publisher_schema="gold_noaa_climdiv",
+        datasets=("climdiv-county:v1.0.0",),
+        fixtures=(
+            "tests/fixtures/noaa_climdiv/climdiv-pcpncy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmpccy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmaxcy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmincy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-hddccy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-cddccy-v1.0.0-20261105",
+        ),
+        serving_relations=(
+            "gold_noaa_climdiv.observation_revision",
+            "gold_noaa_climdiv.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_climdiv_pipeline.py::"
+            "test_county_months_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "NOAA nClimDiv publishes no source-specific HTTP route: each county "
+            "month is the neutral observation shape with its calendar month and "
+            "NCEI's own text as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
+    DataProductE2E(
         product_id="fcc_bdc.broadband_availability",
         source="FCC_BDC",
         publisher_schema="gold_fcc_bdc",

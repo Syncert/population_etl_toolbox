@@ -54,6 +54,7 @@ EXPECTED_DAG_IDS = {
     "census_lodes_ingest",
     "epa_aqs_ingest",
     "noaa_normals_ingest",
+    "noaa_climdiv_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
     "elections_ingest",
@@ -121,6 +122,9 @@ EXPECTED_SCHEDULES = {
     # Quarterly: the 1991-2020 normals change only by a new archive version,
     # and an unchanged archive replays nothing.
     "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
+    # Monthly on the 12th: NCEI replaces the county files early each month,
+    # and a file name already published is not downloaded again.
+    "noaa_climdiv_ingest": "0 15 12 * *",
     # Monthly: the FCC republishes vintages under new revision dates as
     # challenges and corrections land, and an unchanged read replays nothing.
     "fcc_bdc_ingest": "0 21 12 * *",
@@ -182,6 +186,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_lodes_ingest": 2,
     "epa_aqs_ingest": 2,
     "noaa_normals_ingest": 2,
+    "noaa_climdiv_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
     "elections_ingest": 2,
@@ -214,6 +219,7 @@ EXPECTED_INGEST_POOLS = {
     "census_lodes_ingest": "census_lodes_files",
     "epa_aqs_ingest": "epa_aqs_files",
     "noaa_normals_ingest": "noaa_normals_files",
+    "noaa_climdiv_ingest": "noaa_climdiv_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
     "elections_ingest": "elections_files",

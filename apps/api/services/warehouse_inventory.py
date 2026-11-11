@@ -967,6 +967,36 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="NOAA_NORMALS",
     ),
     WarehouseSource(
+        code="NOAA_CLIMDIV",
+        name="nClimDiv county monthly temperature and precipitation",
+        publisher="NOAA NCEI",
+        topic="Environment",
+        module="noaa_climdiv",
+        dag="noaa_climdiv_ingest",
+        cadence="Monthly, 12th 15:00 UTC",
+        release="Monthly; latest two years revised",
+        grains={"county": "d"},
+        years=[(1895, 2026)],
+        years_note="Monthly from January 1895; degree days for the 48 contiguous states",
+        datasets=["climdiv county files (pcpn, tmpc, tmax, tmin, hddc, cddc)"],
+        measures=(
+            "Monthly precipitation, average, maximum and minimum temperature, heating and "
+            "cooling degree days per county, as NCEI publishes them."
+        ),
+        raw=[],
+        control=["control.noaa_climdiv_file"],
+        silver=[
+            "silver_noaa_climdiv.county_month",
+            "silver_noaa_climdiv.county_month_revision",
+        ],
+        gold=[
+            "gold_noaa_climdiv.observation_revision",
+            "gold_noaa_climdiv.observation_latest",
+        ],
+        credential="none",
+        catalog_source_code="NOAA_CLIMDIV",
+    ),
+    WarehouseSource(
         code="NCES_CCD",
         name="Common Core of Data, public schools",
         publisher="NCES",

@@ -40,6 +40,7 @@ GUARDED = {
     "fcc_bdc_ingest": "require_shared_geography",
     "epa_aqs_ingest": "require_shared_geography",
     "noaa_normals_ingest": "require_shared_geography",
+    "noaa_climdiv_ingest": "require_shared_geography",
     "census_lodes_ingest": "require_shared_geography",
     "census_cbp_ingest": "require_shared_geography",
     "irs_migration_ingest": "require_shared_geography",

@@ -1162,6 +1162,30 @@ labelled year 2020 like the annual rows.
   `M`, `V`, `Y`) carries no number; an `X` normal is NCEI's rounded zero and
   keeps its flag.
 
+### Reading a NOAA nClimDiv row: a county month as NCEI publishes it
+
+`NOAA_CLIMDIV` serves six monthly county series from NCEI's nClimDiv county
+files, from January 1895: `monthly_precipitation_total` (inches),
+`monthly_average_temperature`, `monthly_maximum_temperature` and
+`monthly_minimum_temperature` (degrees Fahrenheit; the maximum and minimum
+are averages of daily maxima and minima), and `monthly_heating_degree_days`
+and `monthly_cooling_degree_days` (degree days, base 65 F; NCEI publishes
+these for the 48 contiguous states only). One row per county and calendar
+month, with `dimensions.month` (1 to 12); the period runs from the first to
+the last day of that month.
+
+- **It is NCEI's county value.** NCEI derives it from its 5 km nClimGrid
+  grid, interpolated from GHCN-Daily stations; this warehouse does not
+  average stations for it. `dimensions.value_source` is the text NCEI
+  wrote.
+- **Recent months change.** NCEI revises the latest two calendar years
+  every month. `/api/v1/observations/releases` returns each value a later
+  release replaced, with the file name (`nClimDiv climdiv-pcpncy-v1.0.0-20261105`)
+  as the release.
+- **A month NCEI has not published has no row.** The files write a missing
+  marker for months not yet published; it is never served as a value.
+- **Monthly only.** Months are not added or averaged into a year here.
+
 ### Reading a LEHD LODES row: jobs where people live and where they work
 
 `CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
@@ -1578,6 +1602,7 @@ prevent:
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
+| NOAA nClimDiv | `nClimDiv <file name>` | NCEI's release day and version in the file name (`climdiv-pcpncy-v1.0.0-20261105`); a month a later release changes is kept as replaced |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |

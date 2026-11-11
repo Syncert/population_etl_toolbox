@@ -237,6 +237,11 @@
       "path": "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
     },
     {
+      "id": "silver-noaa-climdiv",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql"
+    },
+    {
       "id": "silver-nces-ccd",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql"
@@ -437,6 +442,11 @@
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql"
     },
     {
+      "id": "gold-noaa-climdiv",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql"
+    },
+    {
       "id": "gold-nces-ccd",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql"
@@ -575,6 +585,11 @@
       "id": "publisher-noaa-normals",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-climdiv",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql"
     },
     {
       "id": "publisher-nces-ccd",
