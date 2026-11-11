@@ -242,6 +242,11 @@
       "path": "src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql"
     },
     {
+      "id": "silver-noaa-storm-events",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/DDL/silver_noaa_storm_events.sql"
+    },
+    {
       "id": "silver-nces-ccd",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql"
@@ -447,6 +452,11 @@
       "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql"
     },
     {
+      "id": "gold-noaa-storm-events",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/gold_noaa_storm_events.sql"
+    },
+    {
       "id": "gold-nces-ccd",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql"
@@ -590,6 +600,11 @@
       "id": "publisher-noaa-climdiv",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-storm-events",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/publisher.sql"
     },
     {
       "id": "publisher-nces-ccd",

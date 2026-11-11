@@ -217,6 +217,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "EIA",
         "DOL_CHILDCARE",
         "NOAA_CLIMDIV",
+        "NOAA_STORM_EVENTS",
         "CENSUS_CBP",
         "CENSUS_LODES",
         "EPA_AQS",

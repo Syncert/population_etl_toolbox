@@ -178,6 +178,22 @@ OpenFEMA NFIP flood insurance claims (a follow-up plan if wanted).
 - DQ: every event resolved or ledgered; per-year event counts match the
   file's row count; no event type counted before its era.
 
+Slice 1 built 2026-11-11: new adapter `noaa_storm_events` reads the NWS
+zone-county files and the newest details file of every year, writes only
+events whose published row changed (replaced and withdrawn events kept in
+`event_revision`), places county events on their county and zone events on
+every county of a zone whose code and name match a published zone-county
+file (Nick, 2026-11-11, "Match zone code and name"; a trailing "County" in
+the NWS name is ignored), and stores counts and impact sums per county,
+state and nation in `place_year`. Served through `gold_noaa_storm_events`
+and `/api/v1/observations`; event records in `event_detail`, unplaced
+zone events per state in `state_coverage` (evidence:
+`tests/integration/database/test_noaa_storm_events_capture_replay.py`,
+`tests/e2e/test_noaa_storm_events_pipeline.py`, ETL-127). A year with no
+event of a type has no row, as for FEMA declarations; the recording eras
+say which types a year can hold. The fatalities file is not read (deaths
+are on the event row). Speed gate on OFFICE_LAB after the first load.
+
 ## Slice 2: Monthly temperature and rainfall since 1895 (new adapter `noaa_climdiv`)
 
 - Registry of the six county elements; a monthly run reads the current

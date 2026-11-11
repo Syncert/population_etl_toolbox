@@ -76,6 +76,7 @@ SOURCES: tuple[str, ...] = (
     "EPA_AQS",
     "NOAA_NORMALS",
     "NOAA_CLIMDIV",
+    "NOAA_STORM_EVENTS",
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
@@ -3712,6 +3713,201 @@ _CLIMDIV_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# NOAA Storm Events Database and NWS zone-county files.
+# ---------------------------------------------------------------------------
+
+_STORM_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_storm_events_file",
+        "control",
+        "NOAA_STORM_EVENTS",
+        grain="run_id, file_name",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the NWS zone-county files and the newest details file of every year the listings name",
+        cadence="monthly; a file name already published is already_loaded and is not downloaded",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_storm_events.quarantine",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated event or zone row; populated only on failure",
+        cadence="per Storm Events replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_noaa_storm_events.zone_county",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="zone_file, state, zone, county_fips5",
+        lineage="control.noaa_storm_events_file, raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every zone and county row of every published NWS zone-county file",
+        cadence="per zone-county file",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id",
+        lineage="control.noaa_storm_events_file, raw_capture.response_capture",
+        scope_method="the current published version of every event; withdrawn events kept and not counted",
+        cadence="per Storm Events replay; only changed or new events are written",
+        empty_behavior="a blank death, injury or damage field is not reported, never 0",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_revision",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id, run_id, superseded_by_run_id",
+        lineage="silver_noaa_storm_events.event",
+        scope_method="every event version a later file replaced or withdrew",
+        cadence="per Storm Events replay",
+        empty_behavior="empty until NCEI revises a published year",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_place",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id, geo_id",
+        lineage="silver_noaa_storm_events.event, silver_noaa_storm_events.zone_county, silver_ref.dim_geo_entity",
+        scope_method="each county a current event is counted in: its own county, or every county of a matched zone",
+        cadence="per Storm Events replay; only changed placements are written",
+        empty_behavior="an unplaced, withdrawn or marine event has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.place_year",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="silver_noaa_storm_events.event, silver_noaa_storm_events.event_place",
+        scope_method="counts and impact sums per county, state and nation, year and measure",
+        cadence="per Storm Events replay; only changed figures are written",
+        empty_behavior="a place and year with no reported event of a type has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.state_year",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="state_fips, year",
+        lineage="silver_noaa_storm_events.event",
+        scope_method="per state code and year, events reported and where they were counted",
+        cadence="per Storm Events replay; only changed counts are written",
+        empty_behavior="a state and year with no reported event has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_type",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_type_key",
+        lineage="silver_noaa_storm_events.place_year",
+        scope_method="every event type a replay has counted",
+        cadence="per Storm Events replay",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.recording_era",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="first_year",
+        scope_method="the three recording eras of the Storm Events Database",
+        cadence="static",
+        empty_behavior="never empty: the eras are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.place_kind",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_type",
+        scope_method="the geography types counts are kept for",
+        cadence="static",
+        empty_behavior="never empty: the types are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.measure_definition",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="measure",
+        lineage="silver_noaa_storm_events.event_type",
+        scope_method="one count measure per published event type, all types, and six impact measures",
+        cadence="per publication",
+        empty_behavior="never empty: the impact measures are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.year_release",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="year",
+        lineage="control.noaa_storm_events_file",
+        scope_method="the newest published details file of every year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.observation_revision",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="silver_noaa_storm_events.place_year, gold_noaa_storm_events.year_release",
+        scope_method="every count and impact of a year with a published file",
+        cadence="per publication",
+        empty_behavior="a year with no published file has no row",
+    ),
+    _obj(
+        "gold_noaa_storm_events.observation_latest",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="gold_noaa_storm_events.observation_revision",
+        scope_method="the current count and impact of each place, year and measure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.event_detail",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_id, event_id",
+        lineage="silver_noaa_storm_events.event_place, silver_noaa_storm_events.event",
+        scope_method="every current event counted in a county, as NCEI published it",
+        cadence="per publication",
+        empty_behavior="a county with no placed event has no row",
+    ),
+    _obj(
+        "gold_noaa_storm_events.state_coverage",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_id, year",
+        lineage="silver_noaa_storm_events.state_year, gold_noaa_storm_events.year_release",
+        scope_method="per state and year, events reported and where they were counted",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.measure_export",
+        "publisher",
+        "NOAA_STORM_EVENTS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_storm_events.measure_definition",
+        scope_method="registered and published measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the impact measures are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.metric_publisher",
+        "publisher",
+        "NOAA_STORM_EVENTS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_storm_events.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # FCC Broadband Data Collection (fixed availability summaries).
 # ---------------------------------------------------------------------------
 
@@ -4771,6 +4967,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
     + _CLIMDIV_OBJECTS
+    + _STORM_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
@@ -5178,6 +5375,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_epa_aqs.metric_publisher",
             "gold_noaa_normals.metric_publisher",
             "gold_noaa_climdiv.metric_publisher",
+            "gold_noaa_storm_events.metric_publisher",
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
             "gold_fhfa_hpi.metric_publisher",
@@ -7697,6 +7895,120 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_noaa_climdiv.county_month",
             "control.noaa_climdiv_file",
+        ),
+    ),
+    # -- NOAA Storm Events Database ---------------------------------------------
+    _rule(
+        "DQ-STORM-001",
+        "BLOCK",
+        "uniqueness",
+        "An event is unique per NCEI event id, a placement per (event, "
+        "county), a count per (measure, place, year) and a zone-county row "
+        "per (zone file, state, zone, county): a repeated event id is "
+        "quarantined, and a replaced or withdrawn event is kept once per run "
+        "in the revision table.",
+        (
+            "silver_noaa_storm_events.event",
+            "silver_noaa_storm_events.event_revision",
+            "silver_noaa_storm_events.event_place",
+            "silver_noaa_storm_events.place_year",
+            "silver_noaa_storm_events.state_year",
+            "silver_noaa_storm_events.zone_county",
+            "gold_noaa_storm_events.observation_revision",
+            "gold_noaa_storm_events.observation_latest",
+            "gold_noaa_storm_events.event_detail",
+            "gold_noaa_storm_events.measure_definition",
+            "gold_noaa_storm_events.year_release",
+            "gold_noaa_storm_events.state_coverage",
+            "gold_noaa_storm_events.place_kind",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the silver primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_noaa_storm_events.event", ("event_id",)),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event_revision",
+                ("event_id", "run_id", "superseded_by_run_id"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event_place", ("event_id", "geo_id")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.place_year", ("metric_key", "geo_id", "year")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.state_year", ("state_fips", "year")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.zone_county",
+                ("zone_file", "state", "zone", "county_fips5"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-STORM-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and the current events of "
+        "each year plus its quarantined rows equal the rows of the year's "
+        "newest published file.",
+        (
+            "control.noaa_storm_events_file",
+            "silver_noaa_storm_events.quarantine",
+            "silver_noaa_storm_events.event",
+        ),
+    ),
+    _rule(
+        "DQ-STORM-003",
+        "BLOCK",
+        "conformance",
+        "A damage figure has a number exactly when NCEI published one that "
+        "reads (a blank is not reported, never zero), and an event is "
+        "'zone_matched' exactly when it names the zone-county file it was "
+        "placed with.",
+        (
+            "silver_noaa_storm_events.event",
+            "gold_noaa_storm_events.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints tie each damage "
+            "status to its number and the zone placement to its file."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("damage_property_status", "damage_property_usd"),
+                kind="check",
+                constraint_name="noaa_storm_events_damage_property_reported",
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("damage_crops_status", "damage_crops_usd"),
+                kind="check",
+                constraint_name="noaa_storm_events_damage_crops_reported",
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("placement_status", "zone_file"),
+                kind="check",
+                constraint_name="noaa_storm_events_zone_file_when_matched",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-STORM-004",
+        "WARN",
+        "referential_integrity",
+        "No current event before 1996 has an event type its recording era "
+        "does not hold (1950-1954 tornado; 1955-1995 tornado, thunderstorm "
+        "wind and hail).",
+        (
+            "silver_noaa_storm_events.event",
+            "gold_noaa_storm_events.recording_era",
         ),
     ),
     # -- FCC Broadband Data Collection (fixed availability) --------------------

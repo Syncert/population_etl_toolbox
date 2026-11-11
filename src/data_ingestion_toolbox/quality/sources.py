@@ -2417,6 +2417,91 @@ def climdiv_value_range(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutco
     ]
 
 
+def storm_events_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-STORM-002 — no file left unreplayed; each year's current events match its newest file."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.noaa_storm_events_file")
+    if total == 0:
+        return [RuleOutcome("control.noaa_storm_events_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_name, file.status
+          FROM control.noaa_storm_events_file AS file
+         WHERE file.status IN ('captured', 'silver_ready')
+        """,
+        order_by="1, 2",
+    )
+    # The newest published file of each year read every row it holds: each
+    # is a current event of the year or a quarantined row.
+    mismatched, mismatched_total = _offenders(
+        cursor,
+        """
+        SELECT release.year, release.file_name, release.row_count,
+               release.quarantined_count, counted.events
+          FROM gold_noaa_storm_events.year_release AS release
+          CROSS JOIN LATERAL (
+                SELECT COUNT(*) AS events
+                  FROM silver_noaa_storm_events.event AS event
+                 WHERE event.year = release.year AND event.event_status = 'current'
+               ) AS counted
+         WHERE counted.events + release.quarantined_count <> release.row_count
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "control.noaa_storm_events_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "silver_noaa_storm_events.event",
+            "fail" if mismatched else "pass",
+            observed_count=mismatched_total,
+            expected_count=0,
+            evidence=mismatched[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def storm_events_era_types(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-STORM-004 — no current event before 1996 has a type outside its recording era."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.noaa_storm_events_file WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_noaa_storm_events.event", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT event.year, event.event_type, event.event_id
+          FROM silver_noaa_storm_events.event AS event
+          JOIN gold_noaa_storm_events.recording_era AS era
+            ON event.year BETWEEN era.first_year AND era.last_year
+         WHERE event.year < 1996
+           AND event.event_status = 'current'
+           AND NOT (event.event_type = ANY (era.event_types))
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_noaa_storm_events.event",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def bdc_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-FCC-002 — no vintage left unreplayed; every replayed one reached silver."""
     del scope
@@ -5081,6 +5166,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NOAA-004": normals_value_and_geography,
     "DQ-CLIMDIV-002": climdiv_file_reconciliation,
     "DQ-CLIMDIV-004": climdiv_value_range,
+    "DQ-STORM-002": storm_events_file_reconciliation,
+    "DQ-STORM-004": storm_events_era_types,
     "DQ-LODES-002": lodes_slice_reconciliation,
     "DQ-LODES-004": lodes_od_workplace_agreement,
     "DQ-LODES-005": lodes_served_sums,

@@ -50,6 +50,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
 | [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
 | [nClimDiv county monthly temperature and precipitation](#noaa_climdiv) | NOAA NCEI |  |  | ● |  |  |  |  | 1895–2026 | Monthly | Not loaded yet |
+| [Storm Events Database](#noaa_storm_events) | NOAA NCEI | ● | ● | ● |  |  |  |  | 1950–2026 | Annual | Not loaded yet |
 | [Common Core of Data, public schools](#nces_ccd) | NCES |  | ◐ | ◐ |  |  |  |  | 2023–2024 | Quarterly | Loaded |
 | [National Broadband Map availability](#fcc_bdc) | FCC | ● | ● | ● |  | ● |  |  | 2024–2025 | Monthly | Loaded |
 | [Rural-urban codes, county typology, food atlas](#usda_ers) | USDA Economic Research Service |  |  | ● |  |  |  |  | 2015–2025 | Monthly | Loaded |
@@ -457,6 +458,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_noaa_normals.station`, `silver_noaa_normals.station_normal`, `silver_noaa_normals.station_monthly_normal`
 - **Gold:** `gold_noaa_normals.station_observation`, `gold_noaa_normals.station_monthly_observation`, `gold_noaa_normals.observation_revision`, `gold_noaa_normals.observation_latest`
 - **Status (live count 2026-10-31):** Loaded. The 1991–2020 normals (period 2020).
+
+<a id="noaa_storm_events"></a>
+### Storm Events Database (`NOAA_STORM_EVENTS`)
+
+- **Publisher:** NOAA NCEI (events); NWS (zone-county correlation files)
+- **Code:** `src/data_ingestion_toolbox/noaa_storm_events` · DAG `noaa_storm_events_ingest` · Monthly, 20th 16:00 UTC
+- **Publisher releases:** The current year's file is restamped each month; an earlier year is restamped when NCEI revises it
+- **Credential:** none
+- **Years:** 1950 onward; 1950-1954 tornado only, 1955-1995 tornado, thunderstorm wind and hail, 1996 onward all 48 event types
+- **Datasets:** `StormEvents_details` yearly files; NWS `bpDDmmYY.dbx` zone-county files
+- **Measures:** Events reported per year and event type, deaths, injuries, property and crop damage as published; every event's record. Zone events count on a county only when zone code and name match a published zone-county file.
+- **Capture and control:** `control.noaa_storm_events_file`
+- **Silver:** `silver_noaa_storm_events.event`, `event_revision`, `event_place`, `place_year`, `zone_county`
+- **Gold:** `gold_noaa_storm_events.observation_revision`, `observation_latest`, `event_detail`, `state_coverage`
+- **Status:** Not loaded yet (WEATHER_AND_DISASTER_HISTORY_PLAN slice 1). About 1.9 million events, 6 to 8 GB.
 
 <a id="noaa_climdiv"></a>
 ### nClimDiv county monthly temperature and precipitation (`NOAA_CLIMDIV`)
