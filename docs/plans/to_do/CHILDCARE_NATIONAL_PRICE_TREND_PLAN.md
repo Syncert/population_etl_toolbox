@@ -20,6 +20,9 @@ Built (2026-11-11), awaiting review. Nick picked option 2 of the childcare
 recency options on 2026-11-10 ("2"): add a newer, true national figure
 beside the county's price, never scale or estimate the county's price.
 
+Deployed 2026-11-11 (#351). Follow-up: each index value is shown exactly as
+stored (Dane: 407.8 ÷ 338.2), with no decimals added (true-to-source).
+
 Evidence: `tests/unit/bls/test_childcare_price_index.py` (ETL-125),
 `tests/frontend/unit/childcare.test.js` and the national-change test in
 `tests/frontend/browser/places.spec.js` (WEB-174).
