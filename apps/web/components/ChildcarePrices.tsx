@@ -9,16 +9,18 @@
 // read once the prices are, shown under each price, and worked once below.
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "../lib/api/client";
+import { apiFetch, fetchCollectionPages, getMetric } from "../lib/api/client";
 import { getDerivedObservations } from "../lib/derivedViews";
-import type { CollectionResponse, GeographySummary, Observation } from "../lib/api/types";
+import type { CollectionResponse, GeographySummary, MetricSummary, Observation } from "../lib/api/types";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { buildNewestValueRequest, normalizeObservationRows } from "../lib/observationAccess";
 import type { PlaceLevel } from "../lib/placeChapters";
+import { buildUseCaseHistory } from "../lib/useCaseAnalysis";
 import {
   AGE_GROUPS,
   CARE_TYPES,
+  CHILDCARE_CPI_CODE,
   CHILDCARE_CREDIT,
   CHILDCARE_SOURCE,
   NOT_A_COUNTY,
@@ -28,14 +30,18 @@ import {
   childcareTable,
   footnoteReasons,
   formatWeekly,
+  NATION_GEO_ID,
+  nationalChildcareTrend,
   workFormula,
   workGap,
   workText,
 } from "../lib/childcare";
-import type { ChildcareMinutes, InfantCareRead } from "../lib/childcare";
+import type { ChildcareMinutes, InfantCareRead, NationalTrend } from "../lib/childcare";
 
 type Newest = Record<string, ObservationRow | null>;
 type State = { status: "reading" } | { status: "unloaded" } | { status: "failed" } | { status: "read"; newest: Newest };
+/** The national index read: `undefined` while reading, "unloaded" when the catalog lacks it. */
+type National = NationalTrend | "unloaded" | "failed" | undefined;
 
 
 export default function ChildcarePrices({
@@ -117,6 +123,44 @@ export default function ChildcarePrices({
     return () => controller.abort();
   }, [county, state, place.geo_id]);
 
+  // The national CPI for day care and preschool, once the study year is
+  // known: its change from the same month of that year to the newest month.
+  // The catalog read says whether it is loaded; a page without one asks.
+  const studyYear = state.status === "read" ? childcareTable(state.newest).year : null;
+  const cpiMetric = catalogued === undefined ? undefined : catalogued === null ? null : ((catalogued.get(CHILDCARE_CPI_CODE) as MetricSummary | undefined) ?? false);
+  const [national, setNational] = useState<National>(undefined);
+  useEffect(() => {
+    setNational(undefined);
+    if (!county || studyYear === null || cpiMetric === null) return;
+    if (cpiMetric === false) {
+      setNational("unloaded");
+      return;
+    }
+    const controller = new AbortController();
+    (async () => {
+      const metric = cpiMetric ?? (await getMetric(CHILDCARE_CPI_CODE, { signal: controller.signal }).catch(() => null));
+      const cpiSource = sources.find((item) => item.sourceCode === metric?.source_code) || null;
+      const history = buildUseCaseHistory(cpiSource, metric, NATION_GEO_ID, "NATIONAL");
+      if (!history.request) return "unloaded" as const;
+      const result = await fetchCollectionPages<Observation>(history.request.resource, {
+        params: history.request.params,
+        pageSize: 500,
+        maxPages: 2,
+        signal: controller.signal,
+      });
+      const rows = normalizeObservationRows(cpiSource, result.items).filter((row) => row.geo_id === NATION_GEO_ID);
+      return nationalChildcareTrend(rows, studyYear, String(place.geo_name || "This county"));
+    })()
+      .then((found) => {
+        if (!controller.signal.aborted) setNational(found);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setNational("failed");
+      });
+    return () => controller.abort();
+  }, [county, studyYear, cpiMetric, sources, place.geo_id, place.geo_name]);
+  const trend = typeof national === "object" ? national : null;
+
   // The center infant price and its hours, once each read ends.
   const infantRow = state.status === "read" ? (state.newest[childcareMetricCode("center", "infant")] ?? null) : undefined;
   const infantError = state.status === "failed" ? "Could not be read just now" : state.status === "unloaded" ? "unloaded" : undefined;
@@ -126,8 +170,10 @@ export default function ChildcarePrices({
   useEffect(() => {
     if (!county || !onInfant) return;
     if (infantError) onInfant(place.geo_id, { row: null, error: infantError, minutes: null });
-    else if (infantRow !== undefined) onInfant(place.geo_id, { row: infantRow, minutes: infantDone ? (infantMinutes ?? null) : undefined });
-  }, [county, onInfant, place.geo_id, infantRow, infantError, infantMinutes, infantDone]);
+    else if (infantRow !== undefined) {
+      onInfant(place.geo_id, { row: infantRow, minutes: infantDone ? (infantMinutes ?? null) : undefined, national: trend });
+    }
+  }, [county, onInfant, place.geo_id, infantRow, infantError, infantMinutes, infantDone, trend]);
 
   if (!county) {
     return (
@@ -171,6 +217,15 @@ export default function ChildcarePrices({
                 </>
               ) : null}
               .
+            </p>
+          ) : null}
+          {trend?.text ? (
+            <p data-testid="place-childcare-national">{trend.text}</p>
+          ) : trend?.gap ? (
+            <p className="subtle" data-testid="place-childcare-national-gap">{trend.gap}</p>
+          ) : national === "unloaded" ? (
+            <p className="subtle" data-testid="place-childcare-national-unloaded">
+              The national price index for day care and preschool: not loaded into this site yet.
             </p>
           ) : null}
           <table className="place-childcare-table" data-testid="place-childcare-table">
@@ -227,6 +282,11 @@ export default function ChildcarePrices({
           {formula ? (
             <p className="subtle" data-testid="place-childcare-formula">
               {formula}
+            </p>
+          ) : null}
+          {trend?.formula ? (
+            <p className="subtle" data-testid="place-childcare-national-formula">
+              {trend.formula}
             </p>
           ) : null}
           {gap ? (

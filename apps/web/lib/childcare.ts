@@ -181,6 +181,8 @@ export interface InfantCareRead {
   row?: ObservationRow | null;
   error?: string;
   minutes?: ChildcareMinutes | null;
+  /** The national price change since the study year, once read; see `nationalChildcareTrend`. */
+  national?: NationalTrend | null;
 }
 
 const dollars = (value: number, cents = false): string =>
@@ -231,4 +233,97 @@ export function workGap(row: ChildcareMinutes | null | undefined, year: number |
     return `Hours of work: ${county}'s wage for ${year} is not published yet.`;
   }
   return "";
+}
+
+// ---------------------------------------------------------------------------
+// The national price change since the study year (Nick, 2026-11-10: option
+// 2 of the childcare recency options). The Women's Bureau has no release
+// schedule and its newest study year is 2022, so the card adds one more true
+// figure beside the county's price: the Bureau of Labor Statistics' monthly
+// CPI for day care and preschool, U.S. city average, not seasonally
+// adjusted, read as its own change from the same month of the study year to
+// the newest month published. It is the nation's change, stated as such;
+// the county's price is never scaled by it (no extrapolation).
+// ---------------------------------------------------------------------------
+
+export const CHILDCARE_CPI_SERIES = "CUUR0000SEEB03";
+export const CHILDCARE_CPI_CODE = `BLS:${CHILDCARE_CPI_SERIES}`;
+export const NATION_GEO_ID = "us:1";
+export const CHILDCARE_CPI_CREDIT =
+  "Bureau of Labor Statistics, Consumer Price Index for All Urban Consumers, day care and preschool, U.S. city average, not seasonally adjusted";
+
+/** What the card says about the national change; every field "" when there is nothing to say. */
+export interface NationalTrend {
+  /** "Nationally, ... rose 18.4% from September 2022 to September 2026." */
+  text: string;
+  /** The two published index values and the division, stated once. */
+  formula: string;
+  /** Why no change is shown, in the words the other gaps use. */
+  gap: string;
+  percent: number | null;
+}
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "September 2022" from "2022-09". */
+export function monthName(month: string): string {
+  const index = Number(month.slice(5, 7)) - 1;
+  return MONTHS[index] ? `${MONTHS[index]} ${month.slice(0, 4)}` : month;
+}
+
+const indexValue = (row: ObservationRow | null | undefined): number | null => {
+  if (!row || row.value === null || row.value === undefined || row.value === "") return null;
+  const value = Number(row.value);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const EMPTY_TREND: NationalTrend = { text: "", formula: "", gap: "", percent: null };
+
+/**
+ * The national index's change from the same month of the study year to the
+ * newest month published: two published values divided, nothing filled in.
+ * Nothing is said when no month after the study year is published; a base
+ * month that is not published is said, and no other month stands in for it.
+ */
+export function nationalChildcareTrend(
+  rows: readonly ObservationRow[],
+  studyYear: number | null,
+  county: string,
+): NationalTrend {
+  if (studyYear === null) return EMPTY_TREND;
+  const monthly = rows.filter((row) => /^\d{4}-\d{2}/.test(String(row.period_start || "")));
+  const monthOfRow = (row: ObservationRow) => String(row.period_start).slice(0, 7);
+  const newest = [...monthly]
+    .filter((row) => indexValue(row) !== null)
+    .sort((left, right) => monthOfRow(right).localeCompare(monthOfRow(left)))[0];
+  if (!newest) return { ...EMPTY_TREND, gap: "The national price index for day care and preschool has no month published yet." };
+  const month = monthOfRow(newest);
+  if (Number(month.slice(0, 4)) <= studyYear) return EMPTY_TREND;
+  const baseMonth = `${studyYear}${month.slice(4)}`;
+  const then = indexValue(monthly.find((row) => monthOfRow(row) === baseMonth));
+  if (then === null) {
+    return {
+      ...EMPTY_TREND,
+      gap: `Nationally: ${monthName(baseMonth)} is not published in the price index for day care and preschool, so its change since ${studyYear} is not shown.`,
+    };
+  }
+  const now = indexValue(newest)!;
+  const percent = Math.round((now / then - 1) * 1000) / 10;
+  const verb = percent > 0 ? `rose ${percent.toFixed(1)}%` : percent < 0 ? `fell ${Math.abs(percent).toFixed(1)}%` : "did not change";
+  const index = (value: number) => formatNumber(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const ratio = formatNumber(now / then, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const unit = String(newest.unit || newest.units || "").trim();
+  return {
+    text: `Nationally, prices for day care and preschool ${verb} from ${monthName(baseMonth)} to ${monthName(month)}.`,
+    formula:
+      `How the national change is worked out: the ${CHILDCARE_CPI_CREDIT} (series ${CHILDCARE_CPI_SERIES}${unit ? `, ${unit}` : ""}), ` +
+      `was ${index(now)} in ${monthName(month)} and ${index(then)} in ${monthName(baseMonth)}; ${index(now)} ÷ ${index(then)} = ${ratio}, ` +
+      `a change of ${percent > 0 ? "+" : ""}${percent.toFixed(1)}%. It is the nation's change, not ${county}'s: ` +
+      `the county's prices above are the Women's Bureau's for ${studyYear}, as published, and are not adjusted by it.`,
+    gap: "",
+    percent,
+  };
 }

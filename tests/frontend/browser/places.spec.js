@@ -700,6 +700,30 @@ test("a county's childcare prices are its own, for one year, with a blank price 
   await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
 });
 
+// Covers: WEB-174 — childcare-national-trend: a county's childcare card adds
+// the nation's CPI change for day care and preschool from the same month of
+// the study year to the newest month, with both index values and the
+// division stated, says the county's prices are not adjusted by it, and the
+// Starting a family infant care row repeats the sentence.
+test("a county's childcare card adds the nation's price change since its study year, never applied to the county", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-childcare-national")).toHaveText(
+    "Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.",
+  );
+  const formula = page.getByTestId("place-childcare-national-formula");
+  await expect(formula).toContainText("series CUUR0000SEEB03");
+  await expect(formula).toContainText("was 300.000 in August 2026 and 250.000 in August 2022; 300.000 ÷ 250.000 = 1.200, a change of +20.0%.");
+  await expect(formula).toContainText("It is the nation's change, not Dane County's: the county's prices above are the Women's Bureau's for 2022, as published, and are not adjusted by it.");
+  // The county's own price stays as published.
+  await expect(page.getByTestId("place-childcare-center_infant")).toContainText("$293 a week");
+  await expect(page.getByTestId("family-infant-care-value")).toHaveText("$293 a week");
+  await expect(page.getByTestId("family-infant-care-national")).toContainText(
+    "Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.",
+  );
+  await noViolations(page);
+});
+
 // Covers: WEB-173 — starting-a-family-collection: a county page gathers
 // eight published measures in four groups, each with its own value, period,
 // levels and rank; the two prices show hours of the county's own wage with

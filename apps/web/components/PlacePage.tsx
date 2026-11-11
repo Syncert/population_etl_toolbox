@@ -101,7 +101,7 @@ import {
   multiStateNote,
 } from "../lib/metroPages";
 import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
-import { CHILDCARE_CODES } from "../lib/childcare";
+import { CHILDCARE_CODES, CHILDCARE_CPI_CODE } from "../lib/childcare";
 import type { InfantCareRead } from "../lib/childcare";
 import { FAMILY_CODES } from "../lib/familyCodes";
 
@@ -388,7 +388,7 @@ export default function PlacePage({
       // The childcare prices are named in the same read, so a price not
       // loaded is never asked for on its own (county-childcare-prices).
       // So are the Starting a family rows' metrics (starting-a-family-collection).
-      const codes = [...new Set([...placeChapterMetricCodes(), ...CHILDCARE_CODES, ...FAMILY_CODES])];
+      const codes = [...new Set([...placeChapterMetricCodes(), ...CHILDCARE_CODES, CHILDCARE_CPI_CODE, ...FAMILY_CODES])];
       let found = new Map<string, MetricSummary>();
       let failures = 0;
       try {

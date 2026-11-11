@@ -9,6 +9,8 @@ import {
   footnoteReasons,
   formatWeekly,
   imputationReasons,
+  monthName,
+  nationalChildcareTrend,
   workFormula,
   workGap,
   workText,
@@ -117,5 +119,47 @@ describe("which childcare prices are read", () => {
     expect(catalogedCodes(new Map())).toEqual([]);
     expect(catalogedCodes(new Map([["DOL_CHILDCARE:home_infant", {}], ["BLS:X", {}]]))).toEqual(["DOL_CHILDCARE:home_infant"]);
     expect(catalogedCodes(undefined)).toEqual(CHILDCARE_CODES);
+  });
+});
+
+// Covers: WEB-174 — childcare-national-trend: the nation's CPI for day care
+// and preschool is read as its own change from the same month of the study
+// year to the newest month published; an unpublished base month is said,
+// never replaced by another month, and nothing is said when no month after
+// the study year is published. The county's price is never scaled by it.
+describe("the national childcare price change", () => {
+  const cpi = (month, value) => ({ metric_code: "BLS:CUUR0000SEEB03", geo_id: "us:1", period_start: `${month}-01`, value, unit: "Index Dec 1990=100" });
+  const rows = [cpi("2022-08", "250"), cpi("2022-09", "251"), cpi("2025-09", "290"), cpi("2026-08", "300"), cpi("2026-09", null)];
+
+  it("divides the newest valued month by the same month of the study year", () => {
+    const trend = nationalChildcareTrend(rows, 2022, "Dane County");
+    expect(trend.percent).toBe(20);
+    expect(trend.text).toBe("Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.");
+    expect(trend.formula).toContain("(series CUUR0000SEEB03, Index Dec 1990=100)");
+    expect(trend.formula).toContain("300.000 ÷ 250.000 = 1.200, a change of +20.0%");
+    expect(trend.formula).toContain("not Dane County's");
+    expect(trend.gap).toBe("");
+  });
+
+  it("says a fall plainly and no change as no change", () => {
+    expect(nationalChildcareTrend([cpi("2022-08", "250"), cpi("2026-08", "240")], 2022, "X").text).toContain("fell 4.0% from August 2022");
+    expect(nationalChildcareTrend([cpi("2022-08", "250"), cpi("2026-08", "250")], 2022, "X").text).toContain("did not change from August 2022");
+  });
+
+  it("says when the base month is not published and uses no other month", () => {
+    const trend = nationalChildcareTrend([cpi("2022-07", "249"), cpi("2022-09", "251"), cpi("2026-08", "300")], 2022, "X");
+    expect(trend.text).toBe("");
+    expect(trend.percent).toBeNull();
+    expect(trend.gap).toBe("Nationally: August 2022 is not published in the price index for day care and preschool, so its change since 2022 is not shown.");
+  });
+
+  it("says nothing when no month after the study year is published", () => {
+    expect(nationalChildcareTrend([cpi("2022-08", "250")], 2022, "X")).toEqual({ text: "", formula: "", gap: "", percent: null });
+    expect(nationalChildcareTrend(rows, null, "X").text).toBe("");
+    expect(nationalChildcareTrend([], 2022, "X").gap).toContain("no month published yet");
+  });
+
+  it("names months in words", () => {
+    expect(monthName("2026-09")).toBe("September 2026");
   });
 });

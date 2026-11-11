@@ -196,6 +196,7 @@ export default function StartingAFamily({
                 county={county}
                 distinctive={distinctive}
                 siblingsName={siblingsName}
+                national={row.id === "infant-care" && county ? infant?.national?.text || "" : ""}
               />
             ))}
           </ul>
@@ -236,7 +237,8 @@ export default function StartingAFamily({
           </p>
         ) : null}
         <p>
-          Sources: U.S. Department of Labor Women&apos;s Bureau (childcare), HUD (Fair Market Rents), Census Bureau ACS and SAIPE,
+          Sources: U.S. Department of Labor Women&apos;s Bureau (childcare), Bureau of Labor Statistics CPI (the national change in
+          childcare prices), HUD (Fair Market Rents), Census Bureau ACS and SAIPE,
           Bureau of Labor Statistics QCEW (wages), NCES Common Core of Data (schools). Each line&apos;s period is its own; a figure
           published only for a larger area is that area&apos;s, named, and nothing is estimated for a level a source does not publish.
         </p>
@@ -347,6 +349,7 @@ function FamilyLine({
   distinctive,
   siblingsName,
   schools,
+  national = "",
 }: {
   row: FamilyRow;
   levels: LevelPlace[];
@@ -358,6 +361,8 @@ function FamilyLine({
   distinctive: DistinctiveResponse | null;
   siblingsName: string;
   schools: ReadonlyMap<string, SchoolCount>;
+  /** The infant care row's national price change since its study year, from the childcare card. */
+  national?: string;
 }) {
   const testId = `family-${row.id}`;
   if (!loaded) {
@@ -413,6 +418,7 @@ function FamilyLine({
       </p>
       {hoursLine ? <p className="place-family-hours" data-testid={`${testId}-hours`}>{hoursLine} at {county!.name}&apos;s average wage</p> : null}
       {gap ? <p className="subtle" data-testid={`${testId}-hours-gap`}>{gap}</p> : null}
+      {national && value ? <p className="subtle" data-testid={`${testId}-national`}>{national} The county price is the Women&apos;s Bureau&apos;s, as published.</p> : null}
       <PlaceLevelStrip measureId={`family-${row.id}`} rows={card.rows} />
       {coverage ? <p className="subtle" data-testid={`${testId}-schools`}>{coverage}</p> : null}
       {ranked ? <p className="subtle" data-testid={`${testId}-rank`}>{rankSentence(ranked, siblingsName)}</p> : null}
