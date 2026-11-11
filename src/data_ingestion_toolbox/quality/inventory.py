@@ -3534,11 +3534,21 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a withheld normal is missing or not applicable, never 0",
     ),
     _obj(
+        "silver_noaa_normals.station_monthly_normal",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable, month",
+        lineage="silver_noaa_normals.station",
+        scope_method="every registered monthly normal a station publishes, one row per calendar month",
+        cadence="per normals replay",
+        empty_behavior="a withheld normal is missing or not applicable, never 0",
+    ),
+    _obj(
         "gold_noaa_normals.measure_definition",
         "gold",
         "NOAA_NORMALS",
         grain="measure",
-        scope_method="the six published measures",
+        scope_method="the six annual and seven monthly published measures",
         cadence="static",
         empty_behavior="never empty: the measures are registered",
     ),
@@ -3553,11 +3563,21 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published archive",
     ),
     _obj(
+        "gold_noaa_normals.station_monthly_observation",
+        "gold",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable, month",
+        lineage="silver_noaa_normals.station_monthly_normal, silver_noaa_normals.station, control.noaa_normals_file",
+        scope_method="published monthly station normals: the lineage of every monthly county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published monthly archive",
+    ),
+    _obj(
         "gold_noaa_normals.observation_revision",
         "gold",
         "NOAA_NORMALS",
-        grain="metric_key, geo_id, year, run_id",
-        lineage="gold_noaa_normals.station_observation",
+        grain="metric_key, geo_id, year, month, run_id",
+        lineage="gold_noaa_normals.station_observation, gold_noaa_normals.station_monthly_observation",
         scope_method="the mean of standard or representative stations per county and read",
         cadence="per publication",
         empty_behavior="a county with no such station has no row",
@@ -3566,7 +3586,7 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_noaa_normals.observation_latest",
         "gold",
         "NOAA_NORMALS",
-        grain="metric_key, geo_id, year (newest read)",
+        grain="metric_key, geo_id, year, month (newest read)",
         lineage="gold_noaa_normals.observation_revision",
         scope_method="newest-read projection, never a replacement",
         cadence="per publication",
@@ -7395,7 +7415,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_noaa_normals.station",
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "gold_noaa_normals.station_observation",
+            "gold_noaa_normals.station_monthly_observation",
             "gold_noaa_normals.observation_revision",
             "gold_noaa_normals.observation_latest",
             "gold_noaa_normals.measure_definition",
@@ -7410,6 +7432,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
             EnforcedGrain(
                 "silver_noaa_normals.station_normal",
                 ("run_id", "station_id", "variable"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("run_id", "station_id", "variable", "month"),
             ),
         ),
     ),
@@ -7432,6 +7458,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "does: no withheld value becomes a zero.",
         (
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "gold_noaa_normals.measure_export",
         ),
         automation="enforced",
@@ -7452,19 +7479,32 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 kind="check",
                 constraint_name="noaa_normals_withheld_value_absent",
             ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_monthly_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_monthly_withheld_value_absent",
+            ),
         ),
     ),
     _rule(
         "DQ-NOAA-004",
         "WARN",
         "referential_integrity",
-        "In every published archive, no precipitation or degree-day normal is "
-        "negative, no station sits on a county boundary, and every station "
+        "In every published archive, no precipitation, snowfall or degree-day "
+        "normal is negative, no station sits on a county boundary, and every station "
         "NCEI codes to the United States (GHCN country US) falls inside a "
         "county of the recorded boundary vintage.",
         (
             "silver_noaa_normals.station",
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "control.noaa_normals_file",
         ),
     ),

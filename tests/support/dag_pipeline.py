@@ -1269,18 +1269,26 @@ def stub_epa_aqs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed eleven-station normals archive."""
+    """Serve the reviewed annual (eleven-station) and monthly (two-station) archives."""
     from data_ingestion_toolbox.noaa_normals import capture as normals_capture
     from data_ingestion_toolbox.noaa_normals.client import NormalsResponse
-    from data_ingestion_toolbox.noaa_normals.registry import ARCHIVE_PATH
+    from data_ingestion_toolbox.noaa_normals.registry import ANNUAL, PRODUCTS
 
-    reviewed = (
-        FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
-    ).read_bytes()
+    reviewed = {
+        "annualseasonal": (
+            FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
+        ).read_bytes(),
+        "monthly": (
+            FIXTURE_ROOT / "noaa_normals" / "monthly_by_station.tar.gz"
+        ).read_bytes(),
+    }
 
-    def fetch_archive(**_kwargs: Any) -> NormalsResponse:
+    def fetch_archive(*, product: str = ANNUAL, **_kwargs: Any) -> NormalsResponse:
         return NormalsResponse(
-            ARCHIVE_PATH, reviewed, {"content-type": "application/gzip"}, 200
+            PRODUCTS[product].path,
+            reviewed[product],
+            {"content-type": "application/gzip"},
+            200,
         )
 
     monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)

@@ -1138,6 +1138,15 @@ million, the year's fourth-highest daily maximum 8-hour average under the
 `annual_heating_degree_days` and `annual_cooling_degree_days` (degree days,
 base 65 F).
 
+It also serves seven monthly figures from the monthly by-station archive:
+`monthly_mean_temperature`, `monthly_mean_maximum_temperature`,
+`monthly_mean_minimum_temperature`, `monthly_precipitation`,
+`monthly_snowfall` (inches; only stations that measure snowfall),
+`monthly_heating_degree_days` and `monthly_cooling_degree_days`, one row per
+county and calendar month, with `dimensions.month` (1 to 12). A monthly row's
+period is that month from 1991 to 2020 (January: 1991-01-01 to 2020-01-31),
+labelled year 2020 like the annual rows.
+
 - **It is a normal, not a year.** Each row covers 1991-01-01 to 2020-12-31
   and is labelled year 2020; it is not the value of 2020 or of any year, and
   the analysis routes decline it so it is never aligned with annual values.

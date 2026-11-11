@@ -1517,6 +1517,9 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("station_ids", "station_ids"),
                 ("station_count", "station_count::TEXT"),
                 ("boundary_vintage", "boundary_vintage::TEXT"),
+                # The calendar month of a monthly normal (1 to 12); absent
+                # for an annual one.
+                ("month", "month::TEXT"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1526,8 +1529,8 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("year_from", "year >= :year_from"),
                 ("year_to", "year <= :year_to"),
             ),
-            latest_order=("geo_id", "year"),
-            released_order=("year", "geo_id", "release_key", "run_id"),
+            latest_order=("geo_id", "year", "month"),
+            released_order=("year", "month", "geo_id", "release_key", "run_id"),
             analysis_restriction=(
                 "NOAA climate normals are 30-year averages (1991-2020), not "
                 "values of any one year, so a year-aligned analysis would pair "

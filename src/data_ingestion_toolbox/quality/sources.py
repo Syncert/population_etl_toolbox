@@ -2282,6 +2282,16 @@ def normals_value_and_geography(
                        AND normal.measure IN (
                            'annual_precipitation', 'annual_heating_degree_days', 'annual_cooling_degree_days'
                        )
+                )
+                OR EXISTS (
+                    SELECT 1 FROM silver_noaa_normals.station_monthly_normal AS normal
+                     WHERE normal.run_id = station.run_id
+                       AND normal.station_id = station.station_id
+                       AND normal.value < 0
+                       AND normal.measure IN (
+                           'monthly_precipitation', 'monthly_snowfall',
+                           'monthly_heating_degree_days', 'monthly_cooling_degree_days'
+                       )
                 ))
         """,
         order_by="1, 2",
