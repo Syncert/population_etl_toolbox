@@ -141,6 +141,8 @@ const COST_METRICS = Object.fromEntries([
     costMetric(`DOL_CHILDCARE:${care}_${age}`, "dollars per week", ["COUNTY"]))),
   // Starting a family (starting-a-family-collection): HUD's three-bedroom
   // rent for counties, QCEW's annual wage for counties, states and the nation.
+  // The nation's CPI for day care and preschool (childcare-national-trend).
+  costMetric("BLS:CUUR0000SEEB03", "Index Dec 1990=100", ["NATIONAL"]),
   costMetric("HUD_FMR_IL:fmr_3br", "dollars per month", ["COUNTY"]),
   costMetric("BLS_QCEW:annual_avg_weekly_wage:10:0", "dollars per week", ["COUNTY", "STATE", "NATIONAL"]),
   // Grocery spending (grocery-spending): the Consumer Expenditure Survey's
@@ -200,8 +202,21 @@ function childcareRows(code, geo) {
       dimensions: { care_type: code.includes(":center") ? "center" : "home", imputed: imputation_code.includes("1") ? "true" : "false", imputation_code } };
   });
 }
+// The nation's day care and preschool index, monthly from January 2022 to
+// August 2026: 250 in August 2022 and 300 in August 2026, so 20.0% between.
+function childcareCpiRows(geo) {
+  if (geo !== "us:1") return [];
+  return Array.from({ length: 56 }, (_, index) => {
+    const month = new Date(Date.UTC(2022, index, 1)).toISOString().slice(0, 10);
+    const value = month === "2022-08-01" ? "250.000" : month === "2026-08-01" ? "300.000" : (240 + index).toFixed(3);
+    return { metric_code: "BLS:CUUR0000SEEB03", source_code: "BLS", geo_id: geo, geo_level: "NATIONAL", geo_name: "United States",
+      value, value_status: "valid", unit: "Index Dec 1990=100", release: "fixture", as_of: "2026-09-01", dimensions: {}, uncertainty: null, coverage: null,
+      period_start: month, period_end: month };
+  });
+}
 function costRows(code, geo) {
   if (code.startsWith("DOL_CHILDCARE:")) return childcareRows(code, geo);
+  if (code === "BLS:CUUR0000SEEB03") return childcareCpiRows(geo);
   const value = COST_VALUES[code]?.[geo];
   const area = [NATION, ...STATES, ...COUNTIES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);
   if (!value || !area) return [];

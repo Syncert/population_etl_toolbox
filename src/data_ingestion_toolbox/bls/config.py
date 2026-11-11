@@ -223,6 +223,10 @@ class BlsConfig(BaseModel):
             "CUUR0000SEHA",  # CPI-U, rent of primary residence
             "CUUR0000SEHC",  # CPI-U, owners' equivalent rent
             "CUUR0000SAM",  # CPI-U, medical care
+            # CPI-U, day care and preschool, U.S. city average, not seasonally
+            # adjusted (childcare-national-trend): the national change shown
+            # beside the Women's Bureau's county prices, never applied to them.
+            "CUUR0000SEEB03",
         ],
         # --------------------------------------------------------------
         # JOLTS — Job Openings and Labor Turnover Survey (jt)_
