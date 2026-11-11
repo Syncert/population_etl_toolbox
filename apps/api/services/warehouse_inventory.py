@@ -942,16 +942,24 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         grains={"county": "d"},
         years=[(2020, 2020)],
         years_note="30-year normals, labelled 2020",
-        datasets=["annual/seasonal multivariate by station archive"],
+        datasets=[
+            "annual/seasonal multivariate by station archive",
+            "monthly multivariate by station archive",
+        ],
         measures=(
-            "Annual mean, max and min temperature, precipitation, heating and cooling degree days: mean "
-            "of stations placed in the county."
+            "Annual mean, max and min temperature, precipitation, heating and cooling degree days; "
+            "the same by calendar month plus monthly snowfall: mean of stations placed in the county."
         ),
         raw=[],
         control=["control.noaa_normals_file"],
-        silver=["silver_noaa_normals.station", "silver_noaa_normals.station_normal"],
+        silver=[
+            "silver_noaa_normals.station",
+            "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
+        ],
         gold=[
             "gold_noaa_normals.station_observation",
+            "gold_noaa_normals.station_monthly_observation",
             "gold_noaa_normals.observation_revision",
             "gold_noaa_normals.observation_latest",
         ],

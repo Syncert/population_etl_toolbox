@@ -30,6 +30,12 @@ through the existing FEMA_NRI observation views (evidence:
 `test_declarations_are_counted_per_incident_type` and the harvest test in
 `tests/integration/database/test_fema_nri_capture_replay.py`). OFFICE_LAB
 speed gate and glossary requeue pending after merge.
+Slice 3 built 2026-11-11: the monthly by-station archive
+(`..._monthly_multivariate_by-station_c20230404.tar.gz`, 29.7 MB, 15,616
+stations, read through OFFICE_LAB) is a second `noaa_normals` product with
+its own run, `silver_noaa_normals.station_monthly_normal`, and seven
+`monthly_*` measures (snowfall added) served with `month` in the existing
+observation views (evidence: `test_monthly_normals_publish_twelve_months_per_county`).
 
 Decided by Nick 2026-11-11 16:16Z: zone-reported storm events are counted in
 every county the zone covers (Option A in Slice 1).

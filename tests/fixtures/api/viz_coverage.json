@@ -3210,6 +3210,7 @@
       "observation_dimensions": [
         "boundary_vintage",
         "measure",
+        "month",
         "observation_basis",
         "station_count",
         "station_ids"

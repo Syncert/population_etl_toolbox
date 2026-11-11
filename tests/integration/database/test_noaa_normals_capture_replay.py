@@ -359,3 +359,80 @@ def test_the_harvest_names_six_measures(normals_warehouse) -> None:
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'NOAA_NORMALS'",
     ) == [(6,)]
+
+
+def test_monthly_normals_publish_twelve_months_per_county(normals_warehouse) -> None:
+    """Covers: ETL-069 — the monthly archive: twelve calendar months per element, apart from annual."""
+    factory = normals_warehouse
+    annual_run, *_ = normals.run_to_gold(factory)
+    run_id, status, written, published = normals.run_to_gold(factory, product="monthly")
+    # Two stations x twelve months x seven elements: 168 monthly normals.
+    assert (status, written, published) == ("captured", 168, 1)
+    assert _rows(
+        factory,
+        "SELECT product FROM control.noaa_normals_file WHERE run_id = %s",
+        (str(run_id),),
+    ) == [("monthly",)]
+    # Wilmington is placed in New Castle County; Madison falls inside none of
+    # the seeded boundaries.
+    assert _rows(
+        factory,
+        """
+        SELECT station_id, geography_status, geo_id FROM silver_noaa_normals.station
+        WHERE run_id = %s ORDER BY station_id
+        """,
+        (str(run_id),),
+    ) == [
+        ("USW00013781", "resolved", normals.NEW_CASTLE),
+        ("USW00014837", "unmapped", None),
+    ]
+    served = _rows(
+        factory,
+        """
+        SELECT month, value, period_start::TEXT, period_end::TEXT, station_ids
+        FROM gold_noaa_normals.observation_latest
+        WHERE metric_key = 'monthly_mean_temperature' AND geo_id = %s
+        ORDER BY month
+        """,
+        (normals.NEW_CASTLE,),
+    )
+    assert [row[0] for row in served] == list(range(1, 13))
+    # January and July as NCEI published them for the one station.
+    assert served[0][1:] == (
+        Decimal("33.50"),
+        "1991-01-01",
+        "2020-01-31",
+        "USW00013781",
+    )
+    assert served[1][3] == "2020-02-29"
+    assert served[6][1] == Decimal("77.60")
+    # The annual normals keep their own rows, with no month.
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(*) FROM gold_noaa_normals.observation_latest
+        WHERE metric_key LIKE 'annual_%%' AND month IS NOT NULL
+        """,
+    ) == [(0,)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM gold_noaa_normals.observation_latest WHERE run_id = %s",
+        (str(annual_run),),
+    ) != [(0,)]
+    # A second monthly read of the same bytes is unchanged and writes nothing,
+    # and does not mask the annual archive's own comparison.
+    _run, again, rewritten, _ = normals.run_to_gold(factory, product="monthly")
+    assert (again, rewritten) == ("unchanged", 0)
+    _run, annual_again, *_ = normals.run_to_gold(factory)
+    assert annual_again == "unchanged"
+    grains = dict(
+        _rows(
+            factory,
+            """
+            SELECT source_object_key, valid_time_grains[1]
+            FROM gold_noaa_normals.metric_publisher
+            WHERE source_object_key IN ('monthly_snowfall', 'annual_precipitation')
+            """,
+        )
+    )
+    assert grains == {"monthly_snowfall": "MONTHLY", "annual_precipitation": "ANNUAL"}

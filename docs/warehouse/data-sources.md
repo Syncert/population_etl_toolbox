@@ -450,11 +450,11 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Publisher releases:** Once per decade
 - **Credential:** none
 - **Years:** 30-year normals, labelled 2020
-- **Datasets:** annual/seasonal multivariate by station archive
-- **Measures:** Annual mean, max and min temperature, precipitation, heating and cooling degree days: mean of stations placed in the county.
+- **Datasets:** annual/seasonal and monthly multivariate by station archives
+- **Measures:** Annual mean, max and min temperature, precipitation, heating and cooling degree days; the same by calendar month plus monthly snowfall: mean of stations placed in the county.
 - **Capture and control:** `control.noaa_normals_file`
-- **Silver:** `silver_noaa_normals.station`, `silver_noaa_normals.station_normal`
-- **Gold:** `gold_noaa_normals.station_observation`, `gold_noaa_normals.observation_revision`, `gold_noaa_normals.observation_latest`
+- **Silver:** `silver_noaa_normals.station`, `silver_noaa_normals.station_normal`, `silver_noaa_normals.station_monthly_normal`
+- **Gold:** `gold_noaa_normals.station_observation`, `gold_noaa_normals.station_monthly_observation`, `gold_noaa_normals.observation_revision`, `gold_noaa_normals.observation_latest`
 - **Status (live count 2026-10-31):** Loaded. The 1991–2020 normals (period 2020).
 
 ## Schools and broadband

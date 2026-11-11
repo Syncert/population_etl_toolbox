@@ -20,7 +20,7 @@ import httpx
 from data_ingestion_toolbox.capture import allowlisted_response_headers
 
 from .config import NormalsConfig
-from .registry import ARCHIVE_PATH, NORMALS_BASE_URL, STATION_COLUMNS
+from .registry import ANNUAL, ARCHIVE_PATH, PRODUCTS, STATION_COLUMNS
 
 
 class NormalsFetchError(RuntimeError):
@@ -48,7 +48,9 @@ class NormalsResponse:
     http_status: int
 
 
-def station_files(raw_bytes: bytes) -> Iterator[tuple[str, bytes]]:
+def station_files(
+    raw_bytes: bytes, path: str = ARCHIVE_PATH
+) -> Iterator[tuple[str, bytes]]:
     """(member name, bytes) for each CSV in the archive, or NormalsPayloadError."""
     try:
         archive = tarfile.open(fileobj=io.BytesIO(raw_bytes), mode="r:gz")
@@ -58,12 +60,12 @@ def station_files(raw_bytes: bytes) -> Iterator[tuple[str, bytes]]:
                 if extracted is not None:
                     yield member.name, extracted.read()
     except (tarfile.TarError, OSError, EOFError) as exc:
-        raise NormalsPayloadError(ARCHIVE_PATH, code="not_an_archive") from exc
+        raise NormalsPayloadError(path, code="not_an_archive") from exc
 
 
-def check_archive(raw_bytes: bytes) -> None:
+def check_archive(raw_bytes: bytes, path: str = ARCHIVE_PATH) -> None:
     """Raise NormalsPayloadError unless the first station file has the station columns."""
-    for _name, content in station_files(raw_bytes):
+    for _name, content in station_files(raw_bytes, path):
         header = next(
             csv.reader(
                 io.StringIO(content.decode("utf-8", "replace").split("\n", 1)[0])
@@ -71,9 +73,9 @@ def check_archive(raw_bytes: bytes) -> None:
             [],
         )
         if not STATION_COLUMNS <= {column.strip() for column in header}:
-            raise NormalsPayloadError(ARCHIVE_PATH, code="unexpected_header")
+            raise NormalsPayloadError(path, code="unexpected_header")
         return
-    raise NormalsPayloadError(ARCHIVE_PATH, code="empty_archive")
+    raise NormalsPayloadError(path, code="empty_archive")
 
 
 def fetch_archive(
@@ -82,10 +84,12 @@ def fetch_archive(
     client: Any | None = None,
     on_retry: Callable[[BaseException], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    product: str = ANNUAL,
 ) -> NormalsResponse:
-    """Fetch the registered archive and check it."""
+    """Fetch one registered archive (annual/seasonal by default) and check it."""
     config = config or NormalsConfig()
-    path = ARCHIVE_PATH
+    registered = PRODUCTS[product]
+    path = registered.path
     own_client = client is None
     active = client or httpx.Client(
         timeout=config.timeout_seconds, follow_redirects=True
@@ -96,7 +100,7 @@ def fetch_archive(
         for attempt in range(1, config.max_attempts + 1):
             try:
                 response = active.get(
-                    f"{NORMALS_BASE_URL}{path}",
+                    f"{registered.base_url}{path}",
                     headers={"User-Agent": config.user_agent},
                 )
             except httpx.HTTPError as exc:
@@ -107,7 +111,7 @@ def fetch_archive(
                 headers = allowlisted_response_headers(dict(response.headers))
                 response.close()
                 if response.status_code < 400:
-                    check_archive(raw_bytes)
+                    check_archive(raw_bytes, path)
                     return NormalsResponse(
                         path, raw_bytes, headers, response.status_code
                     )

@@ -22,6 +22,7 @@ from psycopg2.extras import execute_values
 from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..config import SOURCE_CODE
+from ..registry import ANNUAL, PRODUCTS
 from .parse import parse_archive
 
 
@@ -33,8 +34,13 @@ class NormalsPublicationError(RuntimeError):
     """A run has not reached the silver publication gate."""
 
 
-def _record_id(station_id: str, variable: str, capture_id: str) -> str:
-    return hashlib.md5(f"{station_id}|{variable}|{capture_id}".encode()).hexdigest()
+def _record_id(
+    station_id: str, variable: str, capture_id: str, month: int | None = None
+) -> str:
+    key = f"{station_id}|{variable}|{capture_id}"
+    if month is not None:
+        key += f"|{month:02d}"
+    return hashlib.md5(key.encode()).hexdigest()
 
 
 _ASSIGN_COUNTIES = """
@@ -94,18 +100,27 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT capture_id::TEXT, status FROM control.noaa_normals_file WHERE run_id = %s",
+                """
+                SELECT capture_id::TEXT, status, product
+                FROM control.noaa_normals_file WHERE run_id = %s
+                """,
                 (str(run_id),),
             )
             row = cursor.fetchone()
             if row is None:
                 raise NormalsReconciliationError("run has no captured normals archive")
-            capture_id, status = row
+            capture_id, status, product = row
             if status == "unchanged":
                 connection.commit()
                 return 0
+            monthly = product != ANNUAL
+            normal_table = (
+                "silver_noaa_normals.station_monthly_normal"
+                if monthly
+                else "silver_noaa_normals.station_normal"
+            )
             parsed = parse_archive(
-                load_captured_payload(connection_factory, UUID(capture_id))
+                load_captured_payload(connection_factory, UUID(capture_id)), product
             )
             if parsed.stations:
                 execute_values(
@@ -135,7 +150,41 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     page_size=5000,
                 )
                 cursor.execute(_ASSIGN_COUNTIES, {"run_id": str(run_id)})
-            if parsed.observations:
+            if parsed.observations and monthly:
+                execute_values(
+                    cursor,
+                    """
+                    INSERT INTO silver_noaa_normals.station_monthly_normal (
+                        run_id, station_id, variable, month, measure, capture_id, value_source,
+                        value, value_status, missing_reason, measurement_flag, completeness_flag,
+                        years, source_record_id
+                    ) VALUES %s
+                    ON CONFLICT (run_id, station_id, variable, month) DO NOTHING
+                    """,
+                    [
+                        (
+                            str(run_id),
+                            obs.station_id,
+                            obs.variable,
+                            obs.month,
+                            obs.measure,
+                            capture_id,
+                            obs.value_source,
+                            obs.value,
+                            obs.value_status,
+                            obs.missing_reason,
+                            obs.measurement_flag,
+                            obs.completeness_flag,
+                            obs.years,
+                            _record_id(
+                                obs.station_id, obs.variable, capture_id, obs.month
+                            ),
+                        )
+                        for obs in parsed.observations
+                    ],
+                    page_size=10000,
+                )
+            elif parsed.observations:
                 execute_values(
                     cursor,
                     """
@@ -211,7 +260,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     source_code, source_label, source_vintage, geo_sk,
                     resolution_method, evidence_capture_id, status, reason_code
                 )
-                SELECT %s, 'normals_annualseasonal_1991_2020', 'station',
+                SELECT %s, %s, 'station',
                        station.station_id, NULL, COALESCE(station.boundary_vintage, 0), station.geo_sk,
                        NULL, station.capture_id,
                        CASE WHEN station.geography_status = 'resolved' THEN 'resolved'
@@ -233,12 +282,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                       IS DISTINCT FROM
                       (EXCLUDED.geo_sk, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
-                (SOURCE_CODE, str(run_id)),
+                (SOURCE_CODE, PRODUCTS[product].dataset, str(run_id)),
             )
             cursor.execute(
-                """
+                f"""
                 SELECT (SELECT COUNT(*) FROM silver_noaa_normals.station WHERE run_id = %s),
-                       (SELECT COUNT(*) FROM silver_noaa_normals.station_normal WHERE run_id = %s)
+                       (SELECT COUNT(*) FROM {normal_table} WHERE run_id = %s)
                 """,
                 (str(run_id), str(run_id)),
             )
@@ -335,9 +384,11 @@ def settle_unreplayed_runs(connection_factory: Callable[[], Any]) -> list[UUID]:
                      WHERE run_id = %s
                        AND status = 'captured'
                        AND payload_checksum = (
-                           SELECT payload_checksum FROM control.noaa_normals_file
-                            WHERE status = 'published'
-                            ORDER BY published_at DESC LIMIT 1
+                           SELECT published.payload_checksum
+                             FROM control.noaa_normals_file AS published
+                            WHERE published.status = 'published'
+                              AND published.product = control.noaa_normals_file.product
+                            ORDER BY published.published_at DESC LIMIT 1
                        )
                     """,
                     (run_id,),

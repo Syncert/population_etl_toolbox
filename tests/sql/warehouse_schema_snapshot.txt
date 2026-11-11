@@ -981,9 +981,11 @@ r control.noaa_normals_file
     column published_at timestamp with time zone
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    column product text NOT NULL DEFAULT 'annualseasonal'::text
     constraint noaa_normals_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint noaa_normals_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
     constraint noaa_normals_file_pkey PRIMARY KEY (run_id)
+    constraint noaa_normals_file_product_check CHECK ((product = ANY (ARRAY['annualseasonal'::text, 'monthly'::text])))
     constraint noaa_normals_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
     constraint noaa_normals_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint noaa_normals_file_station_count_check CHECK ((station_count >= 0))
@@ -11228,11 +11230,29 @@ v gold_noaa_normals.measure_definition
     column measure_label text
     column unit text
     column observation_basis text
+    column time_grain text
     body SELECT measure,
     body     measure_label,
     body     unit,
-    body     (((((('NOAA U.S. Climate Normals 1991-2020 (annual/seasonal, by station): a 30-year normal, '::text || 'not the value of any one year. NCEI publishes normals for stations, not counties; this '::text) || 'warehouse''s county figure is the unweighted mean of the stations it places inside the '::text) || 'county boundary, counting only stations NCEI flags standard (S) or representative (R) '::text) || 'for that element. It is a derived summary, not an NCEI product. '::text) || statistic) || ' Source: NOAA National Centers for Environmental Information, '::text) || 'U.S. Climate Normals 1991-2020.'::text AS observation_basis
-    body    FROM ( VALUES ('annual_mean_temperature'::text,'Annual mean temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TAVG-NORMAL.'::text), ('annual_mean_maximum_temperature'::text,'Annual mean daily maximum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMAX-NORMAL.'::text), ('annual_mean_minimum_temperature'::text,'Annual mean daily minimum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMIN-NORMAL.'::text), ('annual_precipitation'::text,'Annual precipitation normal, county station mean'::text,'inches'::text,'NCEI element ANN-PRCP-NORMAL.'::text), ('annual_heating_degree_days'::text,'Annual heating degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-HTDD-NORMAL.'::text), ('annual_cooling_degree_days'::text,'Annual cooling degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-CLDD-NORMAL.'::text)) measure(measure, measure_label, unit, statistic);
+    body     ((((((((((('NOAA U.S. Climate Normals 1991-2020 ('::text || archive) || ', by station): a 30-year '::text) || 'normal, not the value of any one year'::text) || period_note) || '. NCEI publishes '::text) || 'normals for stations, not counties; this warehouse''s county figure is the unweighted '::text) || 'mean of the stations it places inside the county boundary, counting only stations NCEI '::text) || 'flags standard (S) or representative (R) for that element. It is a derived summary, '::text) || 'not an NCEI product. '::text) || statistic) || ' Source: NOAA National Centers for '::text) || 'Environmental Information, U.S. Climate Normals 1991-2020.'::text AS observation_basis,
+    body     time_grain
+    body    FROM ( SELECT annual.measure,
+    body             annual.measure_label,
+    body             annual.unit,
+    body             annual.statistic,
+    body             'annual/seasonal'::text AS archive,
+    body             ''::text AS period_note,
+    body             'ANNUAL'::text AS time_grain
+    body            FROM ( VALUES ('annual_mean_temperature'::text,'Annual mean temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TAVG-NORMAL.'::text), ('annual_mean_maximum_temperature'::text,'Annual mean daily maximum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMAX-NORMAL.'::text), ('annual_mean_minimum_temperature'::text,'Annual mean daily minimum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element ANN-TMIN-NORMAL.'::text), ('annual_precipitation'::text,'Annual precipitation normal, county station mean'::text,'inches'::text,'NCEI element ANN-PRCP-NORMAL.'::text), ('annual_heating_degree_days'::text,'Annual heating degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-HTDD-NORMAL.'::text), ('annual_cooling_degree_days'::text,'Annual cooling degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element ANN-CLDD-NORMAL.'::text)) annual(measure, measure_label, unit, statistic)
+    body         UNION ALL
+    body          SELECT monthly.measure,
+    body             monthly.measure_label,
+    body             monthly.unit,
+    body             monthly.statistic,
+    body             'monthly'::text AS text,
+    body             '; each row is one calendar month of the 1991-2020 normals (the period shown is '::text || 'that month in 1991 to that month in 2020)'::text,
+    body             'MONTHLY'::text AS text
+    body            FROM ( VALUES ('monthly_mean_temperature'::text,'Monthly mean temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element MLY-TAVG-NORMAL.'::text), ('monthly_mean_maximum_temperature'::text,'Monthly mean daily maximum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element MLY-TMAX-NORMAL.'::text), ('monthly_mean_minimum_temperature'::text,'Monthly mean daily minimum temperature normal, county station mean'::text,'degrees Fahrenheit'::text,'NCEI element MLY-TMIN-NORMAL.'::text), ('monthly_precipitation'::text,'Monthly precipitation normal, county station mean'::text,'inches'::text,'NCEI element MLY-PRCP-NORMAL.'::text), ('monthly_snowfall'::text,'Monthly snowfall normal, county station mean'::text,'inches'::text,'NCEI element MLY-SNOW-NORMAL; only stations that measure snowfall are counted.'::text), ('monthly_heating_degree_days'::text,'Monthly heating degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element MLY-HTDD-NORMAL.'::text), ('monthly_cooling_degree_days'::text,'Monthly cooling degree days normal (base 65 F), county station mean'::text,'degree days (base 65 F)'::text,'NCEI element MLY-CLDD-NORMAL.'::text)) monthly(measure, measure_label, unit, statistic)) measure;
 
 v gold_noaa_normals.measure_export
     column source_object_key text
@@ -11241,12 +11261,14 @@ v gold_noaa_normals.measure_export
     column unit text
     column observation_basis text
     column schema_version text
+    column time_grain text
     body SELECT measure AS source_object_key,
     body     measure,
     body     measure_label,
     body     unit,
     body     observation_basis,
-    body     'noaa_normals_csv:v1'::text AS schema_version
+    body     'noaa_normals_csv:v1'::text AS schema_version,
+    body     time_grain
     body    FROM gold_noaa_normals.measure_definition;
 
 v gold_noaa_normals.metric_publisher
@@ -11275,7 +11297,7 @@ v gold_noaa_normals.metric_publisher
     body     export.unit AS units,
     body     'derived_summary'::text AS measure_kind,
     body     served.valid_geo_grains,
-    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     ARRAY[export.time_grain] AS valid_time_grains,
     body     NULL::text AS aggregation_characteristic,
     body     jsonb_build_object('schema', 'gold_noaa_normals', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
     body     served.source_watermark,
@@ -11317,7 +11339,8 @@ v gold_noaa_normals.observation_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
-    body SELECT DISTINCT ON (metric_key, geo_id, year) metric_key,
+    column month smallint
+    body SELECT DISTINCT ON (metric_key, geo_id, year, month) metric_key,
     body     measure_label,
     body     unit,
     body     observation_basis,
@@ -11338,9 +11361,10 @@ v gold_noaa_normals.observation_latest
     body     published_at,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     month
     body    FROM gold_noaa_normals.observation_revision revision
-    body   ORDER BY metric_key, geo_id, year, published_at DESC, run_id DESC;
+    body   ORDER BY metric_key, geo_id, year, month, published_at DESC, run_id DESC;
 
 v gold_noaa_normals.observation_revision
     column metric_key text
@@ -11365,36 +11389,39 @@ v gold_noaa_normals.observation_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column month smallint
     body WITH eligible AS (
     body          SELECT station.run_id,
-    body             station.station_id,
-    body             station.station_name,
-    body             station.latitude,
-    body             station.longitude,
-    body             station.elevation_m,
+    body             station.measure,
+    body             NULL::smallint AS month,
     body             station.geo_id,
     body             station.geo_sk,
-    body             station.boundary_vintage,
-    body             station.geography_status,
-    body             station.geography_reason,
-    body             station.variable,
-    body             station.measure,
-    body             station.value_source,
     body             station.value,
-    body             station.value_status,
-    body             station.missing_reason,
-    body             station.measurement_flag,
-    body             station.completeness_flag,
-    body             station.years,
-    body             station.source_record_id,
-    body             station.capture_id,
+    body             station.station_id,
+    body             station.boundary_vintage,
     body             station.archive_version,
+    body             station.capture_id,
     body             station.published_at
     body            FROM gold_noaa_normals.station_observation station
+    body           WHERE station.geography_status = 'resolved'::text AND (station.completeness_flag = ANY (ARRAY['S'::text, 'R'::text])) AND station.value_status = 'valid'::text
+    body         UNION ALL
+    body          SELECT station.run_id,
+    body             station.measure,
+    body             station.month,
+    body             station.geo_id,
+    body             station.geo_sk,
+    body             station.value,
+    body             station.station_id,
+    body             station.boundary_vintage,
+    body             station.archive_version,
+    body             station.capture_id,
+    body             station.published_at
+    body            FROM gold_noaa_normals.station_monthly_observation station
     body           WHERE station.geography_status = 'resolved'::text AND (station.completeness_flag = ANY (ARRAY['S'::text, 'R'::text])) AND station.value_status = 'valid'::text
     body         ), county AS (
     body          SELECT eligible.run_id,
     body             eligible.measure,
+    body             eligible.month,
     body             eligible.geo_id,
     body             min(eligible.geo_sk) AS geo_sk,
     body             round(avg(eligible.value), 2) AS value,
@@ -11405,15 +11432,15 @@ v gold_noaa_normals.observation_revision
     body             min(eligible.capture_id::text)::uuid AS capture_id,
     body             min(eligible.published_at) AS published_at
     body            FROM eligible
-    body           GROUP BY eligible.run_id, eligible.measure, eligible.geo_id
+    body           GROUP BY eligible.run_id, eligible.measure, eligible.month, eligible.geo_id
     body         )
     body  SELECT county.measure AS metric_key,
     body     definition.measure_label,
     body     definition.unit,
     body     definition.observation_basis,
     body     2020 AS year,
-    body     '1991-01-01'::date AS period_start,
-    body     '2020-12-31'::date AS period_end,
+    body     COALESCE(make_date(1991, county.month::integer, 1), '1991-01-01'::date) AS period_start,
+    body     COALESCE((make_date(2020, county.month::integer, 1) + '1 mon -1 days'::interval)::date, '2020-12-31'::date) AS period_end,
     body     county.geo_id,
     body     county.geo_sk,
     body     'county'::text AS geo_type,
@@ -11426,11 +11453,68 @@ v gold_noaa_normals.observation_revision
     body     county.boundary_vintage,
     body     (('Normals 1991-2020 '::text || county.archive_version) || ' read '::text) || to_char((county.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'::text) AS release_key,
     body     county.published_at,
-    body     md5((((county.measure || '|'::text) || county.geo_id) || '|'::text) || county.run_id::text) AS source_record_id,
+    body     md5(((((county.measure || '|'::text) || county.geo_id) || '|'::text) || county.run_id::text) || COALESCE('|'::text || lpad(county.month::text, 2, '0'::text), ''::text)) AS source_record_id,
     body     county.capture_id,
-    body     county.run_id
+    body     county.run_id,
+    body     county.month
     body    FROM county
     body      JOIN gold_noaa_normals.measure_definition definition ON definition.measure = county.measure;
+
+v gold_noaa_normals.station_monthly_observation
+    column run_id uuid
+    column station_id text
+    column station_name text
+    column latitude numeric
+    column longitude numeric
+    column elevation_m numeric
+    column geo_id text
+    column geo_sk bigint
+    column boundary_vintage integer
+    column geography_status text
+    column geography_reason text
+    column variable text
+    column measure text
+    column month smallint
+    column value_source text
+    column value numeric
+    column value_status text
+    column missing_reason text
+    column measurement_flag text
+    column completeness_flag text
+    column years integer
+    column source_record_id text
+    column capture_id uuid
+    column archive_version text
+    column published_at timestamp with time zone
+    body SELECT normal.run_id,
+    body     normal.station_id,
+    body     station.station_name,
+    body     station.latitude,
+    body     station.longitude,
+    body     station.elevation_m,
+    body     station.geo_id,
+    body     station.geo_sk,
+    body     station.boundary_vintage,
+    body     station.geography_status,
+    body     station.geography_reason,
+    body     normal.variable,
+    body     normal.measure,
+    body     normal.month,
+    body     normal.value_source,
+    body     normal.value,
+    body     normal.value_status,
+    body     normal.missing_reason,
+    body     normal.measurement_flag,
+    body     normal.completeness_flag,
+    body     normal.years,
+    body     normal.source_record_id,
+    body     normal.capture_id,
+    body     file.archive_version,
+    body     file.published_at
+    body    FROM silver_noaa_normals.station_monthly_normal normal
+    body      JOIN silver_noaa_normals.station station ON station.run_id = normal.run_id AND station.station_id = normal.station_id
+    body      JOIN control.noaa_normals_file file ON file.run_id = normal.run_id
+    body   WHERE file.status = 'published'::text;
 
 v gold_noaa_normals.station_observation
     column run_id uuid
@@ -15116,6 +15200,39 @@ r silver_noaa_normals.station
     constraint station_station_id_check CHECK ((station_id ~ '^[A-Za-z0-9_]{11}$'::text))
     index noaa_normals_station_county_idx CREATE INDEX noaa_normals_station_county_idx ON silver_noaa_normals.station USING btree (geo_id)
     index station_pkey CREATE UNIQUE INDEX station_pkey ON silver_noaa_normals.station USING btree (run_id, station_id)
+
+r silver_noaa_normals.station_monthly_normal
+    column run_id uuid NOT NULL
+    column station_id text NOT NULL
+    column variable text NOT NULL
+    column month smallint NOT NULL
+    column measure text NOT NULL
+    column capture_id uuid NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column missing_reason text
+    column measurement_flag text
+    column completeness_flag text
+    column years integer
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint noaa_normals_monthly_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint noaa_normals_monthly_withheld_has_reason CHECK (((value_status = 'valid'::text) = (missing_reason IS NULL)))
+    constraint noaa_normals_monthly_withheld_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint station_monthly_normal_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint station_monthly_normal_completeness_flag_check CHECK (((completeness_flag IS NULL) OR (completeness_flag = ANY (ARRAY['S'::text, 'R'::text, 'P'::text, 'E'::text]))))
+    constraint station_monthly_normal_measure_check CHECK ((measure = ANY (ARRAY['monthly_mean_temperature'::text, 'monthly_mean_maximum_temperature'::text, 'monthly_mean_minimum_temperature'::text, 'monthly_precipitation'::text, 'monthly_snowfall'::text, 'monthly_heating_degree_days'::text, 'monthly_cooling_degree_days'::text])))
+    constraint station_monthly_normal_measurement_flag_check CHECK (((measurement_flag IS NULL) OR (measurement_flag = ANY (ARRAY['M'::text, 'V'::text, 'X'::text, 'Y'::text, 'Z'::text]))))
+    constraint station_monthly_normal_missing_reason_check CHECK (((missing_reason IS NULL) OR (missing_reason = ANY (ARRAY['missing'::text, 'too_cold_to_compute'::text, 'insufficient_values'::text, 'blank'::text]))))
+    constraint station_monthly_normal_month_check CHECK (((month >= 1) AND (month <= 12)))
+    constraint station_monthly_normal_pkey PRIMARY KEY (run_id, station_id, variable, month)
+    constraint station_monthly_normal_run_id_station_id_fkey FOREIGN KEY (run_id, station_id) REFERENCES silver_noaa_normals.station(run_id, station_id)
+    constraint station_monthly_normal_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{32}$'::text))
+    constraint station_monthly_normal_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    constraint station_monthly_normal_years_check CHECK (((years IS NULL) OR ((years >= 0) AND (years <= 30))))
+    index noaa_normals_station_monthly_normal_measure_idx CREATE INDEX noaa_normals_station_monthly_normal_measure_idx ON silver_noaa_normals.station_monthly_normal USING btree (run_id, measure, month)
+    index station_monthly_normal_pkey CREATE UNIQUE INDEX station_monthly_normal_pkey ON silver_noaa_normals.station_monthly_normal USING btree (run_id, station_id, variable, month)
 
 r silver_noaa_normals.station_normal
     column run_id uuid NOT NULL
