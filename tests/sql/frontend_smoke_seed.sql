@@ -108,6 +108,7 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
+    ('00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
     ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
@@ -156,6 +157,8 @@ INSERT INTO control.ingestion_request (
      'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured'),
     ('00000000-0000-4000-9000-0000000000aa', '00000000-0000-4000-8000-0000000000aa',
      'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
+    ('00000000-0000-4000-9000-000000000cd1', '00000000-0000-4000-8000-000000000cd1',
+     'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB, 'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', 'captured'),
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
@@ -238,6 +241,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-0000000000aa', '00000000-0000-4000-9000-0000000000aa',
      '00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB,
      '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000cd1', '00000000-0000-4000-9000-000000000cd1',
+     '00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB,
+     'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
      '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
@@ -1011,6 +1018,31 @@ INSERT INTO silver_noaa_normals.station_normal (
 ) ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NOAA nClimDiv -- one published county month of one element, as NCEI
+-- writes it. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_climdiv_file (
+    run_id, file_element, file_name, version, release_stamp, capture_id,
+    payload_checksum, line_count, value_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000cd1', 'pcpn', 'climdiv-pcpncy-v1.0.0-20981231', '1.0.0', '20981231',
+    '00000000-0000-4000-a000-000000000cd1', '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_climdiv.county_month (
+    ncei_state_code, county_fips, measure, year, month, state_fips, geo_id, geo_sk,
+    geography_status, value_source, value, value_status, run_id, capture_id,
+    source_line, source_record_id
+)
+SELECT '47', '025', 'monthly_precipitation_total', 2098, 7, '55', 'state:55|county:025', geo_sk,
+       'resolved', '4.12', 4.12, 'valid', '00000000-0000-4000-8000-000000000cd1', '00000000-0000-4000-a000-000000000cd1', 1,
+       'b64f3958a8808f44a79cc8b2bb97f72c'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- FCC Broadband Data Collection -- one county's availability shares for
 -- one technology, served from views over a published read. COUNTY only.
 -- ---------------------------------------------------------------------------
@@ -1333,6 +1365,7 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_lodes.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_normals.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_climdiv.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fema_nri.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_elections.metric_publisher
