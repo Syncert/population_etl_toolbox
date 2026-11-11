@@ -2307,6 +2307,116 @@ def normals_value_and_geography(
     ]
 
 
+def climdiv_file_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-CLIMDIV-002 — no file left unreplayed; no stored month names an unpublished file."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.noaa_climdiv_file")
+    if total == 0:
+        return [RuleOutcome("control.noaa_climdiv_file", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, file.file_element, file.file_name, file.status
+          FROM control.noaa_climdiv_file AS file
+         WHERE file.status IN ('captured', 'silver_ready')
+        """,
+        order_by="1, 2",
+    )
+    # The current table holds about 30 million rows, so it is not scanned:
+    # every ledger row whose file is not published is checked for stored
+    # months through the run index. A month can only be written by a run the
+    # ledger records, because its capture is that run's.
+    orphans, orphans_total = _offenders(
+        cursor,
+        """
+        SELECT file.run_id, definition.measure, file.status
+          FROM control.noaa_climdiv_file AS file
+          JOIN gold_noaa_climdiv.measure_definition AS definition
+            ON definition.file_element = file.file_element
+         WHERE file.status <> 'published'
+           AND EXISTS (
+                SELECT 1 FROM silver_noaa_climdiv.county_month AS value_row
+                 WHERE value_row.run_id = file.run_id
+                   AND value_row.measure = definition.measure
+               )
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.noaa_climdiv_file",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "silver_noaa_climdiv.county_month",
+            "fail" if orphans else "pass",
+            observed_count=orphans_total,
+            expected_count=0,
+            evidence=orphans[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def climdiv_value_range(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-CLIMDIV-004 — no negative accumulation; temperatures within -50 to 140 F.
+
+    Checks the rows of each element's newest published run, which are the
+    only rows that run changed.
+    """
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.noaa_climdiv_file WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_noaa_climdiv.county_month", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT value_row.ncei_state_code, value_row.county_fips, value_row.measure,
+               value_row.year, value_row.month, value_row.value_source
+          FROM silver_noaa_climdiv.county_month AS value_row
+         -- Only the rows each element's newest published run wrote: an older
+         -- run's rows were checked while it was the newest, and a full scan
+         -- of about 30 million rows every day would repeat that work.
+         WHERE value_row.run_id IN (
+                SELECT file.run_id
+                  FROM control.noaa_climdiv_file AS file
+                 WHERE file.status = 'published'
+                   AND NOT EXISTS (
+                        SELECT 1 FROM control.noaa_climdiv_file AS newer
+                         WHERE newer.file_element = file.file_element
+                           AND newer.status = 'published'
+                           AND newer.published_at > file.published_at
+                       )
+               )
+           AND value_row.value_status = 'valid'
+           AND ((value_row.value < 0 AND value_row.measure IN (
+                    'monthly_precipitation_total', 'monthly_heating_degree_days',
+                    'monthly_cooling_degree_days'))
+                OR (value_row.measure IN (
+                    'monthly_average_temperature', 'monthly_maximum_temperature',
+                    'monthly_minimum_temperature')
+                    AND value_row.value NOT BETWEEN -50 AND 140))
+        """,
+        order_by="1, 2, 3, 4, 5",
+    )
+    return [
+        RuleOutcome(
+            "silver_noaa_climdiv.county_month",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def bdc_read_reconciliation(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-FCC-002 — no vintage left unreplayed; every replayed one reached silver."""
     del scope
@@ -4969,6 +5079,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-AQS-004": aqs_value_and_geography,
     "DQ-NOAA-002": normals_file_reconciliation,
     "DQ-NOAA-004": normals_value_and_geography,
+    "DQ-CLIMDIV-002": climdiv_file_reconciliation,
+    "DQ-CLIMDIV-004": climdiv_value_range,
     "DQ-LODES-002": lodes_slice_reconciliation,
     "DQ-LODES-004": lodes_od_workplace_agreement,
     "DQ-LODES-005": lodes_served_sums,

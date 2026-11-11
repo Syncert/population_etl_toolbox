@@ -219,11 +219,12 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # forty-six, the IRS SOI income grain (DQ-SOI-001) forty-seven, and
     # government finance's grain and conformance rules (DQ-GOVFIN-001 and -002)
     # forty-nine, and the NDCP childcare prices' grain and conformance rules
-    # (DQ-NDCP-001 and -002) fifty-one.
+    # (DQ-NDCP-001 and -002) fifty-one, and the nClimDiv county series' grain
+    # and conformance rules (DQ-CLIMDIV-001 and -003) fifty-three.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 51, enforced
+    assert len(enforced) == 53, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -455,6 +456,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "FBI_UCR",
         "EPA_AQS",
         "NOAA_NORMALS",
+        "NOAA_CLIMDIV",
         "FRED",
         "IRS_MIGRATION",
         "USDA_NASS",

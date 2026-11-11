@@ -75,6 +75,7 @@ SOURCES: tuple[str, ...] = (
     "FCC_BDC",
     "EPA_AQS",
     "NOAA_NORMALS",
+    "NOAA_CLIMDIV",
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
@@ -3615,6 +3616,102 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# NOAA nClimDiv county monthly temperature and precipitation, 1895 onward.
+# ---------------------------------------------------------------------------
+
+_CLIMDIV_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_climdiv_file",
+        "control",
+        "NOAA_CLIMDIV",
+        grain="run_id, file_element",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the newest county file per registered element the NCEI directory lists",
+        cadence="monthly; a file name already published is already_loaded and is not downloaded",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_climdiv.quarantine",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable, out-of-range or repeated county line; populated only on failure",
+        cadence="per nClimDiv replay",
+        empty_behavior="empty when every line conformed",
+    ),
+    _obj(
+        "silver_noaa_climdiv.county_month",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="ncei_state_code, county_fips, measure, year, month",
+        lineage="control.noaa_climdiv_file, raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="the current published value of every county month; a month NCEI has not published is missing",
+        cadence="per nClimDiv replay; only changed or new months are written",
+        empty_behavior="a missing month carries no number, never 0",
+    ),
+    _obj(
+        "silver_noaa_climdiv.county_month_revision",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="ncei_state_code, county_fips, measure, year, month, run_id",
+        lineage="silver_noaa_climdiv.county_month",
+        scope_method="every value a later release replaced, as it was published",
+        cadence="per nClimDiv replay",
+        empty_behavior="empty until NCEI revises a published month",
+    ),
+    _obj(
+        "gold_noaa_climdiv.measure_definition",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="measure",
+        scope_method="the six registered monthly measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_noaa_climdiv.observation_revision",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="metric_key, geo_id, year, month, run_id",
+        lineage="silver_noaa_climdiv.county_month, silver_noaa_climdiv.county_month_revision, control.noaa_climdiv_file",
+        scope_method="every published value of a resolved county month, current and replaced",
+        cadence="per publication",
+        empty_behavior="a county the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_noaa_climdiv.observation_latest",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="metric_key, geo_id, year, month",
+        lineage="silver_noaa_climdiv.county_month, control.noaa_climdiv_file",
+        scope_method="the current published value of each resolved county month",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_climdiv.measure_export",
+        "publisher",
+        "NOAA_CLIMDIV",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_climdiv.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_noaa_climdiv.metric_publisher",
+        "publisher",
+        "NOAA_CLIMDIV",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_climdiv.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # FCC Broadband Data Collection (fixed availability summaries).
 # ---------------------------------------------------------------------------
 
@@ -4673,6 +4770,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _BDC_OBJECTS
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
+    + _CLIMDIV_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
@@ -5079,6 +5177,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls_qcew.metric_publisher",
             "gold_epa_aqs.metric_publisher",
             "gold_noaa_normals.metric_publisher",
+            "gold_noaa_climdiv.metric_publisher",
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
             "gold_fhfa_hpi.metric_publisher",
@@ -7506,6 +7605,98 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_noaa_normals.station_normal",
             "silver_noaa_normals.station_monthly_normal",
             "control.noaa_normals_file",
+        ),
+    ),
+    # -- NOAA nClimDiv county monthly series -----------------------------------
+    _rule(
+        "DQ-CLIMDIV-001",
+        "BLOCK",
+        "uniqueness",
+        "A county month is unique per (NCEI state code, county, measure, "
+        "year, month): a repeated line is quarantined, and a replaced value "
+        "is kept once per run in the revision table.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "silver_noaa_climdiv.county_month_revision",
+            "gold_noaa_climdiv.observation_revision",
+            "gold_noaa_climdiv.observation_latest",
+            "gold_noaa_climdiv.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("ncei_state_code", "county_fips", "measure", "year", "month"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month_revision",
+                (
+                    "ncei_state_code",
+                    "county_fips",
+                    "measure",
+                    "year",
+                    "month",
+                    "run_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and no stored county month "
+        "names a run whose file for that element was not published.",
+        (
+            "control.noaa_climdiv_file",
+            "silver_noaa_climdiv.quarantine",
+            "silver_noaa_climdiv.county_month",
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-003",
+        "BLOCK",
+        "conformance",
+        "A month NCEI has not published (its missing marker) carries no "
+        "number, and a valid one always does: no marker becomes a value.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "gold_noaa_climdiv.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "month without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_climdiv_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_climdiv_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-004",
+        "WARN",
+        "referential_integrity",
+        "No precipitation or degree-day month the newest published file "
+        "wrote is negative, and no temperature lies outside -50 to 140 "
+        "degrees F.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "control.noaa_climdiv_file",
         ),
     ),
     # -- FCC Broadband Data Collection (fixed availability) --------------------

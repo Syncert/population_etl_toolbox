@@ -1539,6 +1539,45 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
         ),
         ObservationDispatch(
+            source_code="NOAA_CLIMDIV",
+            latest_relation="gold_noaa_climdiv.observation_latest",
+            released_relation="gold_noaa_climdiv.observation_revision",
+            lineage_schema="gold_noaa_climdiv",
+            lineage_relation="observation_revision",
+            # One metric per nClimDiv element (`monthly_precipitation_total`),
+            # for counties only (WEATHER_AND_DISASTER_HISTORY_PLAN slice 2).
+            lineage_key_column="metric_key",
+            # `nClimDiv <file name>`: NCEI stamps each monthly release in the
+            # file name, and a revised month is a second reading.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the value NCEI publishes for the county and calendar month,
+                # an area-weighted average of its 5 km nClimGrid grid".
+                ("observation_basis", "observation_basis"),
+                # The calendar month (1 to 12) and the value as NCEI wrote it.
+                ("month", "month::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year", "month"),
+            released_order=("year", "month", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="FCC_BDC",
             latest_relation="gold_fcc_bdc.observation_latest",
             released_relation="gold_fcc_bdc.observation_revision",
@@ -2228,6 +2267,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name="NOAA U.S. Climate Normals 1991-2020",
             route_segment=None,
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NOAA_CLIMDIV",
+            display_name="NOAA nClimDiv county monthly temperature and precipitation",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

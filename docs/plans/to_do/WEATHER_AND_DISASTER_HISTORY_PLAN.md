@@ -36,6 +36,17 @@ stations, read through OFFICE_LAB) is a second `noaa_normals` product with
 its own run, `silver_noaa_normals.station_monthly_normal`, and seven
 `monthly_*` measures (snowfall added) served with `month` in the existing
 observation views (evidence: `test_monthly_normals_publish_twelve_months_per_county`).
+Slice 2 built 2026-11-11: new adapter `noaa_climdiv` reads the six county
+files of the newest release (2026-11-05: about 41 MB each, read through
+OFFICE_LAB) into `silver_noaa_climdiv.county_month`, writing only months
+whose published text changed and keeping replaced values in
+`county_month_revision`; missing markers are `missing`
+(`not_yet_published`). Served through `gold_noaa_climdiv` views and
+`/api/v1/observations` with `month` (evidence:
+`tests/integration/database/test_noaa_climdiv_capture_replay.py`,
+`tests/e2e/test_noaa_climdiv_pipeline.py`, ETL-126). The "same month across
+years" read is one county's series filtered by `dimensions.month`; no
+separate view was added. Speed gate on OFFICE_LAB after the first load.
 
 Decided by Nick 2026-11-11 16:16Z: zone-reported storm events are counted in
 every county the zone covers (Option A in Slice 1).

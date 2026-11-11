@@ -51,6 +51,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fcc_bdc_api",
     "epa_aqs_files",
     "noaa_normals_files",
+    "noaa_climdiv_files",
     "census_lodes_files",
     "census_cbp_files",
     "irs_soi_files",
@@ -1294,6 +1295,32 @@ def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)
 
 
+def stub_noaa_climdiv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed ten-line county files of the 20261105 release."""
+    from data_ingestion_toolbox.noaa_climdiv import capture as climdiv_capture
+    from data_ingestion_toolbox.noaa_climdiv.client import (
+        ClimdivFile,
+        ClimdivResponse,
+        check_county_file,
+        listed_files,
+    )
+    from tests.support.noaa_climdiv import fixture_files, listing
+
+    reviewed = fixture_files()
+
+    def fetch_listing(**_kwargs: Any) -> list[ClimdivFile]:
+        return listed_files(listing(sorted(reviewed)))
+
+    def fetch_county_file(file: ClimdivFile, **_kwargs: Any) -> ClimdivResponse:
+        check_county_file(reviewed[file.name], file)
+        return ClimdivResponse(
+            file.name, reviewed[file.name], {"content-type": "text/plain"}, 200
+        )
+
+    monkeypatch.setattr(climdiv_capture, "fetch_listing", fetch_listing)
+    monkeypatch.setattr(climdiv_capture, "fetch_county_file", fetch_county_file)
+
+
 def stub_fcc_bdc(monkeypatch: pytest.MonkeyPatch) -> None:
     """Answer the FCC broadband map API from the recorded fixtures, with stand-in credentials."""
     from data_ingestion_toolbox.fcc_bdc import capture as bdc_capture
@@ -1910,6 +1937,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_lodes", stub_census_lodes),
         ("epa_aqs", stub_epa_aqs),
         ("noaa_normals", stub_noaa_normals),
+        ("noaa_climdiv", stub_noaa_climdiv),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
         ("elections", stub_elections),

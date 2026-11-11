@@ -420,6 +420,11 @@ the 1991-2020 normals archive through the one-slot `noaa_normals_files` pool
 and places each station in the newest county boundary vintage loaded
 ([operations](../user-guides/NOAA_NORMALS_PIPELINE_OPERATIONS.md)).
 
+Trigger `noaa_climdiv_ingest` once after county boundaries load: it reads
+the six nClimDiv county files (about 41 MB each) through the one-slot
+`noaa_climdiv_files` pool and writes every county month from 1895
+([operations](../user-guides/NOAA_CLIMDIV_PIPELINE_OPERATIONS.md)).
+
 Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs
 `FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`): it reads each registered
 December vintage's national and per-state place summaries through the

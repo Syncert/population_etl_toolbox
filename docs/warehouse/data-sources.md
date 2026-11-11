@@ -49,6 +49,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
 | [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
+| [nClimDiv county monthly temperature and precipitation](#noaa_climdiv) | NOAA NCEI |  |  | ● |  |  |  |  | 1895–2026 | Monthly | Not loaded yet |
 | [Common Core of Data, public schools](#nces_ccd) | NCES |  | ◐ | ◐ |  |  |  |  | 2023–2024 | Quarterly | Loaded |
 | [National Broadband Map availability](#fcc_bdc) | FCC | ● | ● | ● |  | ● |  |  | 2024–2025 | Monthly | Loaded |
 | [Rural-urban codes, county typology, food atlas](#usda_ers) | USDA Economic Research Service |  |  | ● |  |  |  |  | 2015–2025 | Monthly | Loaded |
@@ -456,6 +457,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_noaa_normals.station`, `silver_noaa_normals.station_normal`, `silver_noaa_normals.station_monthly_normal`
 - **Gold:** `gold_noaa_normals.station_observation`, `gold_noaa_normals.station_monthly_observation`, `gold_noaa_normals.observation_revision`, `gold_noaa_normals.observation_latest`
 - **Status (live count 2026-10-31):** Loaded. The 1991–2020 normals (period 2020).
+
+<a id="noaa_climdiv"></a>
+### nClimDiv county monthly temperature and precipitation (`NOAA_CLIMDIV`)
+
+- **Publisher:** NOAA NCEI
+- **Code:** `src/data_ingestion_toolbox/noaa_climdiv` · DAG `noaa_climdiv_ingest` · Monthly, 12th 15:00 UTC
+- **Publisher releases:** Monthly; NCEI revises the latest two years each month
+- **Credential:** none
+- **Years:** Monthly from January 1895; degree days for the 48 contiguous states only
+- **Datasets:** climdiv county files `pcpn`, `tmpc`, `tmax`, `tmin`, `hddc`, `cddc`
+- **Measures:** Monthly precipitation, average, maximum and minimum temperature, heating and cooling degree days per county, as NCEI publishes them. Never added into annual figures.
+- **Capture and control:** `control.noaa_climdiv_file`
+- **Silver:** `silver_noaa_climdiv.county_month`, `silver_noaa_climdiv.county_month_revision`
+- **Gold:** `gold_noaa_climdiv.observation_revision`, `gold_noaa_climdiv.observation_latest`
+- **Status:** Not loaded yet (WEATHER_AND_DISASTER_HISTORY_PLAN slice 2). About 30 million county months, 4 to 5 GB.
 
 ## Schools and broadband
 

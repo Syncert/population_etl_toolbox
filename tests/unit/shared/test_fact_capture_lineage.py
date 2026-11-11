@@ -107,6 +107,12 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "NOAA_CLIMDIV",
+        SRC / "noaa_climdiv/DDL/silver_noaa_climdiv.sql",
+        "silver_noaa_climdiv.county_month",
+        "valid",
+    ),
+    FactContract(
         "EPA_AQS",
         SRC / "epa_aqs/DDL/silver_epa_aqs.sql",
         "silver_epa_aqs.monitor_fact",

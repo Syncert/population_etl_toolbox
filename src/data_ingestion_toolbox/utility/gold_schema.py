@@ -193,6 +193,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "FCC_BDC": "gold_ddl_fcc_bdc",
     "EPA_AQS": "gold_ddl_epa_aqs",
     "NOAA_NORMALS": "gold_ddl_noaa_normals",
+    "NOAA_CLIMDIV": "gold_ddl_noaa_climdiv",
     "CENSUS_LODES": "gold_ddl_census_lodes",
     "CENSUS_CBP": "gold_ddl_census_cbp",
     "CENSUS_BPS": "gold_ddl_census_bps",
