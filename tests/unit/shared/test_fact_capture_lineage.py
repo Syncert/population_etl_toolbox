@@ -120,6 +120,14 @@ FACTS = [
         "valid",
         value_column="current_fytd_amount",
     ),
+    # An amount USAspending writes as null is `missing`, with no amount.
+    FactContract(
+        "USASPENDING",
+        SRC / "usaspending/DDL/silver_usaspending.sql",
+        "silver_usaspending.geography_amount",
+        "valid",
+        value_column="amount",
+    ),
     # A storm event is a record, not one number: each figure on it says
     # whether NCEI published it (`damage_property_status` and its CHECK), and
     # the counts served are derived from the events.

@@ -811,6 +811,35 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="usaspending.place_of_performance_obligations",
+        source="USASPENDING",
+        publisher_schema="gold_usaspending",
+        datasets=("usaspending_geography:v1",),
+        fixtures=(
+            "tests/fixtures/usaspending/state_all_fy2024.json",
+            "tests/fixtures/usaspending/county_grants_fy2024_wi.json",
+            "tests/fixtures/usaspending/awarding_agencies_fy2024.json",
+        ),
+        serving_relations=(
+            "gold_usaspending.observation_revision",
+            "gold_usaspending.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_usaspending_pipeline.py::"
+            "test_place_obligations_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "USAspending award obligations publish no source-specific HTTP "
+            "route: each state or county fiscal-year amount is the neutral "
+            "observation shape, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
         product_id="noaa_storm_events.event_counts",
         source="NOAA_STORM_EVENTS",
         publisher_schema="gold_noaa_storm_events",

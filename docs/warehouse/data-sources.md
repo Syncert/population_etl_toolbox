@@ -46,6 +46,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
 | [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Loaded |
 | [Monthly Treasury Statement, federal receipts and outlays](#treasury_mts) | U.S. Treasury, Bureau of the Fiscal Service | ● |  |  |  |  |  |  | 2015–2026 | Monthly | Not loaded yet |
+| [Federal award money by place of performance](#usaspending) | USAspending.gov (U.S. Treasury) |  | ● | ● |  |  |  |  | 2008–2026 | Weekly | Not loaded yet |
 | [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly + daily lean groups | Loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
@@ -406,6 +407,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_treasury_mts.statement_line`, `silver_treasury_mts.statement_line_revision`
 - **Gold:** `gold_treasury_mts.observation_revision`, `gold_treasury_mts.observation_latest`, `gold_treasury_mts.outlays_by_function`
 - **Status:** Not loaded yet (WHERE_PUBLIC_MONEY_GOES_PLAN slice 3). About 4,600 rows, under 0.05 GB ([operations](../user-guides/TREASURY_MTS_PIPELINE_OPERATIONS.md)).
+
+<a id="usaspending"></a>
+### Federal award money by place of performance (`USASPENDING`)
+
+- **Publisher:** USAspending.gov, U.S. Department of the Treasury
+- **Code:** `src/data_ingestion_toolbox/usaspending` · DAG `usaspending_ingest` · Weekly, Sunday 09:00 UTC
+- **Publisher releases:** Continuously; agencies report within about 30 days (defense about 90), so the current and prior fiscal years change
+- **Credential:** none
+- **Years:** fiscal 2008 onward (federal fiscal years end September 30)
+- **Datasets:** `POST /api/v2/search/spending_by_geography/` (scope `place_of_performance`, state and county layers) and `POST /api/v2/search/spending_by_category/awarding_agency/`
+- **Measures:** Federal award obligations by state and county where the work is performed: every award, and contracts, grants, direct payments, loans and other assistance. Derived: each award type group's and each awarding agency's share of the place's all-award total. Not where the money is felt (pass-through grants sit with the state agency; Medicare with the claims processor), not all federal spending, and never added to what local governments spend.
+- **Capture and control:** `control.usaspending_request`
+- **Silver:** `silver_usaspending.geography_amount`, `silver_usaspending.geography_amount_revision`, `silver_usaspending.agency_year`
+- **Gold:** `gold_usaspending.observation_revision`, `gold_usaspending.observation_latest`, `gold_usaspending.awards_by_award_type`, `gold_usaspending.awards_by_agency`
+- **Status:** Not loaded yet (WHERE_PUBLIC_MONEY_GOES_PLAN slice 4). About 3,200 requests, 0.5-1 GB of captures and up to about 2 GB of silver rows ([operations](../user-guides/USASPENDING_PIPELINE_OPERATIONS.md)).
 
 <a id="elections"></a>
 ### Election results and seat holders (`ELECTIONS`)

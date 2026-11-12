@@ -61,6 +61,7 @@ services:
       - ../../src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql:/docker-entrypoint-initdb.d/123_silver_noaa_normals.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql:/docker-entrypoint-initdb.d/123a_silver_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/treasury_mts/DDL/silver_treasury_mts.sql:/docker-entrypoint-initdb.d/123b_silver_treasury_mts.sql:ro
+      - ../../src/data_ingestion_toolbox/usaspending/DDL/silver_usaspending.sql:/docker-entrypoint-initdb.d/123c_silver_usaspending.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_storm_events/DDL/silver_noaa_storm_events.sql:/docker-entrypoint-initdb.d/123b_silver_noaa_storm_events.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/DDL/silver_nces_ccd.sql:/docker-entrypoint-initdb.d/124_silver_nces_ccd.sql:ro
       - ../../sql/migrations/027_acs_bls_fact_lineage.sql:/docker-entrypoint-initdb.d/125_migration_027.sql:ro
@@ -104,6 +105,7 @@ services:
       - ../../src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql:/docker-entrypoint-initdb.d/173_gold_noaa_normals.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql:/docker-entrypoint-initdb.d/173a_gold_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/gold_treasury_mts.sql:/docker-entrypoint-initdb.d/173b_gold_treasury_mts.sql:ro
+      - ../../src/data_ingestion_toolbox/usaspending/gold_usaspending/DDL/gold_usaspending.sql:/docker-entrypoint-initdb.d/173c_gold_usaspending.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/gold_noaa_storm_events.sql:/docker-entrypoint-initdb.d/173b_gold_noaa_storm_events.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/gold_nces_ccd.sql:/docker-entrypoint-initdb.d/174_gold_nces_ccd.sql:ro
       - ../../src/data_ingestion_toolbox/fcc_bdc/gold_fcc_bdc/DDL/gold_fcc_bdc.sql:/docker-entrypoint-initdb.d/175_gold_fcc_bdc.sql:ro
@@ -135,6 +137,7 @@ services:
       - ../../src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql:/docker-entrypoint-initdb.d/203_publisher_noaa_normals.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql:/docker-entrypoint-initdb.d/203a_publisher_noaa_climdiv.sql:ro
       - ../../src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/publisher.sql:/docker-entrypoint-initdb.d/203b_publisher_treasury_mts.sql:ro
+      - ../../src/data_ingestion_toolbox/usaspending/gold_usaspending/DDL/publisher.sql:/docker-entrypoint-initdb.d/203c_publisher_usaspending.sql:ro
       - ../../src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/publisher.sql:/docker-entrypoint-initdb.d/203b_publisher_noaa_storm_events.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ccd/gold_nces_ccd/DDL/publisher.sql:/docker-entrypoint-initdb.d/204_publisher_nces_ccd.sql:ro
       - ../../sql/migrations/016_publisher_harvest_fingerprint.sql:/docker-entrypoint-initdb.d/205_migration_016.sql:ro

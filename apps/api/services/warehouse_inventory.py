@@ -998,6 +998,39 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="TREASURY_MTS",
     ),
     WarehouseSource(
+        code="USASPENDING",
+        name="USAspending federal award obligations by place of performance",
+        publisher="USAspending.gov (U.S. Treasury)",
+        topic="Elections and government",
+        module="usaspending",
+        dag="usaspending_ingest",
+        cadence="Weekly, Sunday 09:00 UTC",
+        release="Daily agency submissions; recent fiscal years keep changing",
+        grains={"state": "d", "county": "d"},
+        years=[(2008, 2027)],
+        years_note="Fiscal years from 2008; the current fiscal year is partial",
+        datasets=["search/spending_by_geography (place of performance)"],
+        measures=(
+            "Federal award obligations in each state and county: all awards, each award "
+            "type group and each awarding agency, with shares of the place's total. "
+            "Recorded where the work is performed; separate from local government spending."
+        ),
+        raw=[],
+        control=["control.usaspending_request"],
+        silver=[
+            "silver_usaspending.geography_amount",
+            "silver_usaspending.geography_amount_revision",
+        ],
+        gold=[
+            "gold_usaspending.observation_revision",
+            "gold_usaspending.observation_latest",
+            "gold_usaspending.awards_by_award_type",
+            "gold_usaspending.awards_by_agency",
+        ],
+        credential="none",
+        catalog_source_code="USASPENDING",
+    ),
+    WarehouseSource(
         code="NOAA_CLIMDIV",
         name="nClimDiv county monthly temperature and precipitation",
         publisher="NOAA NCEI",

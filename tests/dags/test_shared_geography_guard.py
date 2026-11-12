@@ -42,6 +42,7 @@ GUARDED = {
     "noaa_normals_ingest": "require_shared_geography",
     "noaa_climdiv_ingest": "require_shared_geography",
     "treasury_mts_ingest": "require_shared_geography",
+    "usaspending_ingest": "require_shared_geography",
     "noaa_storm_events_ingest": "require_shared_geography",
     "census_lodes_ingest": "require_shared_geography",
     "census_cbp_ingest": "require_shared_geography",

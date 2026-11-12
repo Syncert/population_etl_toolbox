@@ -195,6 +195,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "NOAA_NORMALS": "gold_ddl_noaa_normals",
     "NOAA_CLIMDIV": "gold_ddl_noaa_climdiv",
     "TREASURY_MTS": "gold_ddl_treasury_mts",
+    "USASPENDING": "gold_ddl_usaspending",
     "NOAA_STORM_EVENTS": "gold_ddl_noaa_storm_events",
     "CENSUS_LODES": "gold_ddl_census_lodes",
     "CENSUS_CBP": "gold_ddl_census_cbp",
