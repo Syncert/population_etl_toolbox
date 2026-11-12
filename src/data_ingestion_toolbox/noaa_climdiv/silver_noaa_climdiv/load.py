@@ -169,7 +169,7 @@ def _replay_file(
     # A hash join over five million staged rows, never a nested loop.
     cursor.execute("SET LOCAL enable_nestloop = off")
     cursor.execute(_COMPARE)
-    cursor.execute("SET LOCAL enable_nestloop = on")
+    cursor.execute("ANALYZE climdiv_change")
     cursor.execute(
         """
         INSERT INTO silver_noaa_climdiv.county_month_revision (
@@ -190,6 +190,7 @@ def _replay_file(
         """,
         {"run_id": str(run_id)},
     )
+    cursor.execute("SET LOCAL enable_nestloop = on")
     cursor.execute(
         """
         INSERT INTO silver_noaa_climdiv.county_month (
@@ -268,15 +269,23 @@ def _replay_file(
         """,
         (SOURCE_CODE, capture_id),
     )
+    # The current table's statistics lag a load that is still writing it (the
+    # first load grows it file by file), so the planner can take it for empty
+    # and loop over it once per staged row. The check reads only this file's
+    # measure and is always a hash join.
+    cursor.execute("SET LOCAL enable_nestloop = off")
     cursor.execute(
         """
         SELECT COUNT(*) FROM climdiv_incoming AS incoming
         JOIN silver_noaa_climdiv.county_month AS current
           USING (ncei_state_code, county_fips, measure, year, month)
-        WHERE current.value_source = incoming.value_source
-        """
+        WHERE current.measure = %s
+          AND current.value_source = incoming.value_source
+        """,
+        (element.measure,),
     )
     present = int(cursor.fetchone()[0])
+    cursor.execute("SET LOCAL enable_nestloop = on")
     if present != counted["values"]:
         raise ClimdivReconciliationError(
             f"run {run_id} {file_element}: {present} of {counted['values']} parsed values "

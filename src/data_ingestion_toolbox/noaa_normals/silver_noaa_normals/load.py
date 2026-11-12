@@ -43,36 +43,55 @@ def _record_id(
     return hashlib.md5(key.encode()).hexdigest()
 
 
-_ASSIGN_COUNTIES = """
-WITH vintage AS (
-    SELECT MAX(geometry.boundary_vintage) AS boundary_vintage
-    FROM silver_ref.dim_geo_geometry_version AS geometry
-    JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_sk = geometry.geo_sk
-    WHERE entity.geo_type = 'county' AND geometry.is_valid
-),
-matched AS (
+#: County shapes of the newest boundary vintage, filtered to counties before any
+#: spatial test, in an indexed and analysed temporary table: the shared geometry
+#: table also holds every tract, place and block group shape.
+_STAGE_COUNTY_SHAPES = (
+    """
+    CREATE TEMPORARY TABLE normals_county_shape ON COMMIT DROP AS
+    SELECT entity.geo_sk, entity.geo_id, geometry.boundary_vintage, geometry.geom
+    FROM silver_ref.dim_geo_entity AS entity
+    JOIN silver_ref.dim_geo_geometry_version AS geometry ON geometry.geo_sk = entity.geo_sk
+    WHERE entity.geo_type = 'county'
+      AND geometry.is_valid
+      AND geometry.boundary_vintage = (
+          SELECT MAX(newest.boundary_vintage)
+          FROM silver_ref.dim_geo_geometry_version AS newest
+          JOIN silver_ref.dim_geo_entity AS county ON county.geo_sk = newest.geo_sk
+          WHERE county.geo_type = 'county' AND newest.is_valid
+      )
+    """,
+    "CREATE INDEX ON normals_county_shape USING GIST (geom)",
+    "ANALYZE normals_county_shape",
+    """
+    CREATE TEMPORARY TABLE normals_station_point ON COMMIT DROP AS
     SELECT station.station_id,
-           COUNT(DISTINCT entity.geo_sk) AS counties,
-           MIN(entity.geo_sk) AS geo_sk,
-           MIN(entity.geo_id) AS geo_id
+           ST_SetSRID(ST_MakePoint(station.longitude, station.latitude), 4326) AS point,
+           (SELECT MAX(shape.boundary_vintage) FROM normals_county_shape AS shape)
+               AS boundary_vintage
     FROM silver_noaa_normals.station AS station
-    CROSS JOIN vintage
-    JOIN silver_ref.dim_geo_geometry_version AS geometry
-      ON geometry.boundary_vintage = vintage.boundary_vintage
-     AND geometry.is_valid
-     AND ST_Covers(geometry.geom, ST_SetSRID(ST_MakePoint(station.longitude, station.latitude), 4326))
-    JOIN silver_ref.dim_geo_entity AS entity
-      ON entity.geo_sk = geometry.geo_sk AND entity.geo_type = 'county'
     WHERE station.run_id = %(run_id)s
-    GROUP BY station.station_id
+    """,
+    "ANALYZE normals_station_point",
+)
+
+#: Each station point probes the county shape index; a point on a shared
+#: boundary is covered by more than one county and is not placed.
+_ASSIGN_COUNTIES = """
+WITH matched AS (
+    SELECT point.station_id,
+           COUNT(DISTINCT shape.geo_sk) AS counties,
+           MIN(shape.geo_sk) AS geo_sk,
+           MIN(shape.geo_id) AS geo_id
+    FROM normals_station_point AS point
+    JOIN normals_county_shape AS shape ON ST_Covers(shape.geom, point.point)
+    GROUP BY point.station_id
 ),
 assigned AS (
-    SELECT station.station_id, vintage.boundary_vintage, COALESCE(matched.counties, 0) AS counties,
+    SELECT point.station_id, point.boundary_vintage, COALESCE(matched.counties, 0) AS counties,
            matched.geo_sk, matched.geo_id
-    FROM silver_noaa_normals.station AS station
-    CROSS JOIN vintage
-    LEFT JOIN matched ON matched.station_id = station.station_id
-    WHERE station.run_id = %(run_id)s
+    FROM normals_station_point AS point
+    LEFT JOIN matched ON matched.station_id = point.station_id
 )
 UPDATE silver_noaa_normals.station AS station
    SET boundary_vintage = assigned.boundary_vintage,
@@ -149,7 +168,10 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     ],
                     page_size=5000,
                 )
+                for statement in _STAGE_COUNTY_SHAPES:
+                    cursor.execute(statement, {"run_id": str(run_id)})
                 cursor.execute(_ASSIGN_COUNTIES, {"run_id": str(run_id)})
+                cursor.execute("DROP TABLE normals_station_point, normals_county_shape")
             if parsed.observations and monthly:
                 execute_values(
                     cursor,
