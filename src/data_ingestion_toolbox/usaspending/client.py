@@ -25,7 +25,11 @@ from .registry import AGENCY_PATH, API_BASE_URL, GEOGRAPHY_PATH
 LOGGER = logging.getLogger(__name__)
 
 _GEOGRAPHY_FIELDS = ("shape_code", "display_name", "aggregated_amount")
-_AGENCY_FIELDS = ("code", "name", "amount")
+# USAspending's agency list can carry a row with an amount and no agency
+# (an unattributed bucket, e.g. FY2026 page 1); the page is kept whole and
+# that row is set aside with its amount at replay, so only ``amount`` is
+# required of every row here.
+_AGENCY_FIELDS = ("amount",)
 
 
 class UsaspendingFetchError(RuntimeError):

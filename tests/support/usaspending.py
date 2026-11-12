@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -195,6 +195,7 @@ def run_to_gold(
     client: FixtureClient | None = None,
     conf: dict[str, Any] | None = None,
     today: date = TODAY,
+    refresh_since: datetime | None = None,
 ) -> tuple[UUID, int, int, int]:
     """Capture, replay and publish a run; return (run, requests, written, published)."""
     run_id, requests = capture_awards(
@@ -203,6 +204,7 @@ def run_to_gold(
         config=UsaspendingConfig(min_spacing_seconds=0, max_attempts=1),
         client=client or FixtureClient(agency_limit=3),
         today=today,
+        refresh_since=refresh_since,
         sleep=lambda _seconds: None,
     )
     written = replay_run(connection_factory, run_id=run_id)

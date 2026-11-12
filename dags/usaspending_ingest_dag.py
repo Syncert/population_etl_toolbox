@@ -79,12 +79,18 @@ def usaspending_ingest():
     @task(pool="usaspending_api", execution_timeout=timedelta(hours=6))
     def ingest_batch_awards() -> dict[str, Any]:
         connection_factory = _get_postgres_hook().get_conn
-        conf = dict(get_current_context()["dag_run"].conf or {})
+        dag_run = get_current_context()["dag_run"]
+        conf = dict(dag_run.conf or {})
         # A retry after a failed replay reads again under a new run; finish
         # the run it left behind first, oldest first.
         settled = settle_unreplayed_runs(connection_factory)
+        # A retry of this run skips the refresh-year reads its earlier
+        # attempts already captured (they were replayed just above).
         run_id, requests = capture_awards(
-            connection_factory, conf=conf, config=UsaspendingConfig()
+            connection_factory,
+            conf=conf,
+            config=UsaspendingConfig(),
+            refresh_since=dag_run.start_date,
         )
         written = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))
