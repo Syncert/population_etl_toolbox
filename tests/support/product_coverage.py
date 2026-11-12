@@ -579,6 +579,40 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="hhs_hospital_capacity.area_week",
+        source="HHS_HOSPITAL_CAPACITY",
+        publisher_schema="gold_hhs_hospital_capacity",
+        datasets=("anag-cw7u",),
+        fixtures=(
+            "tests/fixtures/hhs_hospital_capacity/anag_view.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_0.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_400.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_800.json",
+        ),
+        serving_relations=(
+            "gold_hhs_hospital_capacity.area_revision",
+            "gold_hhs_hospital_capacity.area_latest",
+            "gold_hhs_hospital_capacity.facility_latest",
+            "gold_hhs_hospital_capacity.facility_week",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_hhs_hospital_capacity_pipeline.py::"
+            "test_dane_weekly_hospital_beds_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The HHS weekly file publishes no source-specific HTTP route: each "
+            "area sum is the neutral observation shape with its reporting, "
+            "suppressed and missing hospital counts as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

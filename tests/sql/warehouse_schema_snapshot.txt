@@ -846,6 +846,54 @@ r control.fred_ingestion_slices
     index fred_ingestion_slices_pkey CREATE UNIQUE INDEX fred_ingestion_slices_pkey ON control.fred_ingestion_slices USING btree (id)
     index fred_ingestion_slices_status_idx CREATE INDEX fred_ingestion_slices_status_idx ON control.fred_ingestion_slices USING btree (status)
 
+r control.hhs_hospital_capacity_page
+    column run_id uuid NOT NULL
+    column snapshot_id uuid NOT NULL
+    column page_index integer NOT NULL
+    column row_offset integer NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint hhs_hospital_capacity_page_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint hhs_hospital_capacity_page_page_index_check CHECK ((page_index >= 0))
+    constraint hhs_hospital_capacity_page_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint hhs_hospital_capacity_page_pkey PRIMARY KEY (run_id)
+    constraint hhs_hospital_capacity_page_row_count_check CHECK ((row_count >= 0))
+    constraint hhs_hospital_capacity_page_row_offset_check CHECK ((row_offset >= 0))
+    constraint hhs_hospital_capacity_page_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint hhs_hospital_capacity_page_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.hhs_hospital_capacity_snapshot(snapshot_id)
+    constraint hhs_page_once_per_snapshot UNIQUE (snapshot_id, page_index)
+    index hhs_hospital_capacity_page_pkey CREATE UNIQUE INDEX hhs_hospital_capacity_page_pkey ON control.hhs_hospital_capacity_page USING btree (run_id)
+    index hhs_page_capture_idx CREATE INDEX hhs_page_capture_idx ON control.hhs_hospital_capacity_page USING btree (capture_id)
+    index hhs_page_once_per_snapshot CREATE UNIQUE INDEX hhs_page_once_per_snapshot ON control.hhs_hospital_capacity_page USING btree (snapshot_id, page_index)
+
+r control.hhs_hospital_capacity_snapshot
+    column snapshot_id uuid NOT NULL
+    column metadata_run_id uuid NOT NULL
+    column metadata_capture_id uuid NOT NULL
+    column rows_updated_at bigint
+    column page_size integer NOT NULL
+    column page_count integer NOT NULL DEFAULT 0
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint hhs_hospital_capacity_snapshot_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint hhs_hospital_capacity_snapshot_metadata_capture_id_fkey FOREIGN KEY (metadata_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint hhs_hospital_capacity_snapshot_metadata_run_id_fkey FOREIGN KEY (metadata_run_id) REFERENCES control.ingestion_run(run_id)
+    constraint hhs_hospital_capacity_snapshot_page_count_check CHECK ((page_count >= 0))
+    constraint hhs_hospital_capacity_snapshot_page_size_check CHECK ((page_size > 0))
+    constraint hhs_hospital_capacity_snapshot_pkey PRIMARY KEY (snapshot_id)
+    constraint hhs_hospital_capacity_snapshot_row_count_check CHECK ((row_count >= 0))
+    constraint hhs_hospital_capacity_snapshot_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint hhs_snapshot_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint hhs_snapshot_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    index hhs_hospital_capacity_snapshot_pkey CREATE UNIQUE INDEX hhs_hospital_capacity_snapshot_pkey ON control.hhs_hospital_capacity_snapshot USING btree (snapshot_id)
+    index hhs_snapshot_status_idx CREATE INDEX hhs_snapshot_status_idx ON control.hhs_hospital_capacity_snapshot USING btree (status, created_at)
+
 r control.hud_fmr_il_api_capture
     column run_id uuid NOT NULL
     column slice_key text NOT NULL
@@ -10334,6 +10382,289 @@ r gold_glossary.tile_boundary_version
     index ix_gold_glossary_tile_boundary_version_vintage CREATE INDEX ix_gold_glossary_tile_boundary_version_vintage ON gold_glossary.tile_boundary_version USING btree (geo_level, boundary_vintage)
     index tile_boundary_version_pkey CREATE UNIQUE INDEX tile_boundary_version_pkey ON gold_glossary.tile_boundary_version USING btree (geo_id, boundary_vintage)
 
+v gold_hhs_hospital_capacity.area_latest
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column facility_count integer
+    column reporting_facility_count integer
+    column suppressed_count integer
+    column missing_count integer
+    column unplaced_facility_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column snapshot_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     facility_count,
+    body     reporting_facility_count,
+    body     suppressed_count,
+    body     missing_count,
+    body     unplaced_facility_count,
+    body     derivation,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id,
+    body     snapshot_id,
+    body     published_at
+    body    FROM gold_hhs_hospital_capacity.area_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, published_at DESC, snapshot_id DESC;
+
+v gold_hhs_hospital_capacity.area_revision
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value numeric
+    column value_status text
+    column facility_count integer
+    column reporting_facility_count integer
+    column suppressed_count integer
+    column missing_count integer
+    column unplaced_facility_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column snapshot_id uuid
+    column published_at timestamp with time zone
+    body SELECT area.measure_id,
+    body     'hospital:'::text || area.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.basis,
+    body     area.collection_week AS period_start,
+    body     area.collection_week + 6 AS period_end,
+    body     area.geo_id,
+    body     area.geo_sk,
+    body     area.geo_type,
+    body     gold_glossary.geo_grain(area.geo_type) AS geo_level,
+    body     area.geography_status,
+    body     area.value,
+    body     area.value_status,
+    body     area.facility_count,
+    body     area.reporting_facility_count,
+    body     area.suppressed_count,
+    body     area.missing_count,
+    body     area.unplaced_facility_count,
+    body     'sum_of_published_facility_figures'::text AS derivation,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     area.source_record_id,
+    body     snapshot.metadata_capture_id AS capture_id,
+    body     snapshot.metadata_run_id AS run_id,
+    body     snapshot.snapshot_id,
+    body     snapshot.published_at
+    body    FROM silver_hhs_hospital_capacity.area_week area
+    body      JOIN control.hhs_hospital_capacity_snapshot snapshot ON snapshot.snapshot_id = area.snapshot_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = snapshot.metadata_capture_id
+    body      JOIN silver_hhs_hospital_capacity.dim_measure measure ON measure.measure_id = area.measure_id
+    body   WHERE snapshot.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_hhs_hospital_capacity.facility_latest
+    column hospital_pk text
+    column ccn text
+    column hospital_name text
+    column hospital_subtype text
+    column street_address text
+    column city text
+    column zip_code text
+    column state_code text
+    column state_fips text
+    column fips_code text
+    column county_geo_id text
+    column county_status text
+    column placement_source text
+    column longitude double precision
+    column latitude double precision
+    column is_metro_micro boolean
+    column first_week date
+    column last_week date
+    column week_count integer
+    column snapshot_id uuid
+    body SELECT hospital_pk,
+    body     ccn,
+    body     hospital_name,
+    body     hospital_subtype,
+    body     street_address,
+    body     city,
+    body     zip_code,
+    body     state_code,
+    body     state_fips,
+    body     fips_code,
+    body     county_geo_id,
+    body     county_status,
+    body         CASE county_status
+    body             WHEN 'resolved'::text THEN 'HHS published county FIPS code'::text
+    body             WHEN 'unmapped'::text THEN 'HHS published county FIPS code not in the shared geography or not of the hospital''s state'::text
+    body             ELSE 'HHS published no county FIPS code'::text
+    body         END AS placement_source,
+    body     longitude,
+    body     latitude,
+    body     is_metro_micro,
+    body     first_week,
+    body     last_week,
+    body     week_count,
+    body     snapshot_id
+    body    FROM silver_hhs_hospital_capacity.facility facility
+    body   WHERE snapshot_id = (( SELECT snapshot.snapshot_id
+    body            FROM control.hhs_hospital_capacity_snapshot snapshot
+    body           WHERE snapshot.status = 'published'::text
+    body           ORDER BY snapshot.published_at DESC
+    body          LIMIT 1));
+
+v gold_hhs_hospital_capacity.facility_week
+    column hospital_pk text
+    column period_start date
+    column period_end date
+    column inpatient_beds numeric
+    column inpatient_beds_status text
+    column inpatient_beds_used numeric
+    column inpatient_beds_used_status text
+    column total_icu_beds numeric
+    column total_icu_beds_status text
+    column icu_beds_used numeric
+    column icu_beds_used_status text
+    column staffed_adult_icu_beds numeric
+    column staffed_adult_icu_beds_status text
+    column staffed_adult_icu_beds_occupied numeric
+    column staffed_adult_icu_beds_occupied_status text
+    column inpatient_beds_used_covid numeric
+    column inpatient_beds_used_covid_status text
+    column patients_hospitalized_influenza numeric
+    column patients_hospitalized_influenza_status text
+    column snapshot_id uuid
+    body SELECT hospital_pk,
+    body     collection_week AS period_start,
+    body     collection_week + 6 AS period_end,
+    body     max(value) FILTER (WHERE measure_id = 'inpatient_beds'::text) AS inpatient_beds,
+    body     max(value_status) FILTER (WHERE measure_id = 'inpatient_beds'::text) AS inpatient_beds_status,
+    body     max(value) FILTER (WHERE measure_id = 'inpatient_beds_used'::text) AS inpatient_beds_used,
+    body     max(value_status) FILTER (WHERE measure_id = 'inpatient_beds_used'::text) AS inpatient_beds_used_status,
+    body     max(value) FILTER (WHERE measure_id = 'total_icu_beds'::text) AS total_icu_beds,
+    body     max(value_status) FILTER (WHERE measure_id = 'total_icu_beds'::text) AS total_icu_beds_status,
+    body     max(value) FILTER (WHERE measure_id = 'icu_beds_used'::text) AS icu_beds_used,
+    body     max(value_status) FILTER (WHERE measure_id = 'icu_beds_used'::text) AS icu_beds_used_status,
+    body     max(value) FILTER (WHERE measure_id = 'staffed_adult_icu_beds'::text) AS staffed_adult_icu_beds,
+    body     max(value_status) FILTER (WHERE measure_id = 'staffed_adult_icu_beds'::text) AS staffed_adult_icu_beds_status,
+    body     max(value) FILTER (WHERE measure_id = 'staffed_adult_icu_beds_occupied'::text) AS staffed_adult_icu_beds_occupied,
+    body     max(value_status) FILTER (WHERE measure_id = 'staffed_adult_icu_beds_occupied'::text) AS staffed_adult_icu_beds_occupied_status,
+    body     max(value) FILTER (WHERE measure_id = 'inpatient_beds_used_covid'::text) AS inpatient_beds_used_covid,
+    body     max(value_status) FILTER (WHERE measure_id = 'inpatient_beds_used_covid'::text) AS inpatient_beds_used_covid_status,
+    body     max(value) FILTER (WHERE measure_id = 'patients_hospitalized_influenza'::text) AS patients_hospitalized_influenza,
+    body     max(value_status) FILTER (WHERE measure_id = 'patients_hospitalized_influenza'::text) AS patients_hospitalized_influenza_status,
+    body     snapshot_id
+    body    FROM silver_hhs_hospital_capacity.facility_week_value value
+    body   WHERE snapshot_id = (( SELECT snapshot.snapshot_id
+    body            FROM control.hhs_hospital_capacity_snapshot snapshot
+    body           WHERE snapshot.status = 'published'::text
+    body           ORDER BY snapshot.published_at DESC
+    body          LIMIT 1))
+    body   GROUP BY snapshot_id, hospital_pk, collection_week;
+
+v gold_hhs_hospital_capacity.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column source_column text
+    column coverage_column text
+    column schema_version text
+    body SELECT 'anag-cw7u'::text AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     basis,
+    body     source_column,
+    body     coverage_column,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_hhs_hospital_capacity.dim_measure measure;
+
+v gold_hhs_hospital_capacity.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'HHS_HOSPITAL_CAPACITY'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     'hospital:'::text || measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['WEEKLY'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_hhs_hospital_capacity', 'relation', 'area_revision', 'key', 'hospital:'::text || measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'HHS COVID-19 Reported Patient Impact and Hospital Capacity by Facility'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     'https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/anag-cw7u'::text AS reference_url
+    body    FROM silver_hhs_hospital_capacity.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(area.collection_week)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(area.geo_type) ORDER BY (gold_glossary.geo_grain(area.geo_type))) FILTER (WHERE area.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(snapshot.metadata_run_id ORDER BY snapshot.published_at DESC))[1] AS source_run_id,
+    body             max(snapshot.published_at) AS publication_time
+    body            FROM silver_hhs_hospital_capacity.area_week area
+    body              JOIN control.hhs_hospital_capacity_snapshot snapshot ON snapshot.snapshot_id = area.snapshot_id
+    body           WHERE area.measure_id = measure.measure_id AND snapshot.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]))) served ON served.publication_time IS NOT NULL;
+
 v gold_hud_fmr_il.measure_definition
     column measure text
     column measure_label text
@@ -17079,6 +17410,125 @@ r silver_fred.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'invalid'::text])))
     index observation_revision_current_idx CREATE INDEX observation_revision_current_idx ON silver_fred.observation_revision USING btree (domain, series_id, observation_date, realtime_start DESC)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_fred.observation_revision USING btree (capture_id, observation_index)
+
+r silver_hhs_hospital_capacity.area_week
+    column snapshot_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column collection_week date NOT NULL
+    column geo_id text NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    column facility_count integer NOT NULL
+    column reporting_facility_count integer NOT NULL
+    column suppressed_count integer NOT NULL
+    column missing_count integer NOT NULL
+    column unplaced_facility_count integer NOT NULL
+    column source_record_id text NOT NULL
+    constraint area_week_facility_count_check CHECK ((facility_count > 0))
+    constraint area_week_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint area_week_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint area_week_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_hhs_hospital_capacity.dim_measure(measure_id)
+    constraint area_week_missing_count_check CHECK ((missing_count >= 0))
+    constraint area_week_pkey PRIMARY KEY (snapshot_id, measure_id, geo_id, collection_week)
+    constraint area_week_reporting_facility_count_check CHECK ((reporting_facility_count >= 0))
+    constraint area_week_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.hhs_hospital_capacity_snapshot(snapshot_id)
+    constraint area_week_suppressed_count_check CHECK ((suppressed_count >= 0))
+    constraint area_week_unplaced_facility_count_check CHECK ((unplaced_facility_count >= 0))
+    constraint area_week_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'suppressed'::text, 'missing'::text])))
+    constraint hhs_area_counts_add_up CHECK ((((reporting_facility_count + suppressed_count) + missing_count) = facility_count))
+    constraint hhs_area_value_when_reported CHECK (((value IS NOT NULL) = (reporting_facility_count > 0)))
+    index area_week_pkey CREATE UNIQUE INDEX area_week_pkey ON silver_hhs_hospital_capacity.area_week USING btree (snapshot_id, measure_id, geo_id, collection_week)
+    index hhs_area_week_geo_idx CREATE INDEX hhs_area_week_geo_idx ON silver_hhs_hospital_capacity.area_week USING btree (geo_id, measure_id, collection_week)
+
+r silver_hhs_hospital_capacity.dim_measure
+    column measure_id text NOT NULL
+    column source_column text NOT NULL
+    column coverage_column text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column basis text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_hhs_hospital_capacity.dim_measure USING btree (measure_id)
+
+r silver_hhs_hospital_capacity.facility
+    column snapshot_id uuid NOT NULL
+    column hospital_pk text NOT NULL
+    column ccn text
+    column hospital_name text NOT NULL
+    column street_address text
+    column city text
+    column zip_code text
+    column state_code text NOT NULL
+    column state_fips text
+    column hospital_subtype text
+    column fips_code text
+    column is_metro_micro boolean
+    column longitude double precision
+    column latitude double precision
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text NOT NULL
+    column first_week date NOT NULL
+    column last_week date NOT NULL
+    column week_count integer NOT NULL
+    constraint facility_county_status_check CHECK ((county_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'not_listed'::text])))
+    constraint facility_latitude_check CHECK (((latitude >= ('-90'::integer)::double precision) AND (latitude <= (90)::double precision)))
+    constraint facility_longitude_check CHECK (((longitude >= ('-180'::integer)::double precision) AND (longitude <= (180)::double precision)))
+    constraint facility_pkey PRIMARY KEY (snapshot_id, hospital_pk)
+    constraint facility_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.hhs_hospital_capacity_snapshot(snapshot_id)
+    constraint facility_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    constraint facility_week_count_check CHECK ((week_count > 0))
+    constraint hhs_facility_resolved_has_county CHECK (((county_status = 'resolved'::text) = (county_geo_id IS NOT NULL)))
+    constraint hhs_facility_week_order CHECK ((first_week <= last_week))
+    index facility_pkey CREATE UNIQUE INDEX facility_pkey ON silver_hhs_hospital_capacity.facility USING btree (snapshot_id, hospital_pk)
+    index hhs_facility_county_idx CREATE INDEX hhs_facility_county_idx ON silver_hhs_hospital_capacity.facility USING btree (county_geo_id, snapshot_id)
+
+r silver_hhs_hospital_capacity.facility_week_value
+    column snapshot_id uuid NOT NULL
+    column hospital_pk text NOT NULL
+    column collection_week date NOT NULL
+    column measure_id text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    column coverage_days smallint
+    constraint facility_week_value_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint facility_week_value_coverage_days_check CHECK (((coverage_days >= 0) AND (coverage_days <= 7)))
+    constraint facility_week_value_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_hhs_hospital_capacity.dim_measure(measure_id)
+    constraint facility_week_value_pkey PRIMARY KEY (snapshot_id, hospital_pk, collection_week, measure_id)
+    constraint facility_week_value_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.hhs_hospital_capacity_snapshot(snapshot_id)
+    constraint facility_week_value_source_row_index_check CHECK ((source_row_index > 0))
+    constraint facility_week_value_value_check CHECK ((value >= (0)::numeric))
+    constraint facility_week_value_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'suppressed'::text, 'missing'::text])))
+    constraint hhs_value_other_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint hhs_value_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index facility_week_value_pkey CREATE UNIQUE INDEX facility_week_value_pkey ON silver_hhs_hospital_capacity.facility_week_value USING btree (snapshot_id, hospital_pk, collection_week, measure_id)
+    index hhs_facility_week_value_capture_idx CREATE INDEX hhs_facility_week_value_capture_idx ON silver_hhs_hospital_capacity.facility_week_value USING btree (capture_id)
+
+r silver_hhs_hospital_capacity.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_hhs_hospital_capacity.quarantine_quarantine_sk_seq'::regclass)
+    column snapshot_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.hhs_hospital_capacity_snapshot(snapshot_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_hhs_hospital_capacity.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_hhs_hospital_capacity.quarantine USING btree (quarantine_sk)
 
 r silver_hud_fmr_il.fact_observation
     column measure text NOT NULL

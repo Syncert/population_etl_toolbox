@@ -124,7 +124,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success'),
     ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success'),
     ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success'),
-    ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success')
+    ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success'),
+    ('00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -196,7 +197,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000c71', '00000000-0000-4000-8000-000000000c71',
      'CMS_LTC', 'smoke://seed', '{}'::JSONB, '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', 'captured'),
     ('00000000-0000-4000-9000-0000000001ed', '00000000-0000-4000-8000-0000000001ed',
-     'NCES_IPEDS', 'smoke://seed', '{}'::JSONB, 'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', 'captured')
+     'NCES_IPEDS', 'smoke://seed', '{}'::JSONB, 'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', 'captured'),
+    ('00000000-0000-4000-9000-00000000044b', '00000000-0000-4000-8000-00000000044b',
+     'HHS_HOSPITAL_CAPACITY', 'smoke://seed', '{}'::JSONB, '8b4de6708e7e19ceb03930abb3f71c52b1377f6c229b6b2d0630f90321cf7120', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -327,6 +330,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-0000000001ed', '00000000-0000-4000-9000-0000000001ed',
      '00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'smoke://seed', '{}'::JSONB,
      'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000044b', '00000000-0000-4000-9000-00000000044b',
+     '00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'smoke://seed', '{}'::JSONB,
+     '8b4de6708e7e19ceb03930abb3f71c52b1377f6c229b6b2d0630f90321cf7120', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1577,6 +1584,40 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- HHS hospital capacity -- one county's weekly inpatient beds, summed from the
+-- hospitals HHS places there by their published county FIPS code.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.hhs_hospital_capacity_snapshot (
+    snapshot_id, metadata_run_id, metadata_capture_id, rows_updated_at, page_size,
+    page_count, row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-00000000044b', '00000000-0000-4000-8000-00000000044b', '00000000-0000-4000-a000-00000000044b', NULL, 50000,
+    1, 5, 5, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hhs_hospital_capacity.dim_measure (
+    measure_id, source_column, coverage_column, measure_label, unit, basis,
+    parser_contract_version
+) VALUES (
+    'inpatient_beds', 'inpatient_beds_7_day_avg', 'inpatient_beds_7_day_coverage',
+    'Inpatient beds', 'beds',
+    'the seven-day average of all staffed inpatient beds a hospital reported to HHS for the collection week',
+    'hhs_anag_cw7u_json:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hhs_hospital_capacity.area_week (
+    snapshot_id, measure_id, collection_week, geo_id, geo_type, geo_sk,
+    geography_status, value, value_status, facility_count, reporting_facility_count,
+    suppressed_count, missing_count, unplaced_facility_count, source_record_id
+)
+SELECT '00000000-0000-4000-b000-00000000044b', 'inpatient_beds', DATE '2098-01-04',
+       'state:55|county:025', 'county', geo_sk, 'resolved', 1335.7, 'valid', 5, 5, 0, 0, 0,
+       'b6e1d4c8a2f0e7d3c9b5a1f7e3d9c5b1'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1625,7 +1666,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hhs_hospital_capacity.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

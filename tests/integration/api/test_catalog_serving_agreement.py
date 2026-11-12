@@ -41,6 +41,7 @@ from tests.support import irs_soi as soi_support
 from tests.support import census_decennial as decennial_support
 from tests.support import cms_ltc as cms_support
 from tests.support import nces_ipeds as ipeds_support
+from tests.support import hhs_hospital_capacity as hhs_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
@@ -988,6 +989,18 @@ def published_ipeds_metric(
 
 
 @pytest.fixture
+def published_hhs_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the HHS hospital weeks through their real pipeline."""
+    factory = hhs_support.reviewed_warehouse(postgres_connection_factory, request)
+    hhs_support.load_snapshot(factory)
+    harvest_publisher(factory, Publisher("gold_hhs_hospital_capacity"))
+    return _one_published_code(factory, "HHS_HOSPITAL_CAPACITY")
+
+
+@pytest.fixture
 def published_sae_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1315,6 +1328,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_decennial_metric: str,
     published_cms_metric: str,
     published_ipeds_metric: str,
+    published_hhs_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1384,6 +1398,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CENSUS_DECENNIAL", published_decennial_metric),
         ("CMS_LTC", published_cms_metric),
         ("NCES_IPEDS", published_ipeds_metric),
+        ("HHS_HOSPITAL_CAPACITY", published_hhs_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1549,6 +1564,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_decennial_metric: str,
     published_cms_metric: str,
     published_ipeds_metric: str,
+    published_hhs_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,

@@ -2595,6 +2595,43 @@ def cms_ltc_unplaced_facilities(
     ]
 
 
+def hhs_unplaced_hospitals(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HHS-003 — hospitals of the newest published snapshot on no county."""
+    del scope
+    published = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.hhs_hospital_capacity_snapshot WHERE status = 'published'",
+    )
+    if published == 0:
+        return [RuleOutcome("silver_hhs_hospital_capacity.facility", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT facility.county_status, facility.state_code, facility.hospital_pk,
+               COALESCE(facility.fips_code, '') AS fips_code
+          FROM silver_hhs_hospital_capacity.facility AS facility
+          JOIN control.hhs_hospital_capacity_snapshot AS snapshot
+            ON snapshot.snapshot_id = facility.snapshot_id
+         WHERE facility.county_status <> 'resolved'
+           AND snapshot.status = 'published'
+           AND snapshot.published_at = (
+               SELECT MAX(published_at) FROM control.hhs_hospital_capacity_snapshot
+                WHERE status = 'published'
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_hhs_hospital_capacity.facility",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def decennial_part_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-DECENNIAL-003 — each count's parts add to it as published, per area."""
     del scope
@@ -5586,6 +5623,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-TREASURY-004": treasury_mts_function_total,
     "DQ-CMSLTC-003": cms_ltc_unplaced_facilities,
     "DQ-IPEDS-003": nces_ipeds_point_outside_county,
+    "DQ-HHS-003": hhs_unplaced_hospitals,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,

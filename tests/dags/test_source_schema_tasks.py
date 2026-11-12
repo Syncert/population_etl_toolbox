@@ -38,6 +38,7 @@ from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_decennial import schema as decennial_schema
 from data_ingestion_toolbox.cms_ltc import schema as cms_ltc_schema
 from data_ingestion_toolbox.nces_ipeds import schema as nces_ipeds_schema
+from data_ingestion_toolbox.hhs_hospital_capacity import schema as hhs_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
@@ -105,6 +106,13 @@ SOURCES = [
         "ingest_batch_",
         nces_ipeds_schema,
         "NCES_IPEDS",
+    ),
+    (
+        "hhs_hospital_capacity_ingest",
+        "ensure_hhs_hospital_capacity_schema",
+        "ingest_batch_",
+        hhs_schema,
+        "HHS_HOSPITAL_CAPACITY",
     ),
     (
         "census_govfin_ingest",
