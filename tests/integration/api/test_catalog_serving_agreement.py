@@ -1067,7 +1067,9 @@ def published_usaspending_metric(
     request: pytest.FixtureRequest,
 ) -> str:
     """Publish USAspending federal award obligations by place of performance."""
-    factory = usaspending_support.reviewed_warehouse(postgres_connection_factory, request)
+    factory = usaspending_support.reviewed_warehouse(
+        postgres_connection_factory, request
+    )
     usaspending_support.run_all(factory)
     harvest_publisher(factory, Publisher("gold_usaspending"))
     return _one_published_code(factory, "USASPENDING")

@@ -8283,7 +8283,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             ),
             EnforcedGrain(
                 "silver_usaspending.geography_amount_revision",
-                ("fiscal_year", "geo_layer", "cut_kind", "cut_key", "shape_code", "run_id"),
+                (
+                    "fiscal_year",
+                    "geo_layer",
+                    "cut_kind",
+                    "cut_key",
+                    "shape_code",
+                    "run_id",
+                ),
             ),
         ),
     ),
