@@ -8377,7 +8377,7 @@ v gold_fema_nri.declaration_count
     column run_id uuid
     column published_at timestamp with time zone
     body WITH current_revision AS (
-    body          SELECT DISTINCT ON (revision.declaration_id) revision.declaration_id,
+    body          SELECT revision.declaration_id,
     body             revision.revision_hash,
     body             revision.run_id,
     body             revision.capture_id,
@@ -8398,8 +8398,10 @@ v gold_fema_nri.declaration_count
     body             revision.created_at
     body            FROM silver_fema_nri.declaration_revision revision
     body              JOIN control.fema_nri_run run ON run.run_id = revision.run_id
-    body           WHERE run.status = 'published'::text
-    body           ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+    body           WHERE run.status = 'published'::text AND NOT (EXISTS ( SELECT 1
+    body                    FROM silver_fema_nri.declaration_revision newer
+    body                      JOIN control.fema_nri_run newer_run ON newer_run.run_id = newer.run_id
+    body                   WHERE newer.declaration_id = revision.declaration_id AND newer_run.status = 'published'::text AND ((ROW(newer.last_refresh, newer.created_at, newer.revision_hash) > ROW(revision.last_refresh, revision.created_at, revision.revision_hash)))))
     body         ), latest_read AS (
     body          SELECT max(fema_nri_run.published_at) AS published_at
     body            FROM control.fema_nri_run
@@ -8443,7 +8445,7 @@ v gold_fema_nri.declaration_count_by_incident
     column run_id uuid
     column published_at timestamp with time zone
     body WITH current_revision AS (
-    body          SELECT DISTINCT ON (revision.declaration_id) revision.declaration_id,
+    body          SELECT revision.declaration_id,
     body             revision.revision_hash,
     body             revision.run_id,
     body             revision.capture_id,
@@ -8464,8 +8466,10 @@ v gold_fema_nri.declaration_count_by_incident
     body             revision.created_at
     body            FROM silver_fema_nri.declaration_revision revision
     body              JOIN control.fema_nri_run run ON run.run_id = revision.run_id
-    body           WHERE run.status = 'published'::text
-    body           ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+    body           WHERE run.status = 'published'::text AND NOT (EXISTS ( SELECT 1
+    body                    FROM silver_fema_nri.declaration_revision newer
+    body                      JOIN control.fema_nri_run newer_run ON newer_run.run_id = newer.run_id
+    body                   WHERE newer.declaration_id = revision.declaration_id AND newer_run.status = 'published'::text AND ((ROW(newer.last_refresh, newer.created_at, newer.revision_hash) > ROW(revision.last_refresh, revision.created_at, revision.revision_hash)))))
     body         ), latest_read AS (
     body          SELECT max(fema_nri_run.published_at) AS published_at
     body            FROM control.fema_nri_run
@@ -8529,12 +8533,13 @@ v gold_fema_nri.measure_definition
     body     (((('FEMA disaster declarations (OpenFEMA DisasterDeclarationsSummaries): the number of '::text || 'distinct declarations of this type that designated this county, by the calendar '::text) || 'year of the declaration date; a statewide or tribal-area designation is not '::text) || 'counted toward a county, and a year with no declaration has no row. This product '::text) || 'uses the Federal Emergency Management Agency''s OpenFEMA API, but is not endorsed '::text) || 'by FEMA.'::text AS observation_basis
     body    FROM ( VALUES ('major_disaster_declarations'::text,'Major disaster declarations'::text,'DR'::text), ('emergency_declarations'::text,'Emergency declarations'::text,'EM'::text), ('fire_management_declarations'::text,'Fire management assistance declarations'::text,'FM'::text)) declaration(measure, label, declaration_type)
     body UNION ALL
-    body  SELECT DISTINCT 'incident_declarations_'::text || btrim(lower(regexp_replace(revision.incident_type, '[^A-Za-z0-9]+'::text, '_'::text, 'g'::text)), '_'::text) AS measure,
+    body  SELECT 'incident_declarations_'::text || btrim(lower(regexp_replace(revision.incident_type, '[^A-Za-z0-9]+'::text, '_'::text, 'g'::text)), '_'::text) AS measure,
     body     'Disaster declarations for incident type: '::text || revision.incident_type AS measure_label,
     body     'declarations'::text AS unit,
     body     'declarations'::text AS stream,
     body     (((((('FEMA disaster declarations (OpenFEMA DisasterDeclarationsSummaries): the number of '::text || 'distinct declarations of any type (major disaster, emergency or fire management) '::text) || 'whose incident type, as FEMA published it, is '::text) || revision.incident_type) || ', that designated this county, by the calendar year of the declaration date; '::text) || 'a statewide or tribal-area designation is not counted toward a county, and a '::text) || 'year with no declaration has no row. This product uses the Federal Emergency '::text) || 'Management Agency''s OpenFEMA API, but is not endorsed by FEMA.'::text AS observation_basis
-    body    FROM silver_fema_nri.declaration_revision revision;
+    body    FROM ( SELECT DISTINCT declaration_revision.incident_type
+    body            FROM silver_fema_nri.declaration_revision) revision;
 
 v gold_fema_nri.measure_export
     column source_object_key text

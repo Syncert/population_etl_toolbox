@@ -73,8 +73,7 @@ UNION ALL
 -- One measure per incident type FEMA has published (Flood, Hurricane, Severe
 -- Storm ...), keyed by the type's own words, so a type FEMA adds is served
 -- without a code change.
-SELECT DISTINCT
-       'incident_declarations_'
+SELECT 'incident_declarations_'
            || BTRIM(LOWER(REGEXP_REPLACE(revision.incident_type, '[^A-Za-z0-9]+', '_', 'g')), '_'),
        'Disaster declarations for incident type: ' || revision.incident_type,
        'declarations', 'declarations',
@@ -85,7 +84,10 @@ SELECT DISTINCT
        || 'a statewide or tribal-area designation is not counted toward a county, and a '
        || 'year with no declaration has no row. This product uses the Federal Emergency '
        || 'Management Agency''s OpenFEMA API, but is not endorsed by FEMA.'
-FROM silver_fema_nri.declaration_revision AS revision;
+-- The incident types are listed once before any text is built.
+FROM (
+    SELECT DISTINCT incident_type FROM silver_fema_nri.declaration_revision
+) AS revision;
 
 -- Every published NRI read of every county field, keyed by the NRI version
 -- (`December 2025`); a field whose rating says it is not a measurement is
@@ -116,12 +118,24 @@ WHERE run.status = 'published' AND RIGHT(fact.nri_version, 4) ~ '^[0-9]{4}$';
 -- seen, counted per county, year and type: the count is of distinct
 -- declarations, so a declaration that designated a county twice counts once.
 CREATE OR REPLACE VIEW gold_fema_nri.declaration_count AS
+-- A revision is current when no published revision of the same declaration
+-- area row is newer (refresh, then load time, then hash). Written as an
+-- anti-join, a county filter reaches the (geo_id, declaration_date) index
+-- before any revision is compared.
 WITH current_revision AS (
-    SELECT DISTINCT ON (revision.declaration_id) revision.*
+    SELECT revision.*
     FROM silver_fema_nri.declaration_revision AS revision
     JOIN control.fema_nri_run AS run ON run.run_id = revision.run_id
     WHERE run.status = 'published'
-    ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver_fema_nri.declaration_revision AS newer
+          JOIN control.fema_nri_run AS newer_run ON newer_run.run_id = newer.run_id
+          WHERE newer.declaration_id = revision.declaration_id
+            AND newer_run.status = 'published'
+            AND (newer.last_refresh, newer.created_at, newer.revision_hash)
+                > (revision.last_refresh, revision.created_at, revision.revision_hash)
+      )
 ),
 latest_read AS (
     SELECT MAX(published_at) AS published_at FROM control.fema_nri_run
@@ -150,12 +164,24 @@ GROUP BY 1, current_revision.geo_id, 4;
 -- across all three declaration types: a declaration counts once however many
 -- times it designated the county. The incident type is FEMA's, as published.
 CREATE OR REPLACE VIEW gold_fema_nri.declaration_count_by_incident AS
+-- A revision is current when no published revision of the same declaration
+-- area row is newer (refresh, then load time, then hash). Written as an
+-- anti-join, a county filter reaches the (geo_id, declaration_date) index
+-- before any revision is compared.
 WITH current_revision AS (
-    SELECT DISTINCT ON (revision.declaration_id) revision.*
+    SELECT revision.*
     FROM silver_fema_nri.declaration_revision AS revision
     JOIN control.fema_nri_run AS run ON run.run_id = revision.run_id
     WHERE run.status = 'published'
-    ORDER BY revision.declaration_id, revision.last_refresh DESC, revision.created_at DESC
+      AND NOT EXISTS (
+          SELECT 1
+          FROM silver_fema_nri.declaration_revision AS newer
+          JOIN control.fema_nri_run AS newer_run ON newer_run.run_id = newer.run_id
+          WHERE newer.declaration_id = revision.declaration_id
+            AND newer_run.status = 'published'
+            AND (newer.last_refresh, newer.created_at, newer.revision_hash)
+                > (revision.last_refresh, revision.created_at, revision.revision_hash)
+      )
 ),
 latest_read AS (
     SELECT MAX(published_at) AS published_at FROM control.fema_nri_run
