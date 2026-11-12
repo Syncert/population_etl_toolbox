@@ -48,8 +48,9 @@ Places people inside a district smaller than a tract.
 ## Size
 
 Dane has about 11,000 blocks (about 7,000 with people). 49 + 14 variables
-gives about 0.7 million facts plus shapes: about 0.1 GB. Every county would
-be about 80 to 100 GB and needs Nick's go.
+gives about 0.7 million facts plus shapes: about 1 GB at the measured 1,300
+bytes per fact (was 0.1 GB). Every county would be about 660 GB and needs
+Nick's go.
 
 ## Acceptance criteria
 

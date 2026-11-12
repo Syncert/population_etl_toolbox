@@ -31,7 +31,7 @@ Design: new adapter `bts_t100`; airports placed on counties by the BTS
 airport master coordinates; gold views of monthly passengers per airport and
 per route.
 
-Size: about 250,000 segment rows a year, about 2 GB for 1990 onward.
+Size: about 250,000 segment rows a year, about 9 million rows for 1990 onward: about 12 GB at the measured 1,300 bytes per row (was 2 GB; see the umbrella plan).
 
 ## Behaviour change: Google COVID-19 Community Mobility Reports (blocked)
 
@@ -41,7 +41,7 @@ not an open data licence, and the game is sold, so **nothing is loaded until
 Nick decides** whether those terms are acceptable. If he declines, the
 behaviour response curve is left to the game's own reference files.
 
-Size if approved: about 3 GB (US county rows of one frozen file).
+Size if approved: about 20 GB at the measured 1,300 bytes per row (was 3 GB; US county rows of one frozen file).
 
 ## Acceptance criteria
 

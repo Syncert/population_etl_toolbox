@@ -92,7 +92,7 @@ covers it.
 
 ## Size
 
-About 14,700 facilities: about 10 MB a quarter and 30 MB a cost-report year with capture; under 1 GB for every published year.
+About 14,700 facilities: about 15,000 rows a quarter and 15,000 a cost-report year, about 75,000 rows a year. At the 1,300 bytes per stored row measured on the first outbreak load (see the umbrella plan), about 0.1 GB a year with capture; under 2 GB for every published year.
 
 ## Acceptance criteria
 

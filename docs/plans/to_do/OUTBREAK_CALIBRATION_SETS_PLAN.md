@@ -56,9 +56,10 @@ The New York Times county series is **not** used (non-commercial licence).
 
 ## Size
 
-Case counts about 2 million rows, under 0.5 GB. CMS weekly about 3.5
-million facility-weeks, about 3 GB. ILINet under 50 MB. About 3.5 GB in all.
-Capturing the full case file instead would add about 15 to 20 GB; not
+Corrected to the measured 1,300 bytes per fact (first figures times about
+6.5): case counts about 2 million rows, about 3 GB. CMS weekly about 3.5
+million facility-weeks, about 20 GB. ILINet under 0.3 GB. About 23 GB in all.
+Capturing the full case file instead would add about 100 to 130 GB; not
 planned.
 
 ## Acceptance criteria

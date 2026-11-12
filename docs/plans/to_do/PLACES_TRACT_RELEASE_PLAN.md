@@ -40,7 +40,7 @@ estimates.
 
 ## Size
 
-About 3 million rows: about 1 GB a release with capture and indexes.
+About 3 million rows: about 4 GB a release with capture and indexes at the measured 1,300 bytes per row (was 1 GB).
 
 ## Acceptance criteria
 
