@@ -122,6 +122,54 @@ WHERE part.measure_id IN (
     'tax_individual_income', 'tax_corporate_income', 'tax_other'
 );
 
+-- Each spending line's share of direct general spending: same dataset,
+-- government level, year and place (ADR-0009). The lines are Census's own
+-- aggregate lines whose item codes partition line 66, so the shares of a
+-- place add to 100 (where-public-money-goes slice 1; the list is
+-- registry.SPENDING_MIX_LINES). Utilities, liquor stores and insurance trust
+-- payments are outside general spending and are never in these shares.
+-- County areas exist only for Census of Governments years (cog_units);
+-- the nation and states every year from 2017 (asslgf). No share where the
+-- total is missing or zero.
+CREATE OR REPLACE VIEW gold_census_govfin.spending_mix AS
+SELECT part.dataset_id,
+       part.government_level,
+       part.measure_id,
+       part.measure_label,
+       part.fiscal_year,
+       part.geo_id,
+       part.geo_type,
+       part.value AS spending_amount,
+       total.value AS general_spending_total,
+       CASE WHEN part.value_status = 'valid' AND total.value_status = 'valid'
+                 AND total.value <> 0
+            THEN ROUND(part.value / total.value * 100, 2) END AS share_of_general_spending_pct,
+       CASE WHEN part.value_status <> 'valid' OR total.value_status <> 'valid' THEN 'suppressed_input'
+            WHEN total.value = 0 THEN 'denominator_zero' END AS unavailable_reason,
+       part.government_count,
+       part.release_key
+FROM gold_census_govfin.observation_latest AS part
+JOIN gold_census_govfin.observation_latest AS total
+  ON total.dataset_id = part.dataset_id
+ AND total.government_level = part.government_level
+ AND total.measure_id = 'spend_general_total'
+ AND total.fiscal_year = part.fiscal_year
+ AND total.quarter = part.quarter
+ AND total.geo_id = part.geo_id
+WHERE part.dataset_id IN ('cog_units', 'asslgf')
+  AND part.measure_id IN (
+    'spend_higher_education', 'spend_elementary_secondary_education',
+    'spend_other_education', 'spend_libraries', 'spend_public_welfare',
+    'spend_hospitals', 'spend_health', 'spend_social_insurance_administration',
+    'spend_veterans_services', 'spend_highways', 'spend_airports',
+    'spend_parking', 'spend_sea_inland_ports', 'spend_police', 'spend_fire',
+    'spend_correction', 'spend_protective_inspection', 'spend_natural_resources',
+    'spend_parks_recreation', 'spend_housing_community_development',
+    'spend_sewerage', 'spend_solid_waste', 'spend_financial_administration',
+    'spend_judicial_legal', 'spend_public_buildings', 'spend_other_administration',
+    'spend_interest_general_debt', 'spend_misc_commercial', 'spend_other_unallocable'
+);
+
 CREATE OR REPLACE VIEW gold_census_govfin.measure_export AS
 SELECT measure.dataset_id || ':' || measure.measure_id || ':' || level.government_level AS source_object_key,
        measure.dataset_id AS source_dataset,
@@ -138,10 +186,13 @@ CROSS JOIN (VALUES ('state_and_local'), ('state'), ('local')) AS level(governmen
 WHERE measure.dataset_id <> 'qtax' OR level.government_level = 'state';
 
 COMMENT ON SCHEMA gold_census_govfin IS
-    'Policy-free publication views for Census state and local government finance: taxes, revenue, aid and debt.';
+    'Policy-free publication views for Census state and local government finance: taxes, revenue, aid, spending and debt.';
 
 COMMENT ON VIEW gold_census_govfin.observation_latest IS
     'The newest published capture of each government finance figure; fiscal years are dated by the calendar year they end in.';
+
+COMMENT ON VIEW gold_census_govfin.spending_mix IS
+    'Each Census spending line as a share of direct general spending, same dataset, level, year and place; county areas in Census of Governments years only.';
 
 COMMENT ON VIEW gold_census_govfin.county_area_government IS
     'The governments a county-area figure sums: each counted whole in its Census home county, Census of Governments years only.';

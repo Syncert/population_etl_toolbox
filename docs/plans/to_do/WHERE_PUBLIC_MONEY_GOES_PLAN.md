@@ -160,10 +160,13 @@ Consolidated Federal Funds Report (ended FY2010).
 
 - Map govslocalfin spending `AGG_DESC` codes to the slice 1 measures by
   `AGG_DESC_LABEL`, verified against the unit-file aggregate-line sums for
-  the 2017 and 2022 census years (the same check that matched LF0008); add
-  `AGG_DESC_LABEL` to the requested variables so every capture carries its
-  labels.
-- Replay stored captures; the next scheduled run picks up new years.
+  the 2017 and 2022 census years (the same check that matched LF0008). The
+  codes are pinned in the registry (one code per measure), so requests stay
+  unchanged and stored captures keep their hashes.
+- Measures registered after a capture was published reach it through
+  `replay_new_measures` (newest published capture per period, primary-key
+  conflicts skipped, so unchanged rows are never rewritten); the next
+  scheduled run picks up new years.
 - Served for the nation and each state at state, local and combined levels.
 - Size: about 35 measures x 52 places x 3 levels x 8 years, about 44 k
   facts, negligible.

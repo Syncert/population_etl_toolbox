@@ -32,6 +32,7 @@ from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
 from data_ingestion_toolbox.census_govfin.schema import ensure_census_govfin_schema
 from data_ingestion_toolbox.census_govfin.silver_census_govfin.load import (
     publish_run,
+    replay_new_measures,
     replay_run,
 )
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -104,6 +105,24 @@ def _publish(run_ids: list[str]) -> int:
     )
 
 
+def _replay_new_measures() -> int:
+    """Measures registered after a capture was published (where-public-money-goes)."""
+    connection_factory = _get_postgres_hook().get_conn
+    written = replay_new_measures(connection_factory)
+    logging.getLogger("airflow.task").info(
+        "new registered measures: %d fact(s) written from stored captures", written
+    )
+    if written:
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        # A new metric in an existing publisher: requeue so the glossary
+        # harvest reads it (the publisher watermark itself is unchanged).
+        emit_latest_publisher_ready(
+            connection_factory, publisher_schema="gold_census_govfin", requeue=True
+        )
+    return written
+
+
 with DAG(
     dag_id="census_govfin_ingest",
     description="Capture, replay, roll up and publish Census state and local government finance",
@@ -125,6 +144,11 @@ with DAG(
         task_id="require_shared_geography",
         python_callable=_require_shared_geography,
     )
+    new_measures = PythonOperator(
+        task_id="replay_new_measures",
+        python_callable=_replay_new_measures,
+        execution_timeout=timedelta(hours=2),
+    )
     for dataset_id in DATASET_IDS:
         capture = PythonOperator(
             task_id=f"ingest_batch_{dataset_id}",
@@ -144,3 +168,4 @@ with DAG(
             op_kwargs={"run_ids": capture.output},
         )
         ensure_schema >> require_shared_geography >> capture >> replay >> publish
+        publish >> new_measures

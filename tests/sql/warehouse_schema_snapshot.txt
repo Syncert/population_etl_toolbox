@@ -4647,6 +4647,44 @@ v gold_census_govfin.observation_revision
     body      JOIN control.census_govfin_slice slice ON slice.capture_id = fact.capture_id
     body   WHERE slice.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
 
+v gold_census_govfin.spending_mix
+    column dataset_id text
+    column government_level text
+    column measure_id text
+    column measure_label text
+    column fiscal_year integer
+    column geo_id text
+    column geo_type text
+    column spending_amount numeric
+    column general_spending_total numeric
+    column share_of_general_spending_pct numeric
+    column unavailable_reason text
+    column government_count integer
+    column release_key text
+    body SELECT part.dataset_id,
+    body     part.government_level,
+    body     part.measure_id,
+    body     part.measure_label,
+    body     part.fiscal_year,
+    body     part.geo_id,
+    body     part.geo_type,
+    body     part.value AS spending_amount,
+    body     total.value AS general_spending_total,
+    body         CASE
+    body             WHEN part.value_status = 'valid'::text AND total.value_status = 'valid'::text AND total.value <> 0::numeric THEN round(part.value / total.value * 100::numeric, 2)
+    body             ELSE NULL::numeric
+    body         END AS share_of_general_spending_pct,
+    body         CASE
+    body             WHEN part.value_status <> 'valid'::text OR total.value_status <> 'valid'::text THEN 'suppressed_input'::text
+    body             WHEN total.value = 0::numeric THEN 'denominator_zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     part.government_count,
+    body     part.release_key
+    body    FROM gold_census_govfin.observation_latest part
+    body      JOIN gold_census_govfin.observation_latest total ON total.dataset_id = part.dataset_id AND total.government_level = part.government_level AND total.measure_id = 'spend_general_total'::text AND total.fiscal_year = part.fiscal_year AND total.quarter = part.quarter AND total.geo_id = part.geo_id
+    body   WHERE (part.dataset_id = ANY (ARRAY['cog_units'::text, 'asslgf'::text])) AND (part.measure_id = ANY (ARRAY['spend_higher_education'::text, 'spend_elementary_secondary_education'::text, 'spend_other_education'::text, 'spend_libraries'::text, 'spend_public_welfare'::text, 'spend_hospitals'::text, 'spend_health'::text, 'spend_social_insurance_administration'::text, 'spend_veterans_services'::text, 'spend_highways'::text, 'spend_airports'::text, 'spend_parking'::text, 'spend_sea_inland_ports'::text, 'spend_police'::text, 'spend_fire'::text, 'spend_correction'::text, 'spend_protective_inspection'::text, 'spend_natural_resources'::text, 'spend_parks_recreation'::text, 'spend_housing_community_development'::text, 'spend_sewerage'::text, 'spend_solid_waste'::text, 'spend_financial_administration'::text, 'spend_judicial_legal'::text, 'spend_public_buildings'::text, 'spend_other_administration'::text, 'spend_interest_general_debt'::text, 'spend_misc_commercial'::text, 'spend_other_unallocable'::text]));
+
 v gold_census_govfin.tax_burden
     column dataset_id text
     column government_level text
