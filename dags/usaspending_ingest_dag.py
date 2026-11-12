@@ -52,9 +52,11 @@ def _get_postgres_hook():  # noqa: ANN202
     dag_id="usaspending_ingest",
     description="Capture, replay changed rows, reconcile, and publish USAspending award obligations by place",
     default_args=DEFAULT_ARGS,
-    # Weekly on Sunday: USAspending loads agency submissions daily, and the
-    # current and prior fiscal years are read again each week.
-    schedule="0 9 * * 0",
+    # Monthly on the 20th: the current and prior fiscal years are read again
+    # each month. Every changed amount of a refresh year is kept as a
+    # revision, so a weekly read would keep about four times the revisions
+    # for the same annual figures.
+    schedule="0 9 20 * *",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     catchup=False,
     max_active_runs=1,

@@ -440,7 +440,7 @@ Trigger `usaspending_ingest` with `{"history": true}` after the state and
 county geography loads, and again until it reports no request owed: each
 run reads the current and prior fiscal years, then fiscal 2008 onward oldest
 first, stopping at `max_requests` (1,500); about 3,200 requests in all
-(0.5-1 GB of captures) through the one-slot `usaspending_api` pool
+(about 1 GB with silver) through the one-slot `usaspending_api` pool
 ([operations](../user-guides/USASPENDING_PIPELINE_OPERATIONS.md)).
 
 Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs

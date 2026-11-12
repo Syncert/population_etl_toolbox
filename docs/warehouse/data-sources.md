@@ -47,7 +47,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
 | [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Loaded |
 | [Monthly Treasury Statement, federal receipts and outlays](#treasury_mts) | U.S. Treasury, Bureau of the Fiscal Service | ● |  |  |  |  |  |  | 2015–2026 | Monthly | Not loaded yet |
-| [Federal award money by place of performance](#usaspending) | USAspending.gov (U.S. Treasury) |  | ● | ● |  |  |  |  | 2008–2026 | Weekly | Not loaded yet |
+| [Federal award money by place of performance](#usaspending) | USAspending.gov (U.S. Treasury) |  | ● | ● |  |  |  |  | 2008–2026 | Monthly | Not loaded yet |
 | [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly + daily lean groups | Loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
@@ -428,7 +428,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 ### Federal award money by place of performance (`USASPENDING`)
 
 - **Publisher:** USAspending.gov, U.S. Department of the Treasury
-- **Code:** `src/data_ingestion_toolbox/usaspending` · DAG `usaspending_ingest` · Weekly, Sunday 09:00 UTC
+- **Code:** `src/data_ingestion_toolbox/usaspending` · DAG `usaspending_ingest` · Monthly, 20th 09:00 UTC
 - **Publisher releases:** Continuously; agencies report within about 30 days (defense about 90), so the current and prior fiscal years change
 - **Credential:** none
 - **Years:** fiscal 2008 onward (federal fiscal years end September 30)
@@ -437,7 +437,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.usaspending_request`
 - **Silver:** `silver_usaspending.geography_amount`, `silver_usaspending.geography_amount_revision`, `silver_usaspending.agency_year`
 - **Gold:** `gold_usaspending.observation_revision`, `gold_usaspending.observation_latest`, `gold_usaspending.awards_by_award_type`, `gold_usaspending.awards_by_agency`
-- **Status:** Not loaded yet (WHERE_PUBLIC_MONEY_GOES_PLAN slice 4). About 3,200 requests, 0.5-1 GB of captures and up to about 2 GB of silver rows ([operations](../user-guides/USASPENDING_PIPELINE_OPERATIONS.md)).
+- **Status:** Not loaded yet (WHERE_PUBLIC_MONEY_GOES_PLAN slice 4). About 3,200 requests, about 2.2 M rows and about 1 GB at first, then up to about 1.2 GB a year of monthly revisions ([operations](../user-guides/USASPENDING_PIPELINE_OPERATIONS.md)).
 
 <a id="elections"></a>
 ### Election results and seat holders (`ELECTIONS`)

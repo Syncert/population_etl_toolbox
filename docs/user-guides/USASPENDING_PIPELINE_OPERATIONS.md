@@ -37,7 +37,7 @@ $97 million.
 
 ## Which requests a run makes
 
-- An ordinary run (weekly, Sunday 09:00 UTC) reads the current and prior
+- An ordinary run (monthly, the 20th at 09:00 UTC) reads the current and prior
   fiscal years again, every request, because agencies are still reporting
   them (most within 30 days, defense within about 90).
 - `{"history": true}` also reads fiscal 2008 onward, oldest year first, but
@@ -118,6 +118,13 @@ Load the shared geography first (states and counties), then trigger the DAG
 with `{"history": true}`. Fiscal 2008 to the current year is about 3,200
 requests (each year: one or two agency pages, and two layers of all awards,
 five groups and about 80 agencies), so about three runs of 1,500, roughly an
-hour each at one request a second plus answer time. Captures total about
-0.5-1 GB and silver up to about 2 GB with indexes. Then run the glossary
+hour each at one request a second plus answer time. Then run the glossary
 harvest.
+
+Size, measured at about 320 bytes per silver row with its indexes: about
+2.2 million rows (per fiscal year about 4,000 state rows and 115,000 county
+rows, most of them agency cuts), about 0.7 GB, plus about 0.25 GB of
+captures. Each monthly run then re-reads the two refresh years (about 340
+requests, about 25 MB of captures) and keeps every changed amount as a
+revision: up to about 240,000 rows, about 75 MB, a month while those years
+are still being reported, so about 1.2 GB a year at most.

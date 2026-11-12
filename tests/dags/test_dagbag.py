@@ -135,7 +135,7 @@ EXPECTED_SCHEDULES = {
     # business day of the following month.
     "treasury_mts_ingest": "0 16 16 * *",
     # Weekly on Sunday: the current and prior fiscal years are read again.
-    "usaspending_ingest": "0 9 * * 0",
+    "usaspending_ingest": "0 9 20 * *",
     # Monthly on the 20th: NCEI restamps the current year's file each month,
     # and a file name already published is not downloaded again.
     "noaa_storm_events_ingest": "0 16 20 * *",
