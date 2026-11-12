@@ -38,6 +38,12 @@ class CdcAsset:
     population_basis: str
     enabled: bool = True
     media_type: str = "application/json"
+    #: A bulk asset (millions of rows) is read in large pages with per-page
+    #: resume, and its paged total is checked against the provider's own
+    #: ``count(*)`` before the release counts as complete.
+    bulk: bool = False
+    #: The census vintage of the geography the provider codes name, when fixed.
+    geography_vintage: int | None = None
 
     @property
     def api_path(self) -> str:
@@ -96,6 +102,34 @@ PLACES_COUNTY_COLUMNS = _columns(
     ("year", "text"),
     ("stateabbr", "text"),
     ("statedesc", "text"),
+    ("locationname", "text"),
+    ("datasource", "text"),
+    ("category", "text"),
+    ("measure", "text"),
+    ("data_value_unit", "text"),
+    ("data_value_type", "text"),
+    ("data_value", "number"),
+    ("data_value_footnote_symbol", "text"),
+    ("data_value_footnote", "text"),
+    ("low_confidence_limit", "number"),
+    ("high_confidence_limit", "number"),
+    ("totalpopulation", "number"),
+    ("totalpop18plus", "number"),
+    ("locationid", "text"),
+    ("categoryid", "text"),
+    ("measureid", "text"),
+    ("datavaluetypeid", "text"),
+    ("short_question_text", "text"),
+)
+
+# The tract release names its county as well; it publishes no footnote on any
+# tract row read so far, but the columns are in its schema and are read.
+PLACES_TRACT_COLUMNS = _columns(
+    ("year", "text"),
+    ("stateabbr", "text"),
+    ("statedesc", "text"),
+    ("countyname", "text"),
+    ("countyfips", "text"),
     ("locationname", "text"),
     ("datasource", "text"),
     ("category", "text"),
@@ -178,9 +212,31 @@ PLACES_COUNTY_ASSET = CdcAsset(
     methodology_url="https://www.cdc.gov/places/methodology/index.html",
     estimate_method="model_based_small_area_estimate",
     population_basis="adults age 18 years and older",
+    geography_vintage=2020,
 )
 
-ALL_ASSETS: tuple[CdcAsset, ...] = (CDI_ASSET, PLACES_COUNTY_ASSET)
+# Verified against data.cdc.gov/api/views/cwsq-ngmh on 2026-11-12 (OFFICE_LAB
+# probe 6): 3,047,284 rows, 40 measures, crude prevalence only, Public Domain.
+PLACES_TRACT_ASSET = CdcAsset(
+    asset_id="places_tract",
+    socrata_id="cwsq-ngmh",
+    label="PLACES: Local Data for Better Health, Census Tract Data, 2025 release",
+    parser_contract_version="places-tract-2025-soda-v1",
+    expected_columns=PLACES_TRACT_COLUMNS,
+    stable_order=("year", "locationid", "measureid", "datavaluetypeid"),
+    source_key=("year", "locationid", "measureid", "datavaluetypeid"),
+    geography_levels=("tract",),
+    geography_basis="2020 Census tracts",
+    release_field="rowsUpdatedAt",
+    update_cadence="annual; metadata checked weekly",
+    methodology_url="https://www.cdc.gov/places/methodology/index.html",
+    estimate_method="model_based_small_area_estimate",
+    population_basis="adults age 18 years and older",
+    bulk=True,
+    geography_vintage=2020,
+)
+
+ALL_ASSETS: tuple[CdcAsset, ...] = (CDI_ASSET, PLACES_COUNTY_ASSET, PLACES_TRACT_ASSET)
 
 
 def enabled_assets() -> list[CdcAsset]:

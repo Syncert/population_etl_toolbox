@@ -240,6 +240,37 @@ def fetch_socrata_page(
             active_client.close()
 
 
+def fetch_socrata_count(
+    asset: CdcAsset,
+    *,
+    config: CdcConfig | None = None,
+    client: Any | None = None,
+    on_retry: Callable[[BaseException], None] | None = None,
+) -> SocrataPage:
+    """Fetch the provider's own row count of the registered dataset.
+
+    Socrata answers ``[{"count": "<n>"}]``; the page's ``row_count`` is the
+    one answer row, and the count itself is the caller's to read.
+    """
+    config = config or CdcConfig.from_environment()
+    params: dict[str, object] = {"$select": "count(*)"}
+    own_client = client is None
+    active_client = client or httpx.Client(timeout=config.socrata_timeout_seconds)
+    try:
+        raw_bytes, response_headers, status = _request_bytes(
+            asset.api_path,
+            params=params,
+            config=config,
+            client=active_client,
+            on_retry=on_retry,
+        )
+        rows = _validated_json(raw_bytes, asset.api_path, list)
+        return SocrataPage(params, raw_bytes, response_headers, status, len(rows))
+    finally:
+        if own_client:
+            active_client.close()
+
+
 def fetch_socrata_metadata(
     asset: CdcAsset,
     *,

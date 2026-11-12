@@ -26,7 +26,8 @@ from __future__ import annotations
 #:   average-price series carry a Census region or division or a BLS metro
 #:   (``silver_bls/geography_parser.py``, grocery-and-gasoline-prices).
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
-#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
+#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES county and
+#:   ``("tract",)`` for PLACES tract (places-tract-release).
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
 #:   from the 5-year estimates only (sub-county-geography).
@@ -113,7 +114,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
         }
     ),
     "BLS_QCEW": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY", "TRACT"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),

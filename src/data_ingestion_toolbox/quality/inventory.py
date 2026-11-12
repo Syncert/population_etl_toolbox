@@ -1524,8 +1524,18 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
         "CDC",
         grain="run_id; unique per (asset_id, release_watermark, run_id)",
         lineage="control.ingestion_run",
-        scope_method="registered Socrata assets (cdi, places_county)",
+        scope_method="registered Socrata assets (cdi, places_county, places_tract)",
         cadence="weekly metadata check",
+        empty_behavior="empty only before the first CDC run",
+    ),
+    _obj(
+        "control.cdc_release_page",
+        "control",
+        "CDC",
+        grain="run_id, page_offset",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every observation page a release run reads or resumes",
+        cadence="per CDC capture",
         empty_behavior="empty only before the first CDC run",
     ),
     _obj(
@@ -6860,9 +6870,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "completeness",
         "A CDC release publishes only when complete; partial pages cannot "
-        "advance the published watermark.",
+        "advance the published watermark, and a bulk release's paged total "
+        "must equal CDC's own count(*).",
         (
             "control.cdc_dataset_release",
+            "control.cdc_release_page",
             "silver_cdc.fact_health_observation",
             "gold_cdc.health_observation",
         ),

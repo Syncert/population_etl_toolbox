@@ -693,6 +693,16 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
             load_fixture("cdc", "places_county_metadata.json"),
             load_fixture("cdc", "places_county_observations.json"),
         ),
+        "places_tract": (
+            load_fixture("cdc", "places_tract_metadata.json"),
+            [
+                row
+                for offset in (0, 2000, 4000)
+                for row in load_fixture(
+                    "cdc", f"places_tract_dane_offset_{offset}.json"
+                )
+            ],
+        ),
     }
 
     def resolve(asset: Any) -> tuple[Any, Any]:
@@ -723,8 +733,19 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
             len(window),
         )
 
+    def count(asset: Any, **_kwargs: Any) -> SocrataPage:
+        _, rows = resolve(asset)
+        return SocrataPage(
+            {"$select": "count(*)"},
+            json.dumps([{"count": str(len(rows))}]).encode("utf-8"),
+            {"content-type": "application/json"},
+            200,
+            1,
+        )
+
     monkeypatch.setattr(cdc_capture, "fetch_socrata_metadata", metadata)
     monkeypatch.setattr(cdc_capture, "fetch_socrata_page", page)
+    monkeypatch.setattr(cdc_capture, "fetch_socrata_count", count)
 
 
 def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:

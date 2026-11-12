@@ -1566,6 +1566,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_ipeds_metric: str,
     published_hhs_metric: str,
     published_cdc_county_metric: str,
+    published_cdc_tract_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,
     published_pep_metrics: list[str],
@@ -2228,6 +2229,24 @@ CDC_PLACES_GRAIN_ROWS: tuple[dict[str, object], ...] = (
     },
 )
 
+#: The PLACES tract asset (``("tract",)``) and its own watermark.
+CDC_TRACT_ASSET = "places_tract"
+CDC_TRACT_WATERMARK = "3975004802"
+CDC_TRACT_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "state:94|county:002|tract:000100",
+        "geo_type": "tract",
+        "geography": {
+            "geo_type": "tract",
+            "state_fips": "94",
+            "county_fips": "002",
+            "tract_code": "000100",
+            "name": "Sweep tract",
+        },
+        "value": 15.5,
+    },
+)
+
 
 def _digest_token() -> str:
     """A 64-character lowercase hex token.
@@ -2480,6 +2499,20 @@ def published_cdc_county_metric(
         release_watermark=CDC_COUNTY_WATERMARK,
         socrata_id="swc5-untb",
         grain_rows=CDC_PLACES_GRAIN_ROWS,
+    )
+
+
+@pytest.fixture
+def published_cdc_tract_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one PLACES tract metric, the only CDC asset with that grain."""
+    yield from _publish_cdc_measure(
+        postgres_connection_factory,
+        asset_id=CDC_TRACT_ASSET,
+        release_watermark=CDC_TRACT_WATERMARK,
+        socrata_id="cwsq-ngmh",
+        grain_rows=CDC_TRACT_GRAIN_ROWS,
     )
 
 

@@ -342,7 +342,7 @@ def test_cdc_empty_result_returns_the_stable_empty_contract() -> None:
     [
         (
             {"dataset": "places_zcta"},
-            "dataset must be one of: cdi, places_county",
+            "dataset must be one of: cdi, places_county, places_tract",
         ),
         (
             {"geo_type": "tract"},

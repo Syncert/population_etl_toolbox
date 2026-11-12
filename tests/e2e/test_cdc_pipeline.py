@@ -292,6 +292,7 @@ def cdc_warehouse(
                 cursor.execute("DELETE FROM silver_cdc.dim_measure")
                 cursor.execute("DELETE FROM silver_cdc.dim_stratum")
                 cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
+                cursor.execute("DELETE FROM control.cdc_release_page")
                 cursor.execute("DELETE FROM control.cdc_dataset_release")
                 delete_capture_graph(cursor, owned_runs)
                 for geo_id in sorted(

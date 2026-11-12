@@ -156,11 +156,13 @@ r control.cdc_dataset_release
     column published_at timestamp with time zone
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint cdc_dataset_release_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text])))
+    column counted_row_count bigint
+    constraint cdc_dataset_release_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text, 'places_tract'::text])))
     constraint cdc_dataset_release_asset_id_release_watermark_run_id_key UNIQUE (asset_id, release_watermark, run_id)
     constraint cdc_dataset_release_captured_row_count_check CHECK ((captured_row_count >= 0))
     constraint cdc_dataset_release_check CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
     constraint cdc_dataset_release_check1 CHECK (((decision <> 'ingest'::text) OR (status = 'quarantined'::text) OR complete))
+    constraint cdc_dataset_release_counted_row_count_check CHECK (((counted_row_count IS NULL) OR (counted_row_count >= 0)))
     constraint cdc_dataset_release_decision_check CHECK ((decision = ANY (ARRAY['unchanged'::text, 'ingest'::text, 'schema_change_quarantine'::text, 'dataset_replacement_quarantine'::text, 'backward_watermark_quarantine'::text])))
     constraint cdc_dataset_release_metadata_capture_id_fkey FOREIGN KEY (metadata_capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint cdc_dataset_release_page_count_check CHECK ((page_count >= 0))
@@ -174,6 +176,27 @@ r control.cdc_dataset_release
     index cdc_dataset_release_asset_id_release_watermark_run_id_key CREATE UNIQUE INDEX cdc_dataset_release_asset_id_release_watermark_run_id_key ON control.cdc_dataset_release USING btree (asset_id, release_watermark, run_id)
     index cdc_dataset_release_latest_idx CREATE INDEX cdc_dataset_release_latest_idx ON control.cdc_dataset_release USING btree (asset_id, release_watermark DESC, created_at DESC)
     index cdc_dataset_release_pkey CREATE UNIQUE INDEX cdc_dataset_release_pkey ON control.cdc_dataset_release USING btree (run_id)
+
+r control.cdc_release_page
+    column run_id uuid NOT NULL
+    column asset_id text NOT NULL
+    column release_watermark bigint NOT NULL
+    column page_offset bigint NOT NULL
+    column page_limit integer NOT NULL
+    column row_count integer NOT NULL
+    column capture_id uuid NOT NULL
+    column resumed_from_run_id uuid
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cdc_release_page_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_release_page_check CHECK (((row_count >= 0) AND (row_count <= page_limit)))
+    constraint cdc_release_page_page_limit_check CHECK ((page_limit > 0))
+    constraint cdc_release_page_page_offset_check CHECK ((page_offset >= 0))
+    constraint cdc_release_page_pkey PRIMARY KEY (run_id, page_offset)
+    constraint cdc_release_page_release_watermark_check CHECK ((release_watermark >= 0))
+    constraint cdc_release_page_resumed_from_run_id_fkey FOREIGN KEY (resumed_from_run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cdc_release_page_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    index cdc_release_page_pkey CREATE UNIQUE INDEX cdc_release_page_pkey ON control.cdc_release_page USING btree (run_id, page_offset)
+    index cdc_release_page_resume_idx CREATE INDEX cdc_release_page_resume_idx ON control.cdc_release_page USING btree (asset_id, release_watermark, page_limit, created_at)
 
 r control.census_bps_slice
     column run_id uuid NOT NULL
@@ -15249,7 +15272,7 @@ r silver_cdc.dim_dataset_release
     column published_at timestamp with time zone
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_dataset_release_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text])))
+    constraint dim_dataset_release_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text, 'places_tract'::text])))
     constraint dim_dataset_release_check CHECK (((status = 'replaying'::text) OR (reconciled_at IS NOT NULL)))
     constraint dim_dataset_release_check1 CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
     constraint dim_dataset_release_metadata_capture_id_fkey FOREIGN KEY (metadata_capture_id) REFERENCES raw_capture.response_capture(capture_id)
@@ -15273,7 +15296,7 @@ r silver_cdc.dim_measure
     column population_basis text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint dim_measure_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text])))
+    constraint dim_measure_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text, 'places_tract'::text])))
     constraint dim_measure_pkey PRIMARY KEY (asset_id, measure_id, value_type_id)
     index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_cdc.dim_measure USING btree (asset_id, measure_id, value_type_id)
 
@@ -15347,7 +15370,7 @@ r silver_cdc.observation_quarantine
     column error_code text NOT NULL
     column error_summary text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
-    constraint observation_quarantine_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text])))
+    constraint observation_quarantine_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text, 'places_tract'::text])))
     constraint observation_quarantine_pkey PRIMARY KEY (quarantine_sk)
     constraint observation_quarantine_run_id_asset_id_release_watermark_so_key UNIQUE (run_id, asset_id, release_watermark, source_row_index, error_code)
     constraint observation_quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
@@ -15391,12 +15414,12 @@ r silver_cdc.observation_revision
     column population_18_plus numeric
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     constraint observation_revision_adjustment_status_check CHECK ((adjustment_status = ANY (ARRAY['crude'::text, 'age_adjusted'::text, 'source_specific'::text])))
-    constraint observation_revision_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text])))
+    constraint observation_revision_asset_id_check CHECK ((asset_id = ANY (ARRAY['cdi'::text, 'places_county'::text, 'places_tract'::text])))
     constraint observation_revision_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint observation_revision_check CHECK ((period_end >= period_start))
     constraint observation_revision_check1 CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     constraint observation_revision_check2 CHECK (((confidence_lower IS NULL) OR (confidence_upper IS NULL) OR (confidence_lower <= confidence_upper)))
-    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'unsupported'::text])))
+    constraint observation_revision_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text, 'tract'::text, 'unsupported'::text])))
     constraint observation_revision_pkey PRIMARY KEY (capture_id, source_row_index)
     constraint observation_revision_population_18_plus_check CHECK (((population_18_plus IS NULL) OR (population_18_plus >= (0)::numeric)))
     constraint observation_revision_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
