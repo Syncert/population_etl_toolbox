@@ -122,18 +122,24 @@ export function normalsTable(rowsByCode: Readonly<Record<string, readonly Observ
   };
 }
 
+/** NCEI's own precision for a station normal: 0.1 F and 0.01 in. */
+export const NORMALS_DECIMALS: Readonly<Record<NormalsMeasure, number>> = { mean: 1, high: 1, low: 1, precipitation: 2 };
+
 /**
- * The stored value with the source's own precision kept: NCEI publishes
- * temperature normals to 0.1 F and precipitation to 0.01 in. The county mean
- * is stored to two decimals, so a trailing zero beyond that is dropped
- * ("18.60" is 18.6) and a second decimal the mean carries is kept.
+ * A county figure at the precision NCEI publishes its station normals:
+ * temperature to 0.1 F, precipitation to 0.01 in, always with that many
+ * decimals ("57.0°F", "4.40 in"). The county figure is this warehouse's
+ * unweighted mean of station normals, stored to two decimals; its second
+ * temperature decimal comes from the averaging, not from NCEI, so it is
+ * rounded (half away from zero) to the stations' own precision.
  */
 export function formatNormal(value: string, measure: NormalsMeasure): string {
-  const minimum = measure === "precipitation" ? 2 : 1;
-  const [whole, fraction = ""] = value.split(".");
-  let digits = fraction.replace(/0+$/, "");
-  if (digits.length < minimum) digits = digits.padEnd(minimum, "0");
-  const text = `${whole}.${digits}`;
+  const decimals = NORMALS_DECIMALS[measure];
+  const scale = 10 ** decimals;
+  const number = Number(value);
+  // The epsilon keeps a stored half (18.65) from flooring through binary error.
+  const rounded = (Math.sign(number) * Math.round(Math.abs(number) * scale + 1e-9)) / scale;
+  const text = (rounded === 0 ? 0 : rounded).toFixed(decimals);
   return measure === "precipitation" ? `${text} in` : `${text}°F`;
 }
 

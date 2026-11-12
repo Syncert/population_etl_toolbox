@@ -31,8 +31,11 @@ place page had no climate card, so a reader never saw the placement note.
 
 - `apps/web/lib/climateNormals.ts`: four monthly normals (mean, mean daily
   high, mean daily low, precipitation), laid out by calendar month from the
-  served `month` dimension; values shown as stored at the source's precision
-  (0.1 F, 0.01 in); station counts from `station_count`; every
+  served `month` dimension; values shown at NCEI's station precision with a
+  fixed number of decimals (0.1 F, 0.01 in), lead line and table alike (the
+  county mean is stored to two decimals; the second temperature decimal comes
+  from averaging and is rounded, follow-up after the 2026-11-12 deploy showed
+  "57.0°F" beside "71.46°F"); station counts from `station_count`; every
   `placement_note` shown as served.
 - `apps/web/components/ClimateNormals.tsx`: a "Climate averages" section on
   every place page, after Starting a family, linked from the chapter rail.

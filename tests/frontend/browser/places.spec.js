@@ -725,10 +725,10 @@ test("a county's childcare card adds the nation's price change since its study y
 });
 
 // Covers: WEB-175 — place-climate-normals: a county page shows its twelve
-// months of NOAA's 1991-2020 normals as stored, with the station counts and
+// months of NOAA's 1991-2020 normals at NCEI's station precision, with the station counts and
 // the nearest-county placement note; a state says the normals are shown for
 // counties, and a city links the county it lies in.
-test("a county page shows its monthly climate normals as stored, with stations and the placement note", async ({ page }) => {
+test("a county page shows its monthly climate normals at NCEI's precision, with stations and the placement note", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await ready(page, "/us/wisconsin/dane-county");
   const climate = page.getByTestId("place-climate");
@@ -744,6 +744,7 @@ test("a county page shows its monthly climate normals as stored, with stations a
   await expect(page.getByTestId("place-climate-7-mean")).toHaveText("71.5°F");
   await expect(page.getByTestId("place-climate-7-precipitation")).toHaveText("4.40 in");
   await expect(page.getByTestId("place-climate-stations")).toContainText("temperature from 3 to 4 stations; precipitation from 6 stations");
+  await expect(page.getByTestId("place-climate-stations")).toContainText("rounded to the precision NCEI publishes for a station: 0.1°F and 0.01 in");
   await expect(page.getByTestId("place-climate-placement-note")).toHaveText(
     "Includes stations no county boundary covers, placed on this county as the nearest county boundary within 1,000 metres: USC00470000 (212 m).",
   );
