@@ -492,7 +492,8 @@ SPATIAL_SURFACES: frozenset[str] = frozenset({"explorer.map"})
 #:   USDA ERS declines the same three for its own reason: its classifications
 #:   (rural-urban codes, typology flags) are not quantities to reduce.
 #:   The Monthly Treasury Statement declines the same three for its own: its
-#:   years are federal fiscal years, not calendar years to align by.
+#:   years are federal fiscal years, not calendar years to align by, and
+#:   USAspending's are too (recorded by place of performance besides).
 #: - **Spatial presentation.** ``gold_fred.fact_fred_observation`` writes
 #:   ``'NATIONAL'`` as a literal: FRED is national by construction, and the
 #:   boundary draws no national polygon. The map declines it before any
@@ -506,12 +507,14 @@ REVIEWED_DECLINES: dict[tuple[str, str], str] = {
     ("comparison.workspace", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("comparison.workspace", "USDA_ERS"): ANALYSIS_POLICY,
     ("comparison.workspace", "TREASURY_MTS"): ANALYSIS_POLICY,
+    ("comparison.workspace", "USASPENDING"): ANALYSIS_POLICY,
     ("explorer.distribution", "CDC"): ANALYSIS_POLICY,
     ("explorer.distribution", "FBI_UCR"): ANALYSIS_POLICY,
     ("explorer.distribution", "USDA_NASS"): ANALYSIS_POLICY,
     ("explorer.distribution", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("explorer.distribution", "USDA_ERS"): ANALYSIS_POLICY,
     ("explorer.distribution", "TREASURY_MTS"): ANALYSIS_POLICY,
+    ("explorer.distribution", "USASPENDING"): ANALYSIS_POLICY,
     ("explorer.map", "FRED"): SPATIAL_POLICY,
     ("explorer.map", "TREASURY_MTS"): SPATIAL_POLICY,
     ("explorer.settled_history", "CDC"): REDUCTION_POLICY,
@@ -520,30 +523,35 @@ REVIEWED_DECLINES: dict[tuple[str, str], str] = {
     ("explorer.settled_history", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("explorer.settled_history", "USDA_ERS"): REDUCTION_POLICY,
     ("explorer.settled_history", "TREASURY_MTS"): REDUCTION_POLICY,
+    ("explorer.settled_history", "USASPENDING"): REDUCTION_POLICY,
     ("workbench.cross_section", "CDC"): REDUCTION_POLICY,
     ("workbench.cross_section", "FBI_UCR"): REDUCTION_POLICY,
     ("workbench.cross_section", "USDA_NASS"): REDUCTION_POLICY,
     ("workbench.cross_section", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("workbench.cross_section", "USDA_ERS"): REDUCTION_POLICY,
     ("workbench.cross_section", "TREASURY_MTS"): REDUCTION_POLICY,
+    ("workbench.cross_section", "USASPENDING"): REDUCTION_POLICY,
     ("workbench.heatmap", "CDC"): REDUCTION_POLICY,
     ("workbench.heatmap", "FBI_UCR"): REDUCTION_POLICY,
     ("workbench.heatmap", "USDA_NASS"): REDUCTION_POLICY,
     ("workbench.heatmap", "NOAA_NORMALS"): REDUCTION_POLICY,
     ("workbench.heatmap", "USDA_ERS"): REDUCTION_POLICY,
     ("workbench.heatmap", "TREASURY_MTS"): REDUCTION_POLICY,
+    ("workbench.heatmap", "USASPENDING"): REDUCTION_POLICY,
     ("workbench.correlation", "CDC"): ANALYSIS_POLICY,
     ("workbench.correlation", "FBI_UCR"): ANALYSIS_POLICY,
     ("workbench.correlation", "USDA_NASS"): ANALYSIS_POLICY,
     ("workbench.correlation", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("workbench.correlation", "USDA_ERS"): ANALYSIS_POLICY,
     ("workbench.correlation", "TREASURY_MTS"): ANALYSIS_POLICY,
+    ("workbench.correlation", "USASPENDING"): ANALYSIS_POLICY,
     ("workbench.matrix", "CDC"): ANALYSIS_POLICY,
     ("workbench.matrix", "FBI_UCR"): ANALYSIS_POLICY,
     ("workbench.matrix", "USDA_NASS"): ANALYSIS_POLICY,
     ("workbench.matrix", "NOAA_NORMALS"): ANALYSIS_POLICY,
     ("workbench.matrix", "USDA_ERS"): ANALYSIS_POLICY,
     ("workbench.matrix", "TREASURY_MTS"): ANALYSIS_POLICY,
+    ("workbench.matrix", "USASPENDING"): ANALYSIS_POLICY,
 }
 
 

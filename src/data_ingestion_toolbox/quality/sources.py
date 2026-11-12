@@ -2670,6 +2670,105 @@ def decennial_tract_county_sums(
     ]
 
 
+def usaspending_request_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-USASPENDING-002 — no request left unreplayed; no stored row names an unpublished request."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.usaspending_request")
+    if total == 0:
+        return [RuleOutcome("control.usaspending_request", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT request.run_id, request.fiscal_year, request.geo_layer,
+               request.cut_kind, request.cut_key, request.status
+          FROM control.usaspending_request AS request
+         WHERE request.status IN ('captured', 'silver_ready')
+        """,
+        order_by="1, 2, 3, 4, 5",
+    )
+    # Checked per run through the run index rather than scanning every row.
+    orphans, orphans_total = _offenders(
+        cursor,
+        """
+        SELECT amount_row.run_id, amount_row.fiscal_year, amount_row.geo_layer,
+               amount_row.cut_kind, amount_row.cut_key, COUNT(*)
+          FROM silver_usaspending.geography_amount AS amount_row
+         WHERE NOT EXISTS (
+                SELECT 1 FROM control.usaspending_request AS request
+                 WHERE request.run_id = amount_row.run_id
+                   AND request.fiscal_year = amount_row.fiscal_year
+                   AND request.geo_layer = amount_row.geo_layer
+                   AND request.cut_kind = amount_row.cut_kind
+                   AND request.cut_key = amount_row.cut_key
+                   AND request.status = 'published'
+               )
+         GROUP BY 1, 2, 3, 4, 5
+        """,
+        order_by="1, 2, 3, 4, 5",
+    )
+    return [
+        RuleOutcome(
+            "control.usaspending_request",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "silver_usaspending.geography_amount",
+            "fail" if orphans else "pass",
+            observed_count=orphans_total,
+            expected_count=0,
+            evidence=orphans[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def usaspending_group_total(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-USASPENDING-004 — award type groups add to the all-awards total within 0.1%."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM silver_usaspending.geography_amount "
+        "WHERE geo_layer = 'state' AND cut_kind = 'all'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_usaspending.geography_amount", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT whole.fiscal_year, whole.amount, parts.amount
+          FROM (
+                SELECT fiscal_year, SUM(amount) AS amount
+                  FROM silver_usaspending.geography_amount
+                 WHERE geo_layer = 'state' AND cut_kind = 'all' AND value_status = 'valid'
+                 GROUP BY fiscal_year
+               ) AS whole
+          JOIN (
+                SELECT fiscal_year, SUM(amount) AS amount
+                  FROM silver_usaspending.geography_amount
+                 WHERE geo_layer = 'state' AND cut_kind = 'award_type'
+                   AND value_status = 'valid'
+                 GROUP BY fiscal_year
+               ) AS parts ON parts.fiscal_year = whole.fiscal_year
+         WHERE whole.amount <> 0
+           AND ABS(whole.amount - parts.amount) > 0.001 * ABS(whole.amount)
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "silver_usaspending.geography_amount",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def climdiv_value_range(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-CLIMDIV-004 — no negative accumulation; temperatures within -50 to 140 F.
 
@@ -5480,6 +5579,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-IPEDS-003": nces_ipeds_point_outside_county,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
+    "DQ-USASPENDING-002": usaspending_request_reconciliation,
+    "DQ-USASPENDING-004": usaspending_group_total,
     "DQ-STORM-002": storm_events_file_reconciliation,
     "DQ-STORM-004": storm_events_era_types,
     "DQ-LODES-002": lodes_slice_reconciliation,

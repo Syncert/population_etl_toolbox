@@ -190,20 +190,33 @@ Consolidated Federal Funds Report (ended FY2010).
 
 ## Slice 4: Federal money spent in each state and county (new adapter `usaspending`)
 
-- `spending_by_geography` for each fiscal year 2008 onward x awarding
-  toptier agency x award type group (contracts, grants, direct payments,
-  loans, other), county and state layers, place of performance. About 19
-  years x about 30 agencies with awards x 5 groups = about 2,900 requests per
-  layer pair, paced at one a second; a per-request control table makes the
-  load resumable and a weekly run refreshes the current and prior fiscal
-  year only (agencies report within 30 days, defense about 90).
-- Silver `silver_usaspending.geography_amount` (fiscal year, layer, shape
-  code, agency, award group, obligated amount as published); revisions kept.
-- Gold `gold_usaspending.federal_awards_by_agency` and `_by_award_type`,
-  with shares of the place's total for the same year, and the
-  place-of-performance note on every row.
-- Size: raw about 0.6-1.2 GB captured JSON; silver about 3-4 M rows; about
-  2-3 GB with indexes.
+- For each fiscal year 2008 onward: the year's awarding-agency list
+  (`spending_by_category/awarding_agency`, paged), then `spending_by_geography`
+  (place of performance) for the state and county layers, cut by all awards,
+  each award type group (contracts, grants, direct payments, loans, other
+  assistance) and each listed agency. About 19 years x 2 layers x (1 + 5 +
+  about 80 agencies), about 3,200 requests, paced at one a second.
+  `control.usaspending_request` holds one row per request: a monthly run
+  re-reads the current and prior fiscal years (agencies report within 30
+  days, defense about 90), and `{"history": true}` reads, oldest year first,
+  only the requests never captured, stopping at `max_requests` (1,500) so the
+  next run resumes.
+- Silver `silver_usaspending.geography_amount` (fiscal year, layer, cut,
+  key, shape code, amount beside its published text); replaced and
+  withdrawn rows kept in `geography_amount_revision`; the year's agencies in
+  `agency_year`. An empty shape code (no recorded place) is kept `unsupported`
+  and never served.
+- Gold `gold_usaspending.observation_latest` / `observation_revision`
+  (all awards and each group, state and county), `awards_by_award_type` and
+  `awards_by_agency` with shares of the place's all-award total for the same
+  year (or the reason it is not published), and the place-of-performance
+  note on every row.
+- Size (measured about 320 bytes per silver row with indexes): about 2.2 M
+  rows, about 0.7 GB, plus about 0.25 GB of captures; monthly refresh
+  revisions up to about 1.2 GB a year.
+- Built (2026-11-12): ETL-132, DQ-USASPENDING-001 to -004; unit, database
+  and e2e tests replay the fiscal 2024 state answer, Wisconsin county grants
+  and the agency list offline.
 
 ## Slice 5: "Where the money goes" on the place page and API
 
@@ -225,7 +238,7 @@ Consolidated Federal Funds Report (ended FY2010).
 | 1 Census of Governments spending | ~0.45 M facts | ~0.2 GB | none (stored) |
 | 2 Annual state and local spending | ~44 k facts | <0.05 GB | none (stored; labels added next run) |
 | 3 Treasury outlays by function | <10 k | <0.05 GB | ~5 MB |
-| 4 USAspending county and state | ~3-4 M | ~2-3 GB | ~1 GB |
+| 4 USAspending county and state | ~2.2 M | ~1 GB, then up to ~1.2 GB a year | ~0.25 GB |
 | 5 API and web | views | ~0 | none |
 
 Total about 3-4 GB, outside the census schemas. Drive H on 2026-11-12:

@@ -26,6 +26,7 @@ from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
 from data_ingestion_toolbox.noaa_climdiv import schema as noaa_climdiv_schema
 from data_ingestion_toolbox.treasury_mts import schema as treasury_mts_schema
+from data_ingestion_toolbox.usaspending import schema as usaspending_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
 from data_ingestion_toolbox.noaa_storm_events import schema as noaa_storm_events_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
@@ -181,6 +182,13 @@ SOURCES = [
         "ingest_batch_statements",
         treasury_mts_schema,
         "TREASURY_MTS",
+    ),
+    (
+        "usaspending_ingest",
+        "ensure_usaspending_schema",
+        "ingest_batch_awards",
+        usaspending_schema,
+        "USASPENDING",
     ),
     (
         "noaa_storm_events_ingest",

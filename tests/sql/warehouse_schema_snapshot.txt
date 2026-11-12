@@ -1239,6 +1239,36 @@ r control.treasury_mts_page
     index treasury_mts_page_capture_idx CREATE INDEX treasury_mts_page_capture_idx ON control.treasury_mts_page USING btree (capture_id)
     index treasury_mts_page_pkey CREATE UNIQUE INDEX treasury_mts_page_pkey ON control.treasury_mts_page USING btree (run_id, page_number)
 
+r control.usaspending_request
+    column run_id uuid NOT NULL
+    column fiscal_year integer NOT NULL
+    column geo_layer text NOT NULL
+    column cut_kind text NOT NULL
+    column cut_key text NOT NULL
+    column agency_name text
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column written_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint usaspending_request_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint usaspending_request_cut_kind_check CHECK ((cut_kind = ANY (ARRAY['all'::text, 'award_type'::text, 'agency'::text, 'agency_list'::text])))
+    constraint usaspending_request_fiscal_year_check CHECK ((fiscal_year >= 2008))
+    constraint usaspending_request_geo_layer_check CHECK ((geo_layer = ANY (ARRAY['state'::text, 'county'::text, 'nation'::text])))
+    constraint usaspending_request_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint usaspending_request_pkey PRIMARY KEY (run_id, fiscal_year, geo_layer, cut_kind, cut_key)
+    constraint usaspending_request_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint usaspending_request_row_count_check CHECK ((row_count >= 0))
+    constraint usaspending_request_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint usaspending_request_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint usaspending_request_written_count_check CHECK ((written_count >= 0))
+    index usaspending_request_capture_idx CREATE INDEX usaspending_request_capture_idx ON control.usaspending_request USING btree (capture_id)
+    index usaspending_request_key_idx CREATE INDEX usaspending_request_key_idx ON control.usaspending_request USING btree (fiscal_year, geo_layer, cut_kind, cut_key, status)
+    index usaspending_request_pkey CREATE UNIQUE INDEX usaspending_request_pkey ON control.usaspending_request USING btree (run_id, fiscal_year, geo_layer, cut_kind, cut_key)
+
 r control.usda_ers_file
     column run_id uuid NOT NULL
     column product text NOT NULL
@@ -13852,6 +13882,341 @@ v gold_treasury_mts.statement_line_revision
     body      JOIN control.treasury_mts_page page ON page.run_id = line_row.run_id AND page.capture_id = line_row.capture_id
     body   WHERE page.status = 'published'::text;
 
+v gold_usaspending.awards_by_agency
+    column fiscal_year integer
+    column geo_id text
+    column geo_type text
+    column agency_code text
+    column agency_name text
+    column obligated_amount numeric
+    column place_total_obligated_amount numeric
+    column share_of_place_total_pct numeric
+    column unavailable_reason text
+    column place_of_performance_note text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT part.fiscal_year,
+    body     part.geo_id,
+    body     part.geo_type,
+    body     part.cut_key AS agency_code,
+    body     part.agency_name,
+    body     part.amount AS obligated_amount,
+    body     total.amount AS place_total_obligated_amount,
+    body         CASE
+    body             WHEN total.amount IS NULL OR total.amount = 0::numeric THEN NULL::numeric
+    body             ELSE round(100::numeric * part.amount / total.amount, 2)
+    body         END AS share_of_place_total_pct,
+    body         CASE
+    body             WHEN total.amount IS NULL THEN 'all-award total not published for this place and year'::text
+    body             WHEN total.amount = 0::numeric THEN 'all-award total is zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     'Recorded where the awarded work is performed, which is not always where the money is felt: pass-through grants sit with the state agency that receives them, and some payments (Medicare) where the claims processor is. Obligations by award transaction date in the federal fiscal year; not all federal spending (salaries and most interest are not awards). Separate from what local governments in the place spend; never add the two.'::text AS place_of_performance_note,
+    body     'USAspending FY'::text || part.fiscal_year AS release_key,
+    body     part.published_at,
+    body     part.source_record_id,
+    body     part.capture_id,
+    body     part.run_id
+    body    FROM gold_usaspending.geography_amount_served part
+    body      LEFT JOIN gold_usaspending.geography_amount_served total ON total.is_current AND total.cut_kind = 'all'::text AND total.fiscal_year = part.fiscal_year AND total.geo_layer = part.geo_layer AND total.geo_id = part.geo_id
+    body   WHERE part.is_current AND part.cut_kind = 'agency'::text;
+
+v gold_usaspending.awards_by_award_type
+    column fiscal_year integer
+    column geo_id text
+    column geo_type text
+    column award_group text
+    column measure_label text
+    column obligated_amount numeric
+    column place_total_obligated_amount numeric
+    column share_of_place_total_pct numeric
+    column unavailable_reason text
+    column place_of_performance_note text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT part.fiscal_year,
+    body     part.geo_id,
+    body     part.geo_type,
+    body     part.cut_key AS award_group,
+    body     definition.measure_label,
+    body     part.amount AS obligated_amount,
+    body     total.amount AS place_total_obligated_amount,
+    body         CASE
+    body             WHEN total.amount IS NULL OR total.amount = 0::numeric THEN NULL::numeric
+    body             ELSE round(100::numeric * part.amount / total.amount, 2)
+    body         END AS share_of_place_total_pct,
+    body         CASE
+    body             WHEN total.amount IS NULL THEN 'all-award total not published for this place and year'::text
+    body             WHEN total.amount = 0::numeric THEN 'all-award total is zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     definition.observation_basis AS place_of_performance_note,
+    body     'USAspending FY'::text || part.fiscal_year AS release_key,
+    body     part.published_at,
+    body     part.source_record_id,
+    body     part.capture_id,
+    body     part.run_id
+    body    FROM gold_usaspending.geography_amount_served part
+    body      JOIN gold_usaspending.measure_definition definition ON definition.cut_kind = 'award_type'::text AND definition.cut_key = part.cut_key
+    body      LEFT JOIN gold_usaspending.geography_amount_served total ON total.is_current AND total.cut_kind = 'all'::text AND total.fiscal_year = part.fiscal_year AND total.geo_layer = part.geo_layer AND total.geo_id = part.geo_id
+    body   WHERE part.is_current AND part.cut_kind = 'award_type'::text;
+
+v gold_usaspending.geography_amount_served
+    column fiscal_year integer
+    column geo_layer text
+    column cut_kind text
+    column cut_key text
+    column agency_name text
+    column shape_code text
+    column display_name text
+    column value_source text
+    column amount numeric
+    column value_status text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column is_current boolean
+    body SELECT amount_row.fiscal_year,
+    body     amount_row.geo_layer,
+    body     amount_row.cut_kind,
+    body     amount_row.cut_key,
+    body     request.agency_name,
+    body     amount_row.shape_code,
+    body     amount_row.display_name,
+    body     amount_row.value_source,
+    body     amount_row.amount,
+    body     amount_row.value_status,
+    body     amount_row.geo_id,
+    body     entity.geo_sk,
+    body     amount_row.geo_layer AS geo_type,
+    body     request.published_at,
+    body     amount_row.source_record_id,
+    body     amount_row.capture_id,
+    body     amount_row.run_id,
+    body     amount_row.is_current
+    body    FROM ( SELECT current.fiscal_year,
+    body             current.geo_layer,
+    body             current.cut_kind,
+    body             current.cut_key,
+    body             current.shape_code,
+    body             current.display_name,
+    body             current.value_source,
+    body             current.amount,
+    body             current.value_status,
+    body             current.geo_id,
+    body             current.geography_status,
+    body             current.source_record_id,
+    body             current.capture_id,
+    body             current.run_id,
+    body             true AS is_current
+    body            FROM silver_usaspending.geography_amount current
+    body         UNION ALL
+    body          SELECT revision.fiscal_year,
+    body             revision.geo_layer,
+    body             revision.cut_kind,
+    body             revision.cut_key,
+    body             revision.shape_code,
+    body             revision.display_name,
+    body             revision.value_source,
+    body             revision.amount,
+    body             revision.value_status,
+    body             revision.geo_id,
+    body             revision.geography_status,
+    body             revision.source_record_id,
+    body             revision.capture_id,
+    body             revision.run_id,
+    body             false
+    body            FROM silver_usaspending.geography_amount_revision revision) amount_row
+    body      JOIN control.usaspending_request request ON request.run_id = amount_row.run_id AND request.fiscal_year = amount_row.fiscal_year AND request.geo_layer = amount_row.geo_layer AND request.cut_kind = amount_row.cut_kind AND request.cut_key = amount_row.cut_key
+    body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = amount_row.geo_id
+    body   WHERE request.status = 'published'::text AND amount_row.geography_status <> 'unsupported'::text AND amount_row.value_status = 'valid'::text;
+
+v gold_usaspending.measure_definition
+    column measure text
+    column cut_kind text
+    column cut_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column time_grain text
+    body SELECT measure,
+    body     cut_kind,
+    body     cut_key,
+    body     measure_label,
+    body     'US dollars'::text AS unit,
+    body     (('USAspending spending_by_geography, scope place_of_performance, spending level '::text || 'transactions: the sum of award transaction obligations dated in the federal '::text) || 'fiscal year (October 1 to September 30), as USAspending publishes it. '::text) || 'Recorded where the awarded work is performed, which is not always where the money is felt: pass-through grants sit with the state agency that receives them, and some payments (Medicare) where the claims processor is. Obligations by award transaction date in the federal fiscal year; not all federal spending (salaries and most interest are not awards). Separate from what local governments in the place spend; never add the two.'::text AS observation_basis,
+    body     'ANNUAL'::text AS time_grain
+    body    FROM ( VALUES ('federal_award_obligations'::text,'all'::text,''::text,'Federal award obligations by place of performance (USAspending)'::text), ('federal_award_obligations_contracts'::text,'award_type'::text,'contracts'::text,'Federal award obligations by place of performance, contracts (USAspending)'::text), ('federal_award_obligations_grants'::text,'award_type'::text,'grants'::text,'Federal award obligations by place of performance, grants (USAspending)'::text), ('federal_award_obligations_direct_payments'::text,'award_type'::text,'direct_payments'::text,'Federal award obligations by place of performance, direct payments (USAspending)'::text), ('federal_award_obligations_loans'::text,'award_type'::text,'loans'::text,'Federal award obligations by place of performance, loans (USAspending)'::text), ('federal_award_obligations_other_assistance'::text,'award_type'::text,'other_assistance'::text,'Federal award obligations by place of performance, other financial assistance (USAspending)'::text)) measure(measure, cut_kind, cut_key, measure_label);
+
+v gold_usaspending.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    column time_grain text
+    body SELECT measure AS source_object_key,
+    body     measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'usaspending_geography:v1'::text AS schema_version,
+    body     time_grain
+    body    FROM gold_usaspending.measure_definition;
+
+v gold_usaspending.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'USASPENDING'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY[export.time_grain] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_usaspending', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'USAspending.gov (U.S. Department of the Treasury)'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://www.usaspending.gov/'::text AS reference_url
+    body    FROM ( SELECT definition.measure AS metric_key,
+    body             'USAspending FY'::text || newest.year AS source_watermark,
+    body             newest.run_id AS source_run_id,
+    body             newest.published_at AS publication_time,
+    body             COALESCE(( SELECT array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL) AS array_agg
+    body                    FROM ( SELECT sample.geo_type,
+    body                             sample.value
+    body                            FROM gold_usaspending.observation_latest sample
+    body                           WHERE sample.metric_key = definition.measure AND sample.year = newest.year) latest), ARRAY[]::text[]) AS valid_geo_grains
+    body            FROM gold_usaspending.measure_definition definition
+    body              JOIN LATERAL ( SELECT latest.year,
+    body                     latest.run_id,
+    body                     latest.published_at
+    body                    FROM gold_usaspending.observation_latest latest
+    body                   WHERE latest.metric_key = definition.measure
+    body                   ORDER BY latest.year DESC, latest.published_at DESC
+    body                  LIMIT 1) newest ON true) served
+    body      JOIN gold_usaspending.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE cardinality(served.valid_geo_grains) > 0;
+
+v gold_usaspending.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT definition.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     current.fiscal_year AS year,
+    body     make_date(current.fiscal_year - 1, 10, 1) AS period_start,
+    body     make_date(current.fiscal_year, 9, 30) AS period_end,
+    body     current.geo_id,
+    body     entity.geo_sk,
+    body     current.geo_layer AS geo_type,
+    body     gold_glossary.geo_grain(current.geo_layer) AS geo_level,
+    body     current.value_source,
+    body     current.amount AS value,
+    body     current.value_status,
+    body     (('USAspending FY'::text || current.fiscal_year) || ' read '::text) || to_char((request.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text) AS release_key,
+    body     request.published_at,
+    body     current.source_record_id,
+    body     current.capture_id,
+    body     current.run_id
+    body    FROM silver_usaspending.geography_amount current
+    body      JOIN gold_usaspending.measure_definition definition ON definition.cut_kind = current.cut_kind AND definition.cut_key = current.cut_key
+    body      JOIN control.usaspending_request request ON request.run_id = current.run_id AND request.fiscal_year = current.fiscal_year AND request.geo_layer = current.geo_layer AND request.cut_kind = current.cut_kind AND request.cut_key = current.cut_key
+    body      JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = current.geo_id
+    body   WHERE request.status = 'published'::text AND current.geography_status <> 'unsupported'::text AND current.value_status = 'valid'::text;
+
+v gold_usaspending.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value_source text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT definition.measure AS metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     served.fiscal_year AS year,
+    body     make_date(served.fiscal_year - 1, 10, 1) AS period_start,
+    body     make_date(served.fiscal_year, 9, 30) AS period_end,
+    body     served.geo_id,
+    body     served.geo_sk,
+    body     served.geo_type,
+    body     gold_glossary.geo_grain(served.geo_type) AS geo_level,
+    body     served.value_source,
+    body     served.amount AS value,
+    body     served.value_status,
+    body     (('USAspending FY'::text || served.fiscal_year) || ' read '::text) || to_char((served.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text) AS release_key,
+    body     served.published_at,
+    body     served.source_record_id,
+    body     served.capture_id,
+    body     served.run_id
+    body    FROM gold_usaspending.geography_amount_served served
+    body      JOIN gold_usaspending.measure_definition definition ON definition.cut_kind = served.cut_kind AND definition.cut_key = served.cut_key;
+
 v gold_usda_ers.measure_definition
     column measure text
     column measure_label text
@@ -18415,6 +18780,99 @@ r silver_treasury_mts.statement_line_revision
     column superseded_at timestamp with time zone NOT NULL DEFAULT now()
     constraint statement_line_revision_pkey PRIMARY KEY (record_date, line_code, run_id)
     index statement_line_revision_pkey CREATE UNIQUE INDEX statement_line_revision_pkey ON silver_treasury_mts.statement_line_revision USING btree (record_date, line_code, run_id)
+
+r silver_usaspending.agency_year
+    column fiscal_year integer NOT NULL
+    column agency_code text NOT NULL
+    column agency_name text NOT NULL
+    column agency_id integer
+    column value_source text NOT NULL
+    column amount numeric NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint agency_year_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint agency_year_pkey PRIMARY KEY (fiscal_year, agency_code)
+    constraint agency_year_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint agency_year_source_row_index_check CHECK ((source_row_index >= 1))
+    index agency_year_pkey CREATE UNIQUE INDEX agency_year_pkey ON silver_usaspending.agency_year USING btree (fiscal_year, agency_code)
+
+r silver_usaspending.geography_amount
+    column fiscal_year integer NOT NULL
+    column geo_layer text NOT NULL
+    column cut_kind text NOT NULL
+    column cut_key text NOT NULL
+    column shape_code text NOT NULL
+    column display_name text
+    column value_source text NOT NULL
+    column amount numeric
+    column value_status text NOT NULL
+    column population_source text
+    column geo_id text
+    column geography_status text NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint geography_amount_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint geography_amount_cut_kind_check CHECK ((cut_kind = ANY (ARRAY['all'::text, 'award_type'::text, 'agency'::text])))
+    constraint geography_amount_fiscal_year_check CHECK ((fiscal_year >= 2008))
+    constraint geography_amount_geo_layer_check CHECK ((geo_layer = ANY (ARRAY['state'::text, 'county'::text])))
+    constraint geography_amount_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unsupported'::text])))
+    constraint geography_amount_pkey PRIMARY KEY (fiscal_year, geo_layer, cut_kind, cut_key, shape_code)
+    constraint geography_amount_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint geography_amount_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{32}$'::text))
+    constraint geography_amount_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint geography_amount_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint usaspending_missing_value_absent CHECK (((value_status = 'valid'::text) OR (amount IS NULL)))
+    constraint usaspending_valid_value_present CHECK (((value_status <> 'valid'::text) OR (amount IS NOT NULL)))
+    index geography_amount_pkey CREATE UNIQUE INDEX geography_amount_pkey ON silver_usaspending.geography_amount USING btree (fiscal_year, geo_layer, cut_kind, cut_key, shape_code)
+    index usaspending_geography_amount_geo_idx CREATE INDEX usaspending_geography_amount_geo_idx ON silver_usaspending.geography_amount USING btree (geo_id, fiscal_year, cut_kind)
+    index usaspending_geography_amount_run_idx CREATE INDEX usaspending_geography_amount_run_idx ON silver_usaspending.geography_amount USING btree (run_id)
+
+r silver_usaspending.geography_amount_revision
+    column fiscal_year integer NOT NULL
+    column geo_layer text NOT NULL
+    column cut_kind text NOT NULL
+    column cut_key text NOT NULL
+    column shape_code text NOT NULL
+    column display_name text
+    column value_source text NOT NULL
+    column amount numeric
+    column value_status text NOT NULL
+    column population_source text
+    column geo_id text
+    column geography_status text NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL
+    column change_kind text NOT NULL
+    column superseded_by_run_id uuid NOT NULL
+    column superseded_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint geography_amount_revision_change_kind_check CHECK ((change_kind = ANY (ARRAY['replaced'::text, 'withdrawn'::text])))
+    constraint geography_amount_revision_pkey PRIMARY KEY (fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id)
+    index geography_amount_revision_pkey CREATE UNIQUE INDEX geography_amount_revision_pkey ON silver_usaspending.geography_amount_revision USING btree (fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id)
+    index usaspending_geography_amount_revision_geo_idx CREATE INDEX usaspending_geography_amount_revision_geo_idx ON silver_usaspending.geography_amount_revision USING btree (geo_id, fiscal_year)
+
+r silver_usaspending.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_usaspending.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_usaspending.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_usaspending.quarantine USING btree (quarantine_sk)
 
 r silver_usda_ers.fact_observation
     column attribute text NOT NULL

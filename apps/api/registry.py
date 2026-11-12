@@ -1711,6 +1711,49 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
         ),
         ObservationDispatch(
+            source_code="USASPENDING",
+            latest_relation="gold_usaspending.observation_latest",
+            released_relation="gold_usaspending.observation_revision",
+            lineage_schema="gold_usaspending",
+            lineage_relation="observation_revision",
+            # All federal award obligations and each award type group by
+            # place of performance, for states and counties
+            # (WHERE_PUBLIC_MONEY_GOES_PLAN slice 4).
+            lineage_key_column="metric_key",
+            # `USAspending FY<year> read <date>`: agencies keep reporting a
+            # year, so a later read of it is a second reading.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "Recorded where the awarded work is performed ... never add
+                # the two."
+                ("observation_basis", "observation_basis"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "USAspending obligations are federal fiscal years (October to "
+                "September) recorded by place of performance, so a year-aligned "
+                "analysis would pair them with other sources' calendar years and "
+                "read them as where the money was felt; query /observations instead"
+            ),
+        ),
+        ObservationDispatch(
             source_code="NOAA_CLIMDIV",
             latest_relation="gold_noaa_climdiv.observation_latest",
             released_relation="gold_noaa_climdiv.observation_revision",
@@ -2532,6 +2575,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="TREASURY_MTS",
             display_name="Monthly Treasury Statement: federal receipts and outlays by function",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="USASPENDING",
+            display_name="USAspending: federal award obligations by place of performance",
             route_segment=None,
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
         ),

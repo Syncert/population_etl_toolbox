@@ -1238,6 +1238,38 @@ fiscal year; `period_start` is October 1 of the prior calendar year and
   holds each budget function's share of total outlays for fiscal years, the
   open fiscal year to date, and each month.
 
+### Reading a USAspending row: federal award money by place of performance
+
+`USASPENDING` serves federal award obligations as USAspending.gov publishes
+them by place of performance: `federal_award_obligations` (every award) and
+one measure per award type group (`federal_award_obligations_contracts`,
+`_grants`, `_direct_payments`, `_loans`, `_other_assistance`), in US dollars
+and cents, for states (`STATE`, the 50 states, DC and the territories) and
+counties (`COUNTY`). One row per measure, place and federal fiscal year;
+`period_start` is October 1 of the prior calendar year and `period_end` is
+September 30. Fiscal 2008 is the first year USAspending answers.
+
+- **Where the work is performed, not where the money is felt.** Pass-through
+  grants sit with the state agency that receives them, and some payments
+  (Medicare) where the claims processor is, so a county can show far more
+  than its residents receive. Each row's `observation_basis` says so.
+- **Award obligations, not all federal spending.** Salaries and most
+  interest are not awards. For the federal budget as a whole see
+  `TREASURY_MTS`.
+- **Separate from local government spending.** `CENSUS_GOVFIN` reports what
+  the governments in a place spend; this is federal money awarded there.
+  Never add the two.
+- **Awards with no recorded place are kept but never served.** USAspending
+  answers them under an empty code; they are in the warehouse, not on any
+  place.
+- **Recent years change.** Agencies keep reporting the current and prior
+  fiscal years, so each run re-reads them; `/api/v1/observations/releases`
+  returns a restated amount beside the one it replaced.
+- **Shares live in the warehouse views.** `gold_usaspending.awards_by_award_type`
+  and `gold_usaspending.awards_by_agency` hold each group's and each awarding
+  agency's share of a place's all-award total, with the reason when that
+  total is not published.
+
 ### Reading a LEHD LODES row: jobs where people live and where they work
 
 `CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
@@ -1657,6 +1689,7 @@ prevent:
 | NOAA Storm Events | `Storm Events <file name>` | The day NCEI created the year's file, in its name (`StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz`); a restamped year is recounted |
 | NOAA nClimDiv | `nClimDiv <file name>` | NCEI's release day and version in the file name (`climdiv-pcpncy-v1.0.0-20261105`); a month a later release changes is kept as replaced |
 | Monthly Treasury Statement | `MTS <statement month> read <date>` | Treasury's statement month plus the day the warehouse read it; Treasury restates a recent month in place, and a restated line read again is a second release |
+| USAspending | `USAspending FY<year> read <date>` | **Not a USAspending publication.** The search API names no release, so the identity is the fiscal year plus the day the warehouse read it; an amount a later read changes is kept as replaced |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
@@ -1975,6 +2008,9 @@ typology flags -- that an analysis would average or correlate as quantities.
 The Monthly Treasury Statement (`TREASURY_MTS`) is declined because its years
 are federal fiscal years (October to September) for the nation only, which a
 year-aligned analysis would pair with other sources' calendar years.
+USAspending (`USASPENDING`) is declined for the same reason: its years are
+federal fiscal years, and its amounts are recorded where awarded work is
+performed, which an analysis would read as money received there.
 Query them through `/observations` with the appropriate stratum, domain, or
 subject filters.
 
@@ -1995,8 +2031,8 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals, USDA ERS and the
-Monthly Treasury Statement.
+restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals, USDA ERS, the
+Monthly Treasury Statement and USAspending.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -2086,7 +2122,7 @@ each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
 measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
-NOAA climate normals, USDA ERS, the Monthly Treasury Statement),
+NOAA climate normals, USDA ERS, the Monthly Treasury Statement, USAspending),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined

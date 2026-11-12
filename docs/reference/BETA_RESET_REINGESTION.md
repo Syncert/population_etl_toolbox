@@ -436,6 +436,13 @@ geography loads: it reads Monthly Treasury Statement Table 9 from March 2015
 (about 4,600 rows, one page) through the one-slot `treasury_mts_pages` pool
 ([operations](../user-guides/TREASURY_MTS_PIPELINE_OPERATIONS.md)).
 
+Trigger `usaspending_ingest` with `{"history": true}` after the state and
+county geography loads, and again until it reports no request owed: each
+run reads the current and prior fiscal years, then fiscal 2008 onward oldest
+first, stopping at `max_requests` (1,500); about 3,200 requests in all
+(about 1 GB with silver) through the one-slot `usaspending_api` pool
+([operations](../user-guides/USASPENDING_PIPELINE_OPERATIONS.md)).
+
 Trigger `fcc_bdc_ingest` once after the shared geography loads (it needs
 `FCC_BDC_USERNAME` and `FCC_BDC_API_TOKEN`): it reads each registered
 December vintage's national and per-state place summaries through the

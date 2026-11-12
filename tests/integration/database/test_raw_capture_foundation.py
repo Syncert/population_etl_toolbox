@@ -134,6 +134,7 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "noaa_normals_file"),
         ("control", "noaa_climdiv_file"),
         ("control", "treasury_mts_page"),
+        ("control", "usaspending_request"),
         ("control", "noaa_storm_events_file"),
         ("control", "census_lodes_slice"),
         ("control", "census_lodes_file"),

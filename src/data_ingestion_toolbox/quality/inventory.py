@@ -77,6 +77,7 @@ SOURCES: tuple[str, ...] = (
     "NOAA_NORMALS",
     "NOAA_CLIMDIV",
     "TREASURY_MTS",
+    "USASPENDING",
     "NOAA_STORM_EVENTS",
     "CENSUS_LODES",
     "CENSUS_CBP",
@@ -4077,6 +4078,142 @@ _TREASURY_MTS_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# USAspending federal award obligations by place of performance.
+# ---------------------------------------------------------------------------
+
+_USASPENDING_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.usaspending_request",
+        "control",
+        "USASPENDING",
+        grain="run_id, fiscal_year, geo_layer, cut_kind, cut_key",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every geography read and agency-list page of the fiscal years a run works on",
+        cadence="weekly; history reads continue from requests never captured",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_usaspending.quarantine",
+        "silver",
+        "USASPENDING",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated place or agency; populated only on failure",
+        cadence="per USAspending replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_usaspending.agency_year",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, agency_code",
+        lineage="control.usaspending_request, raw_capture.response_capture",
+        scope_method="the awarding agencies USAspending names for each fiscal year",
+        cadence="per USAspending replay; only changed agencies are written",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_usaspending.geography_amount",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code",
+        lineage="control.usaspending_request, raw_capture.response_capture",
+        scope_method="the current published obligations of every request key and place; an empty shape code is kept unsupported",
+        cadence="per USAspending replay; only changed, new or withdrawn rows are written",
+        empty_behavior="a null amount carries no number, never 0",
+    ),
+    _obj(
+        "silver_usaspending.geography_amount_revision",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id",
+        lineage="silver_usaspending.geography_amount",
+        scope_method="every row a later answer replaced or no longer listed, as it was published",
+        cadence="per USAspending replay",
+        empty_behavior="empty until a fiscal year is read again with a change",
+    ),
+    _obj(
+        "gold_usaspending.measure_definition",
+        "gold",
+        "USASPENDING",
+        grain="measure",
+        scope_method="the registered measures: all awards and five award type groups",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_usaspending.geography_amount_served",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id",
+        lineage="silver_usaspending.geography_amount, silver_usaspending.geography_amount_revision, control.usaspending_request, silver_ref.dim_geo_entity",
+        scope_method="every placed, published row, current and replaced",
+        cadence="per publication",
+        empty_behavior="a place the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_usaspending.observation_revision",
+        "gold",
+        "USASPENDING",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="every published fiscal-year amount of each measure, current and replaced",
+        cadence="per publication",
+        empty_behavior="a place the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_usaspending.observation_latest",
+        "gold",
+        "USASPENDING",
+        grain="metric_key, geo_id, year",
+        lineage="silver_usaspending.geography_amount, control.usaspending_request, silver_ref.dim_geo_entity",
+        scope_method="the current published amount of each measure, place and fiscal year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_usaspending.awards_by_award_type",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_id, award_group",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="each award type group's obligations and share of the place's all-award total",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the total is not published",
+    ),
+    _obj(
+        "gold_usaspending.awards_by_agency",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_id, agency_code",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="each awarding agency's obligations and share of the place's all-award total",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the total is not published",
+    ),
+    _obj(
+        "gold_usaspending.measure_export",
+        "publisher",
+        "USASPENDING",
+        grain="source_object_key (measure)",
+        lineage="gold_usaspending.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_usaspending.metric_publisher",
+        "publisher",
+        "USASPENDING",
+        grain="source_object_key (measure)",
+        lineage="gold_usaspending.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # NOAA nClimDiv county monthly temperature and precipitation, 1895 onward.
 # ---------------------------------------------------------------------------
 
@@ -5428,6 +5565,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _NORMALS_OBJECTS
     + _CLIMDIV_OBJECTS
     + _TREASURY_MTS_OBJECTS
+    + _USASPENDING_OBJECTS
     + _STORM_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
@@ -5843,6 +5981,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_noaa_normals.metric_publisher",
             "gold_noaa_climdiv.metric_publisher",
             "gold_treasury_mts.metric_publisher",
+            "gold_usaspending.metric_publisher",
             "gold_noaa_storm_events.metric_publisher",
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
@@ -8681,6 +8820,102 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_treasury_mts.statement_line",
             "gold_treasury_mts.outlays_by_function",
+        ),
+    ),
+    # -- USAspending federal award obligations -----------------------------------
+    _rule(
+        "DQ-USASPENDING-001",
+        "BLOCK",
+        "uniqueness",
+        "A place's obligations are unique per (fiscal year, layer, cut, key, "
+        "shape code): a repeated shape in an answer is quarantined, and a "
+        "replaced or withdrawn row is kept once per run in the revision table.",
+        (
+            "silver_usaspending.geography_amount",
+            "silver_usaspending.geography_amount_revision",
+            "silver_usaspending.agency_year",
+            "gold_usaspending.geography_amount_served",
+            "gold_usaspending.observation_revision",
+            "gold_usaspending.observation_latest",
+            "gold_usaspending.measure_definition",
+            "gold_usaspending.awards_by_award_type",
+            "gold_usaspending.awards_by_agency",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("fiscal_year", "geo_layer", "cut_kind", "cut_key", "shape_code"),
+            ),
+            EnforcedGrain(
+                "silver_usaspending.geography_amount_revision",
+                (
+                    "fiscal_year",
+                    "geo_layer",
+                    "cut_kind",
+                    "cut_key",
+                    "shape_code",
+                    "run_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured request is left unreplayed, and no stored row names a "
+        "request that was not published.",
+        (
+            "control.usaspending_request",
+            "silver_usaspending.quarantine",
+            "silver_usaspending.geography_amount",
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-003",
+        "BLOCK",
+        "conformance",
+        "An amount USAspending wrote as null carries no number, and a valid "
+        "one always does: no null becomes zero.",
+        (
+            "silver_usaspending.geography_amount",
+            "gold_usaspending.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "row without an amount and a missing one with an amount."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="usaspending_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="usaspending_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-004",
+        "WARN",
+        "reconciliation",
+        "For every published state-layer fiscal year, the award type groups "
+        "add to the all-awards total within 0.1% of it (USAspending leaves a "
+        "few awards outside every group).",
+        (
+            "silver_usaspending.geography_amount",
+            "gold_usaspending.awards_by_award_type",
         ),
     ),
     # -- NOAA Storm Events Database ---------------------------------------------

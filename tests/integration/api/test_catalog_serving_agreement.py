@@ -48,6 +48,7 @@ from tests.support import bls_qcew as qcew_support
 from tests.support import epa_aqs as aqs_support
 from tests.support import noaa_climdiv as climdiv_support
 from tests.support import treasury_mts as mts_support
+from tests.support import usaspending as usaspending_support
 from tests.support import noaa_storm_events as storm_support
 from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
@@ -1100,6 +1101,20 @@ def published_mts_metric(
 
 
 @pytest.fixture
+def published_usaspending_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish USAspending federal award obligations by place of performance."""
+    factory = usaspending_support.reviewed_warehouse(
+        postgres_connection_factory, request
+    )
+    usaspending_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_usaspending"))
+    return _one_published_code(factory, "USASPENDING")
+
+
+@pytest.fixture
 def published_climdiv_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1290,6 +1305,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_normals_metric: str,
     published_climdiv_metric: str,
     published_mts_metric: str,
+    published_usaspending_metric: str,
     published_storm_metric: str,
     published_lodes_metric: str,
     published_cbp_metric: str,
@@ -1390,6 +1406,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("NOAA_NORMALS", published_normals_metric),
         ("NOAA_CLIMDIV", published_climdiv_metric),
         ("TREASURY_MTS", published_mts_metric),
+        ("USASPENDING", published_usaspending_metric),
         ("NOAA_STORM_EVENTS", published_storm_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
@@ -1548,6 +1565,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_normals_metric: str,
     published_climdiv_metric: str,
     published_mts_metric: str,
+    published_usaspending_metric: str,
     published_storm_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,

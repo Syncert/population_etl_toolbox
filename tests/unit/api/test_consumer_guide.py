@@ -142,6 +142,7 @@ def test_guide_analysis_claims_match_the_capability_registry() -> None:
         "NOAA_NORMALS",
         "USDA_ERS",
         "TREASURY_MTS",
+        "USASPENDING",
     }
 
     analysis_section = text.split("## Analysis", 1)[1].split("##", 1)[0]
@@ -152,6 +153,7 @@ def test_guide_analysis_claims_match_the_capability_registry() -> None:
         "NOAA climate normals",
         "USDA ERS",
         "Monthly Treasury Statement",
+        "USAspending",
     ):
         assert name in analysis_section, (
             f"{name} is declined by the registry but the guide does not say so"

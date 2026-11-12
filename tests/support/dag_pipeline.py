@@ -53,6 +53,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "noaa_normals_files",
     "noaa_climdiv_files",
     "treasury_mts_pages",
+    "usaspending_api",
     "noaa_storm_events_files",
     "census_lodes_files",
     "census_cbp_files",
@@ -1418,6 +1419,19 @@ def stub_treasury_mts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mts_capture, "fetch_page", fetch_reviewed_page)
 
 
+def stub_usaspending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed fiscal 2024 answers for every fiscal year the run reads (three agencies)."""
+    from data_ingestion_toolbox.usaspending import capture as usaspending_capture
+    from data_ingestion_toolbox.usaspending.client import post_search
+    from tests.support.usaspending import FixtureClient
+
+    def post_reviewed(path: str, body: Any, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient(agency_limit=3, any_year=True)
+        return post_search(path, body, **kwargs)
+
+    monkeypatch.setattr(usaspending_capture, "post_search", post_reviewed)
+
+
 def stub_noaa_storm_events(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed zone-county and 1950, 1995 and 2024 details files."""
     from data_ingestion_toolbox.noaa_storm_events import capture as storm_capture
@@ -2071,6 +2085,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("noaa_normals", stub_noaa_normals),
         ("noaa_climdiv", stub_noaa_climdiv),
         ("treasury_mts", stub_treasury_mts),
+        ("usaspending", stub_usaspending),
         ("noaa_storm_events", stub_noaa_storm_events),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),

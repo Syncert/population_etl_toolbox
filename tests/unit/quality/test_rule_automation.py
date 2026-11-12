@@ -225,13 +225,14 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # fifty-five, and the Monthly Treasury Statement's grain and conformance
     # rules (DQ-TREASURY-001 and -003) fifty-seven, and the 2020 Census
     # counts' grain and conformance rules (DQ-DECENNIAL-001 and -002)
-    # fifty-nine, and the CMS long-term care files' grain and conformance
-    # rules (DQ-CMSLTC-001 and -002) sixty-one, and the IPEDS files' grain
-    # and conformance rules (DQ-IPEDS-001 and -002) sixty-three.
+    # fifty-nine, the CMS long-term care files' grain and conformance
+    # rules (DQ-CMSLTC-001 and -002) sixty-one, the IPEDS files' grain and
+    # conformance rules (DQ-IPEDS-001 and -002) sixty-three, and USAspending's
+    # grain and conformance rules (DQ-USASPENDING-001 and -003) sixty-five.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 63, enforced
+    assert len(enforced) == 65, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -468,6 +469,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "NOAA_NORMALS",
         "NOAA_CLIMDIV",
         "TREASURY_MTS",
+        "USASPENDING",
         "NOAA_STORM_EVENTS",
         "FRED",
         "IRS_MIGRATION",

@@ -95,6 +95,9 @@ from __future__ import annotations
 #: * ``TREASURY_MTS`` -- the Monthly Treasury Statement is the federal
 #:   government's own account; ``gold_treasury_mts`` writes ``'us:1'`` and
 #:   ``nation`` as literals.
+#: * ``USASPENDING`` -- USAspending's state and county layers by place of
+#:   performance; the unplaced row and territories without a shared
+#:   geography are not served.
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
@@ -123,6 +126,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
     "TREASURY_MTS": frozenset({"NATIONAL"}),
+    "USASPENDING": frozenset({"STATE", "COUNTY"}),
     "USDA_ERS": frozenset({"COUNTY"}),
     "NCES_CCD": frozenset({"STATE", "COUNTY"}),
     "HUD_FMR_IL": frozenset({"COUNTY"}),
