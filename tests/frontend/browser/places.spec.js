@@ -27,7 +27,7 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await ready(page, "/us");
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
-  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Starting a family"]);
+  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Starting a family", "Climate averages"]);
   // LAUS publishes no national rate; the card says the nation's is another survey's.
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published nationally by LAUS");
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Current Population Survey");
@@ -722,6 +722,41 @@ test("a county's childcare card adds the nation's price change since its study y
     "Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.",
   );
   await noViolations(page);
+});
+
+// Covers: WEB-175 — place-climate-normals: a county page shows its twelve
+// months of NOAA's 1991-2020 normals as stored, with the station counts and
+// the nearest-county placement note; a state says the normals are shown for
+// counties, and a city links the county it lies in.
+test("a county page shows its monthly climate normals as stored, with stations and the placement note", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const climate = page.getByTestId("place-climate");
+  await expect(climate.getByRole("heading", { name: "Climate averages" })).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Climate averages" })).toBeVisible();
+  await expect(page.getByTestId("place-climate-headline")).toHaveText(
+    "In Dane County, the month with the highest mean temperature is July (71.5°F) and the lowest is January (18.6°F); the month with the most precipitation is June (4.98 in).",
+  );
+  await expect(page.getByTestId("place-climate-1-mean")).toHaveText("18.6°F");
+  await expect(page.getByTestId("place-climate-1-high")).toHaveText("27.3°F");
+  await expect(page.getByTestId("place-climate-1-low")).toHaveText("9.9°F");
+  await expect(page.getByTestId("place-climate-1-precipitation")).toHaveText("1.56 in");
+  await expect(page.getByTestId("place-climate-7-mean")).toHaveText("71.5°F");
+  await expect(page.getByTestId("place-climate-7-precipitation")).toHaveText("4.40 in");
+  await expect(page.getByTestId("place-climate-stations")).toContainText("temperature from 3 to 4 stations; precipitation from 6 stations");
+  await expect(page.getByTestId("place-climate-placement-note")).toHaveText(
+    "Includes stations no county boundary covers, placed on this county as the nearest county boundary within 1,000 metres: USC00470000 (212 m).",
+  );
+  await expect(climate).not.toContainText(/annual|mild|harsh|pleasant/i);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-climate-counties-only")).toContainText("this site shows them for counties");
+  await expect(page.getByTestId("place-climate-table")).toHaveCount(0);
+
+  await ready(page, "/us/wisconsin/madison-city");
+  await expect(page.getByTestId("place-climate-county-links").getByRole("link", { name: "Dane County" })).toHaveAttribute("href", /dane-county#climate$/);
 });
 
 // Covers: WEB-173 — starting-a-family-collection: a county page gathers

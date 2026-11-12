@@ -145,6 +145,9 @@ const COST_METRICS = Object.fromEntries([
   costMetric("BLS:CUUR0000SEEB03", "Index Dec 1990=100", ["NATIONAL"]),
   costMetric("HUD_FMR_IL:fmr_3br", "dollars per month", ["COUNTY"]),
   costMetric("BLS_QCEW:annual_avg_weekly_wage:10:0", "dollars per week", ["COUNTY", "STATE", "NATIONAL"]),
+  // Climate averages (place-climate-normals): NOAA's monthly normals, counties only.
+  ...["monthly_mean_temperature", "monthly_mean_maximum_temperature", "monthly_mean_minimum_temperature", "monthly_precipitation"].map((measure) =>
+    costMetric(`NOAA_NORMALS:${measure}`, measure === "monthly_precipitation" ? "inches" : "degrees Fahrenheit", ["COUNTY"])),
   // Grocery spending (grocery-spending): the Consumer Expenditure Survey's
   // Midwest and national means, and the nation's household sizes.
   ...["LB1101", "LB1103", "LB0502", "LB0504", "LB0505", "LB0506", "LB0507"].map((table) =>
@@ -214,8 +217,35 @@ function childcareCpiRows(geo) {
       period_start: month, period_end: month };
   });
 }
+// Dane County's monthly normals, 1991-2020: January and July as the live
+// warehouse serves them (2026-11-12); the other months are fixture values.
+// The precipitation figure includes a station placed by the nearest-county
+// rule, so it carries the placement note.
+const DANE_NORMALS = {
+  monthly_mean_temperature: ["18.60", "22.50", "33.80", "46.10", "57.90", "67.70", "71.50", "69.40", "61.30", "48.90", "36.20", "24.00"],
+  monthly_mean_maximum_temperature: ["27.30", "31.50", "43.30", "57.00", "69.30", "78.80", "82.20", "80.10", "72.60", "59.40", "45.00", "32.20"],
+  monthly_mean_minimum_temperature: ["9.90", "13.50", "24.30", "35.20", "46.50", "56.60", "60.60", "58.70", "50.00", "38.40", "27.40", "15.80"],
+  monthly_precipitation: ["1.56", "1.43", "2.06", "3.38", "3.92", "4.98", "4.40", "4.18", "3.36", "2.58", "2.19", "1.73"],
+};
+const NORMALS_NOTE = "Includes stations no county boundary covers, placed on this county as the nearest county boundary within 1,000 metres: USC00470000 (212 m).";
+function normalsRows(code, geo) {
+  const measure = code.split(":")[1];
+  const values = DANE_NORMALS[measure];
+  if (!values || geo !== "state:55|county:025") return [];
+  const precipitation = measure === "monthly_precipitation";
+  return values.map((value, index) => {
+    const month = String(index + 1).padStart(2, "0");
+    const end = new Date(Date.UTC(2020, index + 1, 0)).toISOString().slice(0, 10);
+    return { metric_code: code, source_code: "NOAA_NORMALS", geo_id: geo, geo_level: "COUNTY", geo_name: "Dane County",
+      value, value_status: "valid", unit: precipitation ? "inches" : "degrees Fahrenheit", release: "Normals 1991-2020 v1.0.1 (c20230404)", as_of: "2026-11-11",
+      period_start: `1991-${month}-01`, period_end: end, uncertainty: null, coverage: null,
+      dimensions: { measure, month: String(index + 1), station_count: precipitation ? "6" : index === 0 ? "3" : "4", station_ids: "fixture",
+        ...(precipitation ? { placement_note: NORMALS_NOTE } : {}) } };
+  });
+}
 function costRows(code, geo) {
   if (code.startsWith("DOL_CHILDCARE:")) return childcareRows(code, geo);
+  if (code.startsWith("NOAA_NORMALS:")) return normalsRows(code, geo);
   if (code === "BLS:CUUR0000SEEB03") return childcareCpiRows(geo);
   const value = COST_VALUES[code]?.[geo];
   const area = [NATION, ...STATES, ...COUNTIES, ...Object.values(AREAS)].find((item) => item.geo_id === geo);

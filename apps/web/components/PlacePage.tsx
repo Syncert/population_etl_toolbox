@@ -104,6 +104,7 @@ import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 import { CHILDCARE_CODES, CHILDCARE_CPI_CODE } from "../lib/childcare";
 import type { InfantCareRead } from "../lib/childcare";
 import { FAMILY_CODES } from "../lib/familyCodes";
+import { NORMALS_CODES } from "../lib/climateNormals";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 /** The grains `/public-money` answers (taxes-and-public-money T-6). */
@@ -119,6 +120,7 @@ const MigrationFlows = dynamic(() => import("./MigrationFlows"));
 const AgeAndSexSection = dynamic(() => import("./AgeAndSexSection"));
 const GroceriesAndGas = dynamic(() => import("./GroceriesAndGas"));
 const StartingAFamily = dynamic(() => import("./StartingAFamily"));
+const ClimateNormals = dynamic(() => import("./ClimateNormals"));
 // Taxes and public money (taxes-and-public-money T-6): own chunks, so a place
 // page carries none of it until the Work and Money chapter renders.
 const PublicMoney = dynamic(() => import("./PublicMoney"));
@@ -387,8 +389,9 @@ export default function PlacePage({
     (async () => {
       // The childcare prices are named in the same read, so a price not
       // loaded is never asked for on its own (county-childcare-prices).
-      // So are the Starting a family rows' metrics (starting-a-family-collection).
-      const codes = [...new Set([...placeChapterMetricCodes(), ...CHILDCARE_CODES, CHILDCARE_CPI_CODE, ...FAMILY_CODES])];
+      // So are the Starting a family rows' metrics (starting-a-family-collection)
+      // and the county climate normals (place-climate-normals).
+      const codes = [...new Set([...placeChapterMetricCodes(), ...CHILDCARE_CODES, CHILDCARE_CPI_CODE, ...FAMILY_CODES, ...NORMALS_CODES])];
       let found = new Map<string, MetricSummary>();
       let failures = 0;
       try {
@@ -885,6 +888,7 @@ export default function PlacePage({
             {visible.map((resolved) => <li key={resolved.chapter.id}><a href={`#${resolved.chapter.id}`}>{resolved.chapter.title}</a></li>)}
             {settled.current ? <li><a href="#record">What the record shows</a></li> : null}
             <li><a href="#family">Starting a family</a></li>
+            <li><a href="#climate">Climate averages</a></li>
           </ol>
         </nav>
       ) : null}
@@ -946,6 +950,15 @@ export default function PlacePage({
               ? (infant?.geoId === place.geo_id ? infant.read : {})
               : undefined
           }
+        />
+      ) : null}
+
+      {place && resolution.state === "found" && catalogStatus.state !== "loading" ? (
+        <ClimateNormals
+          level={level}
+          place={place}
+          catalogued={metricsByCode}
+          counties={level === "PLACE" ? nearby?.counties ?? [] : []}
         />
       ) : null}
 
