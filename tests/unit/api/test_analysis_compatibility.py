@@ -212,6 +212,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "BLS_QCEW",
         "CENSUS_BPS",
         "CENSUS_SAIPE_SAHIE",
+        "CENSUS_DECENNIAL",
         "IRS_MIGRATION",
         "IRS_SOI",
         "EIA",

@@ -132,7 +132,7 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CENSUS_ACS",
     ),
     WarehouseSource(
-        code="CENSUS_DECENNIAL",
+        code="CENSUS_ACS_DECENNIAL",
         name="Census 2000 and 1990",
         publisher="U.S. Census Bureau",
         topic="People and population",
@@ -473,6 +473,38 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         gold=["gold_census_sae.estimate_revision", "gold_census_sae.estimate_latest"],
         credential="CENSUS_API_KEY",
         catalog_source_code="CENSUS_SAIPE_SAHIE",
+    ),
+    WarehouseSource(
+        code="CENSUS_DECENNIAL",
+        name="2020 Census counts",
+        publisher="U.S. Census Bureau",
+        topic="People and population",
+        module="census_decennial",
+        dag="census_decennial_ingest",
+        cadence="On demand (published once a decade)",
+        release="2020 redistricting data (P.L. 94-171), August 2021",
+        grains={"nation": "n", "state": "n", "county": "n", "tract": "n"},
+        years=[(2020, 2020)],
+        years_note="Census Day, 2020-04-01",
+        datasets=["pl (/2020/dec/pl)"],
+        measures=(
+            "Total population; group quarters population by type (correctional, "
+            "nursing homes, college housing, military and others); housing units, "
+            "occupied and vacant. As published, no estimate."
+        ),
+        raw=[],
+        control=["control.census_decennial_slice"],
+        silver=[
+            "silver_census_decennial.observation_revision",
+            "silver_census_decennial.fact_count",
+            "silver_census_decennial.dim_variable",
+        ],
+        gold=[
+            "gold_census_decennial.count_revision",
+            "gold_census_decennial.count_latest",
+        ],
+        credential="CENSUS_API_KEY",
+        catalog_source_code="CENSUS_DECENNIAL",
     ),
     WarehouseSource(
         code="CENSUS_GOVFIN",

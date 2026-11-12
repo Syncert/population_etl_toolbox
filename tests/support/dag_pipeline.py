@@ -1031,6 +1031,37 @@ def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sae_capture, "fetch_slice", fetch)
 
 
+def stub_census_decennial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the checked-in 2020 Census responses; other slices answer 204.
+
+    The fixtures are the nation, every state, Wisconsin's counties and Dane
+    County's tracts. Another state's tracts are the API's own "nothing here"
+    answer, a recorded empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.census_decennial import capture as decennial_capture
+    from data_ingestion_toolbox.census_decennial.client import DecennialResponse
+
+    def fetch(dataset: Any, *, slice_: Any, **_kwargs: Any) -> DecennialResponse:
+        parameters = dataset.request_parameters(slice_)
+        scope = "all" if slice_.scope == "*" else slice_.scope
+        path = (
+            FIXTURE_ROOT
+            / "census_decennial"
+            / f"{dataset.dataset_id}_{slice_.geo_level}_{scope}.json"
+        )
+        if not path.is_file():
+            return DecennialResponse(dataset.api_path, parameters, b"", {}, 204)
+        return DecennialResponse(
+            dataset.api_path,
+            parameters,
+            path.read_bytes(),
+            {"content-type": "application/json;charset=utf-8"},
+            200,
+        )
+
+    monkeypatch.setattr(decennial_capture, "fetch_slice", fetch)
+
+
 def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed government finance answers; other periods answer 204.
 
@@ -1973,6 +2004,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("irs_soi", stub_irs_soi),
         ("dol_childcare", stub_dol_childcare),
         ("census_saipe_sahie", stub_census_saipe_sahie),
+        ("census_decennial", stub_census_decennial),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

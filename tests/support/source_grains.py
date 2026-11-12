@@ -34,6 +34,9 @@ from __future__ import annotations
 #:   file totals are served for the county each file describes.
 #: * ``CENSUS_BPS`` -- ``census_bps/registry.py`` registers the state file
 #:   (states and the US total), the county files and the place files.
+#: * ``CENSUS_DECENNIAL`` -- ``census_decennial/registry.py`` requests ``us``,
+#:   ``state``, ``county`` and ``tract``; a ``block`` is ``unsupported`` until
+#:   a block geography is registered, and the gold views never serve it.
 #: * ``CENSUS_SAIPE_SAHIE`` -- ``census_saipe_sahie/registry.py`` requests
 #:   ``us``, ``state`` and ``county`` only, and ``silver_census_sae`` closes
 #:   ``geo_type`` to ``nation``, ``state`` and ``county``.
@@ -112,6 +115,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_DECENNIAL": frozenset({"NATIONAL", "STATE", "COUNTY", "TRACT"}),
     "DOL_CHILDCARE": frozenset({"COUNTY"}),
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
