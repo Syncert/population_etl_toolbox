@@ -1,34 +1,36 @@
----
-id: lodes-block-grain-for-dane
-depends_on:
-  - block-population-and-age-for-dane
-parallel_safe: true
-complexity: medium
-verify:
-  - python -m pytest tests/unit/census_lodes tests/unit/api -q
-  - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "lodes" -q
-  - python -m pytest tests/dags -m dag -q
----
+# Set aside: Dane County shows jobs by the block people work in and the block they live in
 
-# Dane County shows jobs by the block people work in and the block they live in
+## Decision
 
-## Status
+Set aside on 2026-11-12 (22:51Z) by Nick, in the game project's thread
+"Research infection spread in populations": "I'd prefer to just spread tract
+data and call it a day. Distribute it reasonably over the buildings and have
+some common sense allocation rules. Avoid burning all my disk space."
 
-To do. Step 3 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+The game spreads tract figures over OpenStreetMap buildings instead. The tract
+figures it needs are in
+[`dane-tract-inputs-for-building-spread`](../../plans/to_do/DANE_TRACT_INPUTS_FOR_BUILDING_SPREAD_PLAN.md).
+The plan as drafted is kept below as the record; its links point to where the
+plans stood when it was set aside.
+
+## The plan as drafted
+
+### Status
+
+To do. Step 3 of [`outbreak-model-inputs`](../../plans/to_do/OUTBREAK_MODEL_INPUTS_PLAN.md).
 The document asked first to merge the LODES pipeline: it is already merged to
 `dev` and loaded; its plan
-([`census-lehd-lodes`](../needs_review/CENSUS_LEHD_LODES_PLAN.md)) waits only
+([`census-lehd-lodes`](../../plans/needs_review/CENSUS_LEHD_LODES_PLAN.md)) waits only
 on Nick's acceptance. What is missing is block grain: the captured LODES8
 files keep every block, and silver sums them to counties.
 
-## Source
+### Source
 
 LEHD LODES8 workplace (WAC) and residence (RAC) area characteristics, main
 job type JT00, already captured per state and year (2002 to 2023) in
 `raw_capture`. No new download.
 
-## Design
+### Design
 
 - A block replay reads the Wisconsin captures already held and writes
   `silver_census_lodes.fact_block_area` for blocks whose first five digits
@@ -40,7 +42,7 @@ job type JT00, already captured per state and year (2002 to 2023) in
   and education columns (CD) are not kept.** A block-column the file writes
   as zero is stored as zero; the file's blocks are 2020 blocks for LODES8.
 - Blocks resolve against the Dane block reference from
-  [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md).
+  [`block-population-and-age-for-dane`](block-population-and-age-for-dane.md).
 - DQ-LODES block rule: the scoped blocks sum to the county row already
   served, exactly, for every column and year.
 - Gold `gold_census_lodes` block view and API observations at block grain
@@ -49,13 +51,13 @@ job type JT00, already captured per state and year (2002 to 2023) in
 
 LODES block figures carry the Bureau's noise infusion; the API note says so.
 
-## Size
+### Size
 
 Dane has roughly 6,000 work blocks and 8,000 home blocks with jobs. 29
 columns x 22 years with zeros dropped by the file is about 4 million rows,
 about 5 GB at the measured 1,300 bytes per fact (was 0.6 GB at the first 150 to 200 bytes). All counties would be about 1,300 GB and needs Nick's go.
 
-## Acceptance criteria
+### Acceptance criteria
 
 1. Dane block WAC and RAC served for 2002 to 2023, summing exactly to the
    county figures.

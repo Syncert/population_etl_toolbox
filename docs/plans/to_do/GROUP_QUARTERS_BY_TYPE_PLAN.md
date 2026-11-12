@@ -41,8 +41,8 @@ Plus **P1_001N** (total population, the denominator a share needs; no other
 P1 cell, since P1 is the race table) and **H1_001N to H1_003N** (housing
 units, occupied, vacant).
 
-Grain: nation, state, county and tract for every state; **block for Dane
-County (55025) only**. The 2020 count is published once (reference date
+Grain: nation, state, county and tract for every state. No block grain:
+Nick set block data aside on 2026-11-12 (see `outbreak-model-inputs`). The 2020 count is published once (reference date
 2020-04-01); 2030 joins as a new vintage when it is published.
 
 ## Design
@@ -50,8 +50,7 @@ County (55025) only**. The 2020 count is published once (reference date
 A new adapter `census_decennial` (the 2020 Census as its own source, beside the
 ACS adapter, which keeps its crosswalk-to-ACS design for 2000 and 1990):
 
-- `registry.py`: datasets (`pl` now; `dhc` for
-  [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md)),
+- `registry.py`: datasets (`pl`; `dhc` only if a later plan needs it),
   tables with their requested variables declared, never matched by label,
   and grains with the block scope declared as a county list (`55025`).
 - `client.py` and `capture.py`: one request per dataset, table, grain and
@@ -62,9 +61,8 @@ ACS adapter, which keeps its crosswalk-to-ACS design for 2000 and 1990):
   geography, the published integer as written, `geo_id` in the shared form
   (`state:55|county:025|tract:000100`, blocks `...|block:1001`), a lineage row
   per fact. A value the API returns null is missing, never zero.
-- Block geography: tracts resolve against `silver_ref` 2020 tracts; blocks are
-  kept with `geography_status = 'unmapped'` until the block reference of
-  `block-population-and-age-for-dane` lands, and are not served before then.
+- Geography: tracts resolve against `silver_ref` 2020 tracts. The registry's
+  block scope (`BLOCK_COUNTIES`) stays empty: block data is set aside.
 - Gold `gold_census_decennial` latest view, publisher metrics (catalog rows per
   variable), API discovery and observation dispatch entries, glossary
   harvest.

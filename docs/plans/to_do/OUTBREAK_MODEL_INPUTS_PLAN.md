@@ -3,8 +3,7 @@ id: outbreak-model-inputs
 depends_on:
   - group-quarters-by-type
   - nursing-home-locations
-  - lodes-block-grain-for-dane
-  - block-population-and-age-for-dane
+  - dane-tract-inputs-for-building-spread
   - college-housing-capacity
   - hospital-capacity-and-locations
   - places-tract-release
@@ -102,8 +101,7 @@ loads land.
 | --- | --- | --- | --- |
 | 1 | [`group-quarters-by-type`](GROUP_QUARTERS_BY_TYPE_PLAN.md) | nation, state, county, tract | **1.6 GB measured** (Dane blocks would add about 0.2 GB) |
 | 2 | [`nursing-home-locations`](NURSING_HOME_LOCATIONS_PLAN.md) | facility, quarterly and yearly | about 0.1 GB a year |
-| 3 | [`lodes-block-grain-for-dane`](LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | block, Dane, 2002 to 2023 | about 5 GB (no new download) |
-| 4 | [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | block, Dane, 2020 | about 1 GB |
+| 3 and 4 | [`dane-tract-inputs-for-building-spread`](DANE_TRACT_INPUTS_FOR_BUILDING_SPREAD_PLAN.md) (replaces the two Dane block plans, set aside 2026-11-12) | tract, Dane | about 15 MB |
 | 5 | [`college-housing-capacity`](COLLEGE_HOUSING_CAPACITY_PLAN.md) | campus point | about 0.5 GB for every published year |
 | 6 | [`hospital-capacity-and-locations`](HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | facility, weekly 2020 to 2024 | about 12 GB |
 | 7 | [`places-tract-release`](PLACES_TRACT_RELEASE_PLAN.md) | tract | about 4 GB a release |
@@ -118,7 +116,19 @@ county about 660 GB), and capturing the whole 106-million-row case file.
 Steps 1 to 4 are what the Dane County slice needs first; 5 to 9 can follow
 the first playable.
 
-## Block data at the same scope as the other sources (Nick to decide)
+## Block data: set aside (Nick, 2026-11-12 22:51Z)
+
+Nick decided in the game project's thread: "I'd prefer to just spread tract
+data and call it a day. Distribute it reasonably over the buildings and have
+some common sense allocation rules. Avoid burning all my disk space." No block
+data is loaded. `lodes-block-grain-for-dane` and
+`block-population-and-age-for-dane` are set aside, their records moved to
+[`docs/product/declined_sources/`](../../product/declined_sources/), and
+[`dane-tract-inputs-for-building-spread`](DANE_TRACT_INPUTS_FOR_BUILDING_SPREAD_PLAN.md)
+adds the few tract figures the game's building spread needs. The analysis
+below is kept as the record of what blocks would have cost.
+
+### Block data at the same scope as the other sources (as asked before the decision)
 
 Nick asked on 2026-11-12 (18:25Z) what block data would cost at national
 scope, and what it is for, to decide whether it is built here or in the game
