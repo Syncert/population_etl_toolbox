@@ -86,6 +86,7 @@ SOURCES: tuple[str, ...] = (
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_DECENNIAL",
     "CMS_LTC",
+    "NCES_IPEDS",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2666,6 +2667,122 @@ _CMS_LTC_OBJECTS: tuple[WarehouseObject, ...] = (
         "CMS_LTC",
         grain="source_object_key (series:measure)",
         lineage="gold_cms_ltc.area_latest, silver_cms_ltc.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NCES IPEDS colleges (directory, housing capacity, fall enrolment).
+# ---------------------------------------------------------------------------
+
+_NCES_IPEDS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.nces_ipeds_file",
+        "control",
+        "NCES_IPEDS",
+        grain="run_id (one request of one component's file for one year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered components and years in nces_ipeds/registry.py",
+        cadence="monthly; years not yet answered and the year after the newest published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_nces_ipeds.dim_measure",
+        "silver",
+        "NCES_IPEDS",
+        grain="measure_id",
+        scope_method="registered figures in nces_ipeds/registry.py",
+        cadence="per IPEDS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_nces_ipeds.quarantine",
+        "silver",
+        "NCES_IPEDS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per IPEDS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_nces_ipeds.institution",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, unitid",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every institution of a replayed directory file; county by published code",
+        cadence="per IPEDS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_nces_ipeds.institution_value",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, unitid, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="registered figures of every institution of a replayed IC or EF A file",
+        cadence="per IPEDS replay",
+        empty_behavior="a not-applicable or not-reported figure is retained with its status, never zero",
+    ),
+    _obj(
+        "silver_nces_ipeds.area_total",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, measure_id, geo_id",
+        lineage="silver_nces_ipeds.institution_value, silver_nces_ipeds.institution",
+        scope_method="sums of published institution figures by county, state and nation",
+        cadence="per IPEDS replay",
+        empty_behavior="an area with no institution figure has no row",
+    ),
+    _obj(
+        "gold_nces_ipeds.area_revision",
+        "gold",
+        "NCES_IPEDS",
+        grain="run_id, measure_id, geo_id (published files only)",
+        lineage="silver_nces_ipeds.area_total, control.nces_ipeds_file",
+        scope_method="published files",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ipeds.area_latest",
+        "gold",
+        "NCES_IPEDS",
+        grain="metric_key, geo_id, period_year (newest capture)",
+        lineage="gold_nces_ipeds.area_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ipeds.institution_year",
+        "gold",
+        "NCES_IPEDS",
+        grain="unitid, period_year",
+        lineage="silver_nces_ipeds.institution, silver_nces_ipeds.institution_value",
+        scope_method="newest published directory entry and figures per institution and year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published directory file",
+    ),
+    _obj(
+        "gold_nces_ipeds.measure_export",
+        "publisher",
+        "NCES_IPEDS",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_nces_ipeds.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_nces_ipeds.metric_publisher",
+        "publisher",
+        "NCES_IPEDS",
+        grain="source_object_key (ipeds:measure)",
+        lineage="gold_nces_ipeds.area_latest, silver_nces_ipeds.dim_measure",
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published file",
@@ -5457,6 +5574,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _SAE_OBJECTS
     + _DECENNIAL_OBJECTS
     + _CMS_LTC_OBJECTS
+    + _NCES_IPEDS_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -5847,6 +5965,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_sae.metric_publisher",
             "gold_census_decennial.metric_publisher",
             "gold_cms_ltc.metric_publisher",
+            "gold_nces_ipeds.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -7766,6 +7885,81 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_cms_ltc.facility_report",
             "control.cms_ltc_file",
+        ),
+    ),
+    # -- NCES IPEDS colleges ---------------------------------------------------
+    _rule(
+        "DQ-IPEDS-001",
+        "BLOCK",
+        "uniqueness",
+        "An IPEDS file holds one row per institution (EF A: per institution "
+        "and level); a second read is a second run beside the first, never an "
+        "overwrite.",
+        (
+            "silver_nces_ipeds.institution",
+            "silver_nces_ipeds.institution_value",
+            "silver_nces_ipeds.area_total",
+            "gold_nces_ipeds.area_revision",
+            "gold_nces_ipeds.area_latest",
+            "gold_nces_ipeds.institution_year",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated institution aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_nces_ipeds.institution", ("run_id", "unitid")),
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("run_id", "unitid", "measure_id"),
+            ),
+            EnforcedGrain(
+                "silver_nces_ipeds.area_total", ("run_id", "measure_id", "geo_id")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IPEDS-002",
+        "BLOCK",
+        "conformance",
+        "A valid IPEDS figure carries a whole number; a not-applicable or "
+        "not-reported one carries none: neither is stored as zero.",
+        (
+            "silver_nces_ipeds.institution_value",
+            "gold_nces_ipeds.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ipeds_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ipeds_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IPEDS-003",
+        "WARN",
+        "referential_integrity",
+        "Institutions in the newest published directory whose published point "
+        "lies outside the county their published county code names are "
+        "counted. They stay on the county IPEDS names; the point is reported, "
+        "never used to move them.",
+        (
+            "silver_nces_ipeds.institution",
+            "silver_ref.dim_geo_geometry_version",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

@@ -1091,6 +1091,29 @@ def stub_cms_ltc(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cms_capture, "fetch_file", fetch)
 
 
+def stub_nces_ipeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the IPEDS fixture zips; every other file answers 404, unpaced."""
+    from data_ingestion_toolbox.nces_ipeds import capture as ipeds_capture
+    from data_ingestion_toolbox.nces_ipeds.client import (
+        IpedsNotPublished,
+        IpedsResponse,
+        check_zip,
+    )
+    from data_ingestion_toolbox.nces_ipeds.config import DATA_BASE_URL
+    from tests.support import nces_ipeds as ipeds_support
+
+    def fetch(url: str, **_kwargs: Any) -> IpedsResponse:
+        name = url.removeprefix(DATA_BASE_URL)
+        if name not in ipeds_support.FIXTURE_FILES:
+            raise IpedsNotPublished(name, code="not_published", status=404)
+        payload = ipeds_support.fixture_bytes(ipeds_support.FIXTURE_FILES[name])
+        check_zip(payload, name)
+        return IpedsResponse(name, payload, {"content-type": "application/zip"}, 200)
+
+    monkeypatch.setattr(ipeds_capture, "fetch_file", fetch)
+    monkeypatch.setattr(ipeds_capture, "pause_between_files", lambda _config: None)
+
+
 def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed government finance answers; other periods answer 204.
 
@@ -2048,6 +2071,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_saipe_sahie", stub_census_saipe_sahie),
         ("census_decennial", stub_census_decennial),
         ("cms_ltc", stub_cms_ltc),
+        ("nces_ipeds", stub_nces_ipeds),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

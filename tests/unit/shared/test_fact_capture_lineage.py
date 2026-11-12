@@ -252,6 +252,13 @@ FACTS = [
         "silver_cms_ltc.facility_count",
         "valid",
     ),
+    # An IPEDS figure marked not applicable or not reported has no number.
+    FactContract(
+        "NCES_IPEDS",
+        SRC / "nces_ipeds/DDL/silver_nces_ipeds.sql",
+        "silver_nces_ipeds.institution_value",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

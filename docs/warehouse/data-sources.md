@@ -37,6 +37,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Partly loaded |
 | [2020 Census counts](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  |  | ● |  | 2020 | On demand | Not loaded yet |
 | [Nursing home residents and beds](#cms_ltc) | Centers for Medicare & Medicaid Services | ◐ | ◐ | ◐ |  |  |  |  | 2011–2026 | Monthly | Not loaded yet |
+| [College housing capacity and enrolment](#nces_ipeds) | National Center for Education Statistics | ◐ | ◐ | ◐ |  |  |  |  | 2012–2024 | Monthly | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -259,6 +260,22 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_cms_ltc.facility_report`, `silver_cms_ltc.facility_count`, `silver_cms_ltc.area_total`, `silver_cms_ltc.dim_measure`, `silver_cms_ltc.quarantine`
 - **Gold:** `gold_cms_ltc.area_revision`, `gold_cms_ltc.area_latest`, `gold_cms_ltc.facility_latest`
 - **Status:** Not loaded yet (added 2026-11-12, plan `nursing-home-locations`).
+
+<a id="nces_ipeds"></a>
+### College housing capacity and enrolment (`NCES_IPEDS`)
+
+- **Publisher:** National Center for Education Statistics (IPEDS)
+- **Code:** `src/data_ingestion_toolbox/nces_ipeds` · DAG `nces_ipeds_ingest` · Monthly, 25th 17:00 UTC (years not yet answered, and the year after the newest published)
+- **Publisher releases:** IPEDS complete data files, one zip per component and collection year (`https://nces.ed.gov/ipeds/datacenter/data/<FILE>.zip`): HD (directory), IC (housing), EF A (fall enrolment).
+- **Credential:** none
+- **Years:** 2012 onward. Housing capacity 2012–2023: IC2024 carries no housing columns and the 2024 housing file has not been located. Fall enrolment 2012–2023 (EF2024A not published yet).
+- **Measures:** Housing capacity (the most students an institution can house) and fall headcount (all, full-time, part-time), as each institution reports them; area figures are sums of the institutions' figures (◐) with the count of institutions. Race, ethnicity and gender columns are not read.
+- **Placement:** By the county code (`COUNTYCD`) the same year's directory publishes; the published point is kept and checked against the county (DQ-IPEDS-003, WARN), never used to move an institution.
+- **Revised files:** a zip that holds a revised `_rv.csv` is read from it (NCES's current statement of that year); the original stays in the capture.
+- **Capture and control:** `control.nces_ipeds_file`
+- **Silver:** `silver_nces_ipeds.institution`, `silver_nces_ipeds.institution_value`, `silver_nces_ipeds.area_total`, `silver_nces_ipeds.dim_measure`, `silver_nces_ipeds.quarantine`
+- **Gold:** `gold_nces_ipeds.area_revision`, `gold_nces_ipeds.area_latest`, `gold_nces_ipeds.institution_year`
+- **Status:** Not loaded yet (added 2026-11-12, plan `college-housing-capacity`).
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)

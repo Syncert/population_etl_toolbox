@@ -40,6 +40,7 @@ from tests.support import dol_childcare as ndcp_support
 from tests.support import irs_soi as soi_support
 from tests.support import census_decennial as decennial_support
 from tests.support import cms_ltc as cms_support
+from tests.support import nces_ipeds as ipeds_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
@@ -975,6 +976,18 @@ def published_cms_metric(
 
 
 @pytest.fixture
+def published_ipeds_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the IPEDS figures through their real pipeline."""
+    factory = ipeds_support.reviewed_warehouse(postgres_connection_factory, request)
+    ipeds_support.load_files(factory)
+    harvest_publisher(factory, Publisher("gold_nces_ipeds"))
+    return _one_published_code(factory, "NCES_IPEDS")
+
+
+@pytest.fixture
 def published_sae_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1301,6 +1314,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_sae_metric: str,
     published_decennial_metric: str,
     published_cms_metric: str,
+    published_ipeds_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1369,6 +1383,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CENSUS_SAIPE_SAHIE", published_sae_metric),
         ("CENSUS_DECENNIAL", published_decennial_metric),
         ("CMS_LTC", published_cms_metric),
+        ("NCES_IPEDS", published_ipeds_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1533,6 +1548,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_sae_metric: str,
     published_decennial_metric: str,
     published_cms_metric: str,
+    published_ipeds_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,

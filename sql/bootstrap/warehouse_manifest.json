@@ -137,6 +137,11 @@
       "path": "src/data_ingestion_toolbox/cms_ltc/DDL/silver_cms_ltc.sql"
     },
     {
+      "id": "silver-nces-ipeds",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/DDL/silver_nces_ipeds.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -362,6 +367,11 @@
       "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/gold_cms_ltc.sql"
     },
     {
+      "id": "gold-nces-ipeds",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/gold_nces_ipeds.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -540,6 +550,11 @@
       "id": "publisher-cms-ltc",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-nces-ipeds",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",

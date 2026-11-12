@@ -55,6 +55,7 @@ GUARDED = {
     "census_saipe_sahie_ingest": "require_shared_geography",
     "census_decennial_ingest": "require_shared_geography",
     "cms_ltc_ingest": "require_shared_geography",
+    "nces_ipeds_ingest": "require_shared_geography",
     "census_govfin_ingest": "require_shared_geography",
     "eia_retail_gasoline_ingest": "require_shared_geography",
 }

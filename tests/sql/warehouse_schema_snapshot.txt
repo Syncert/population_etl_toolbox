@@ -1026,6 +1026,37 @@ r control.nces_ccd_file
     index nces_ccd_file_component_idx CREATE INDEX nces_ccd_file_component_idx ON control.nces_ccd_file USING btree (component, school_year, status)
     index nces_ccd_file_pkey CREATE UNIQUE INDEX nces_ccd_file_pkey ON control.nces_ccd_file USING btree (run_id)
 
+r control.nces_ipeds_file
+    column run_id uuid NOT NULL
+    column component_id text NOT NULL
+    column collection_year integer NOT NULL
+    column file_stem text NOT NULL
+    column download_url text NOT NULL
+    column capture_id uuid
+    column payload_checksum text
+    column csv_member text
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint nces_ipeds_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint nces_ipeds_file_capture_unless_absent CHECK (((status = 'not_published'::text) = (capture_id IS NULL)))
+    constraint nces_ipeds_file_collection_year_check CHECK (((collection_year >= 1980) AND (collection_year <= 2100)))
+    constraint nces_ipeds_file_component_id_check CHECK ((component_id = ANY (ARRAY['HD'::text, 'IC'::text, 'EFA'::text])))
+    constraint nces_ipeds_file_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint nces_ipeds_file_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint nces_ipeds_file_payload_checksum_check CHECK (((payload_checksum IS NULL) OR (payload_checksum ~ '^[0-9a-f]{64}$'::text)))
+    constraint nces_ipeds_file_pkey PRIMARY KEY (run_id)
+    constraint nces_ipeds_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint nces_ipeds_file_row_count_check CHECK ((row_count >= 0))
+    constraint nces_ipeds_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint nces_ipeds_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'not_published'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index nces_ipeds_file_capture_idx CREATE INDEX nces_ipeds_file_capture_idx ON control.nces_ipeds_file USING btree (capture_id)
+    index nces_ipeds_file_pkey CREATE UNIQUE INDEX nces_ipeds_file_pkey ON control.nces_ipeds_file USING btree (run_id)
+    index nces_ipeds_file_year_idx CREATE INDEX nces_ipeds_file_year_idx ON control.nces_ipeds_file USING btree (component_id, collection_year, status)
+
 r control.noaa_climdiv_file
     column run_id uuid NOT NULL
     column file_element text NOT NULL
@@ -11889,6 +11920,256 @@ v gold_nces_ccd.school_placement
     body    FROM silver_nces_ccd.school_location location
     body      JOIN selected ON selected.run_id = location.run_id;
 
+v gold_nces_ipeds.area_latest
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_year integer
+    column file_stem text
+    column csv_member text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column institution_count integer
+    column unplaced_institution_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, period_year) measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     period_year,
+    body     file_stem,
+    body     csv_member,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     institution_count,
+    body     unplaced_institution_count,
+    body     derivation,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_nces_ipeds.area_revision revision
+    body   ORDER BY metric_key, geo_id, period_year, retrieved_at DESC, capture_id DESC;
+
+v gold_nces_ipeds.area_revision
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_year integer
+    column file_stem text
+    column csv_member text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column institution_count integer
+    column unplaced_institution_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT area.measure_id,
+    body     'ipeds:'::text || area.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.basis,
+    body     area.collection_year AS period_year,
+    body     file.file_stem,
+    body     file.csv_member,
+    body     area.geo_id,
+    body     area.geo_sk,
+    body     area.geo_type,
+    body     gold_glossary.geo_grain(area.geo_type) AS geo_level,
+    body     area.geography_status,
+    body     area.value,
+    body     'valid'::text AS value_status,
+    body     area.institution_count,
+    body     area.unplaced_institution_count,
+    body     'sum_of_published_institution_figures'::text AS derivation,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     area.source_record_id,
+    body     file.capture_id,
+    body     area.run_id
+    body    FROM silver_nces_ipeds.area_total area
+    body      JOIN control.nces_ipeds_file file ON file.run_id = area.run_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = file.capture_id
+    body      JOIN silver_nces_ipeds.dim_measure measure ON measure.measure_id = area.measure_id
+    body   WHERE file.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_nces_ipeds.institution_year
+    column unitid text
+    column period_year integer
+    column institution_name text
+    column city text
+    column state_code text
+    column state_fips text
+    column zip_code text
+    column county_code text
+    column county_name text
+    column county_geo_id text
+    column county_status text
+    column longitude double precision
+    column latitude double precision
+    column sector text
+    column housing_capacity bigint
+    column housing_capacity_status text
+    column fall_enrolment_total bigint
+    column fall_enrolment_total_status text
+    column fall_enrolment_full_time bigint
+    column fall_enrolment_part_time bigint
+    body WITH directory AS (
+    body          SELECT DISTINCT ON (institution.unitid, institution.collection_year) institution.run_id,
+    body             institution.unitid,
+    body             institution.collection_year,
+    body             institution.capture_id,
+    body             institution.source_row_index,
+    body             institution.institution_name,
+    body             institution.city,
+    body             institution.state_code,
+    body             institution.state_fips,
+    body             institution.zip_code,
+    body             institution.county_code,
+    body             institution.county_name,
+    body             institution.longitude,
+    body             institution.latitude,
+    body             institution.sector,
+    body             institution.active_code,
+    body             institution.county_geo_id,
+    body             institution.county_geo_sk,
+    body             institution.county_status,
+    body             institution.created_at
+    body            FROM silver_nces_ipeds.institution institution
+    body              JOIN control.nces_ipeds_file file ON file.run_id = institution.run_id
+    body           WHERE file.status = 'published'::text
+    body           ORDER BY institution.unitid, institution.collection_year, file.published_at DESC
+    body         ), figure AS (
+    body          SELECT DISTINCT ON (value.unitid, value.collection_year, value.measure_id) value.unitid,
+    body             value.collection_year,
+    body             value.measure_id,
+    body             value.value,
+    body             value.value_status,
+    body             value.imputation_code
+    body            FROM silver_nces_ipeds.institution_value value
+    body              JOIN control.nces_ipeds_file file ON file.run_id = value.run_id
+    body           WHERE file.status = 'published'::text
+    body           ORDER BY value.unitid, value.collection_year, value.measure_id, file.published_at DESC
+    body         )
+    body  SELECT directory.unitid,
+    body     directory.collection_year AS period_year,
+    body     directory.institution_name,
+    body     directory.city,
+    body     directory.state_code,
+    body     directory.state_fips,
+    body     directory.zip_code,
+    body     directory.county_code,
+    body     directory.county_name,
+    body     directory.county_geo_id,
+    body     directory.county_status,
+    body     directory.longitude,
+    body     directory.latitude,
+    body     directory.sector,
+    body     capacity.value AS housing_capacity,
+    body     COALESCE(capacity.value_status, 'not_listed'::text) AS housing_capacity_status,
+    body     total.value AS fall_enrolment_total,
+    body     COALESCE(total.value_status, 'not_listed'::text) AS fall_enrolment_total_status,
+    body     full_time.value AS fall_enrolment_full_time,
+    body     part_time.value AS fall_enrolment_part_time
+    body    FROM directory
+    body      LEFT JOIN figure capacity ON capacity.unitid = directory.unitid AND capacity.collection_year = directory.collection_year AND capacity.measure_id = 'housing_capacity'::text
+    body      LEFT JOIN figure total ON total.unitid = directory.unitid AND total.collection_year = directory.collection_year AND total.measure_id = 'fall_enrolment_total'::text
+    body      LEFT JOIN figure full_time ON full_time.unitid = directory.unitid AND full_time.collection_year = directory.collection_year AND full_time.measure_id = 'fall_enrolment_full_time'::text
+    body      LEFT JOIN figure part_time ON part_time.unitid = directory.unitid AND part_time.collection_year = directory.collection_year AND part_time.measure_id = 'fall_enrolment_part_time'::text;
+
+v gold_nces_ipeds.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column source_column text
+    column source_level text
+    column schema_version text
+    body SELECT component_id AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     basis,
+    body     source_column,
+    body     source_level,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_nces_ipeds.dim_measure measure;
+
+v gold_nces_ipeds.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'NCES_IPEDS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     'ipeds:'::text || measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_nces_ipeds', 'relation', 'area_revision', 'key', 'ipeds:'::text || measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'NCES Integrated Postsecondary Education Data System (IPEDS)'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     'https://nces.ed.gov/ipeds/'::text AS reference_url
+    body    FROM silver_nces_ipeds.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(latest.period_year)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(file.published_at) AS publication_time
+    body            FROM gold_nces_ipeds.area_latest latest
+    body              JOIN control.nces_ipeds_file file ON file.run_id = latest.run_id
+    body           WHERE latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
 v gold_noaa_climdiv.measure_definition
     column measure text
     column measure_label text
@@ -17341,6 +17622,122 @@ r silver_nces_ccd.school_location
     index nces_ccd_location_school_idx CREATE INDEX nces_ccd_location_school_idx ON silver_nces_ccd.school_location USING btree (ncessch)
     index nces_ccd_location_state_idx CREATE INDEX nces_ccd_location_state_idx ON silver_nces_ccd.school_location USING btree (state_fips, run_id)
     index school_location_pkey CREATE UNIQUE INDEX school_location_pkey ON silver_nces_ccd.school_location USING btree (run_id, ncessch)
+
+r silver_nces_ipeds.area_total
+    column run_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column collection_year integer NOT NULL
+    column geo_id text NOT NULL
+    column geo_type text NOT NULL
+    column geo_sk bigint
+    column value bigint NOT NULL
+    column institution_count integer NOT NULL
+    column unplaced_institution_count integer NOT NULL DEFAULT 0
+    column geography_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint area_total_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint area_total_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint area_total_institution_count_check CHECK ((institution_count > 0))
+    constraint area_total_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_nces_ipeds.dim_measure(measure_id)
+    constraint area_total_pkey PRIMARY KEY (run_id, measure_id, geo_id)
+    constraint area_total_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ipeds_file(run_id)
+    constraint area_total_unplaced_institution_count_check CHECK ((unplaced_institution_count >= 0))
+    constraint area_total_value_check CHECK ((value >= 0))
+    constraint nces_ipeds_area_resolved_has_key CHECK (((geography_status = 'resolved'::text) = (geo_sk IS NOT NULL)))
+    index area_total_pkey CREATE UNIQUE INDEX area_total_pkey ON silver_nces_ipeds.area_total USING btree (run_id, measure_id, geo_id)
+    index nces_ipeds_area_geo_idx CREATE INDEX nces_ipeds_area_geo_idx ON silver_nces_ipeds.area_total USING btree (measure_id, geo_id)
+
+r silver_nces_ipeds.dim_measure
+    column measure_id text NOT NULL
+    column component_id text NOT NULL
+    column source_column text NOT NULL
+    column source_level text
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column basis text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_component_id_check CHECK ((component_id = ANY (ARRAY['IC'::text, 'EFA'::text])))
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_nces_ipeds.dim_measure USING btree (measure_id)
+
+r silver_nces_ipeds.institution
+    column run_id uuid NOT NULL
+    column unitid text NOT NULL
+    column collection_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column institution_name text NOT NULL
+    column city text
+    column state_code text NOT NULL
+    column state_fips text
+    column zip_code text
+    column county_code text
+    column county_name text
+    column longitude double precision
+    column latitude double precision
+    column sector text
+    column active_code text
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint institution_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint institution_county_status_check CHECK ((county_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'not_listed'::text])))
+    constraint institution_latitude_check CHECK (((latitude IS NULL) OR ((latitude >= ('-90'::integer)::double precision) AND (latitude <= (90)::double precision))))
+    constraint institution_longitude_check CHECK (((longitude IS NULL) OR ((longitude >= ('-180'::integer)::double precision) AND (longitude <= (180)::double precision))))
+    constraint institution_pkey PRIMARY KEY (run_id, unitid)
+    constraint institution_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ipeds_file(run_id)
+    constraint institution_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint institution_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    constraint institution_unitid_check CHECK ((unitid ~ '^[0-9]{6}$'::text))
+    constraint nces_ipeds_institution_county_in_state CHECK (((county_geo_id IS NULL) OR (split_part(county_geo_id, '|'::text, 1) = ('state:'::text || state_fips))))
+    constraint nces_ipeds_institution_resolved_has_county CHECK (((county_status = 'resolved'::text) = (county_geo_sk IS NOT NULL)))
+    index institution_pkey CREATE UNIQUE INDEX institution_pkey ON silver_nces_ipeds.institution USING btree (run_id, unitid)
+    index nces_ipeds_institution_county_idx CREATE INDEX nces_ipeds_institution_county_idx ON silver_nces_ipeds.institution USING btree (county_geo_id, collection_year)
+    index nces_ipeds_institution_unitid_idx CREATE INDEX nces_ipeds_institution_unitid_idx ON silver_nces_ipeds.institution USING btree (unitid, collection_year)
+
+r silver_nces_ipeds.institution_value
+    column run_id uuid NOT NULL
+    column unitid text NOT NULL
+    column measure_id text NOT NULL
+    column collection_year integer NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column value_source text NOT NULL
+    column value bigint
+    column value_status text NOT NULL
+    column imputation_code text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint institution_value_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint institution_value_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_nces_ipeds.dim_measure(measure_id)
+    constraint institution_value_pkey PRIMARY KEY (run_id, unitid, measure_id)
+    constraint institution_value_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.nces_ipeds_file(run_id)
+    constraint institution_value_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint institution_value_unitid_check CHECK ((unitid ~ '^[0-9]{6}$'::text))
+    constraint institution_value_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'not_applicable'::text])))
+    constraint nces_ipeds_value_not_negative CHECK (((value IS NULL) OR (value >= 0)))
+    constraint nces_ipeds_value_other_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint nces_ipeds_value_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index institution_value_pkey CREATE UNIQUE INDEX institution_value_pkey ON silver_nces_ipeds.institution_value USING btree (run_id, unitid, measure_id)
+    index nces_ipeds_value_unitid_idx CREATE INDEX nces_ipeds_value_unitid_idx ON silver_nces_ipeds.institution_value USING btree (unitid, measure_id, collection_year)
+
+r silver_nces_ipeds.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_nces_ipeds.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_nces_ipeds.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_nces_ipeds.quarantine USING btree (quarantine_sk)
 
 r silver_noaa_climdiv.county_month
     column ncei_state_code text NOT NULL
