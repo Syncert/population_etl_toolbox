@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS control.cms_ltc_file (
     CONSTRAINT cms_ltc_file_published_has_time CHECK (status <> 'published' OR published_at IS NOT NULL)
 );
 
+-- The encoding a file was read in at replay (cms_ltc.client.TEXT_ENCODINGS):
+-- utf-8-sig, or cp1252 for an older release written in Windows-1252.
+ALTER TABLE control.cms_ltc_file
+    ADD COLUMN IF NOT EXISTS text_encoding TEXT
+        CHECK (text_encoding IN ('utf-8-sig', 'cp1252'));
+
 CREATE INDEX IF NOT EXISTS cms_ltc_file_capture_idx ON control.cms_ltc_file (capture_id);
 CREATE INDEX IF NOT EXISTS cms_ltc_file_release_idx ON control.cms_ltc_file (series_id, period_start, status);
 

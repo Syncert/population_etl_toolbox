@@ -149,8 +149,8 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             if any(item.source_row_index == 0 for item in parsed.quarantined):
                 _quarantine(cursor, run_id, capture_id, parsed.quarantined)
                 cursor.execute(
-                    "UPDATE control.cms_ltc_file SET status = 'quarantined', updated_at = NOW() WHERE run_id = %s",
-                    (str(run_id),),
+                    "UPDATE control.cms_ltc_file SET status = 'quarantined', text_encoding = %s, updated_at = NOW() WHERE run_id = %s",
+                    (parsed.encoding, str(run_id)),
                 )
                 connection.commit()
                 return 0
@@ -259,11 +259,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             cursor.execute(
                 """
                 UPDATE control.cms_ltc_file
-                   SET row_count = %s, kept_row_count = %s, status = 'silver_ready',
-                       updated_at = NOW()
+                   SET row_count = %s, kept_row_count = %s, text_encoding = %s,
+                       status = 'silver_ready', updated_at = NOW()
                  WHERE run_id = %s AND status <> 'published'
                 """,
-                (parsed.row_count, stored, str(run_id)),
+                (parsed.row_count, stored, parsed.encoding, str(run_id)),
             )
         connection.commit()
     except BaseException:
