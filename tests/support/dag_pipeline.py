@@ -1062,6 +1062,34 @@ def stub_census_decennial(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(decennial_capture, "fetch_slice", fetch)
 
 
+def stub_cms_ltc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the CMS catalog excerpt and the three Wisconsin CSV fixtures.
+
+    The catalog is cut to the releases a fixture holds, so a run reads those
+    three and nothing else.
+    """
+    from data_ingestion_toolbox.cms_ltc import capture as cms_capture
+    from data_ingestion_toolbox.cms_ltc.client import CmsResponse, check_file
+    from tests.support import cms_ltc as cms_support
+
+    def catalog(**_kwargs: Any) -> CmsResponse:
+        return CmsResponse(
+            "/data.json",
+            cms_support.fixture_catalog_bytes(),
+            {"content-type": "application/json"},
+            200,
+        )
+
+    def fetch(url: str, series: Any, **_kwargs: Any) -> CmsResponse:
+        name = cms_support.fixture_url_map()[url]
+        payload = cms_support.file_bytes(name)
+        check_file(payload, series, name)
+        return CmsResponse(name, payload, {"content-type": "text/csv"}, 200)
+
+    monkeypatch.setattr(cms_capture, "fetch_catalog", catalog)
+    monkeypatch.setattr(cms_capture, "fetch_file", fetch)
+
+
 def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed government finance answers; other periods answer 204.
 
@@ -2005,6 +2033,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("dol_childcare", stub_dol_childcare),
         ("census_saipe_sahie", stub_census_saipe_sahie),
         ("census_decennial", stub_census_decennial),
+        ("cms_ltc", stub_cms_ltc),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

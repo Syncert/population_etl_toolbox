@@ -69,6 +69,11 @@
       "NATIONAL",
       "STATE"
     ],
+    "CMS_LTC": [
+      "COUNTY",
+      "NATIONAL",
+      "STATE"
+    ],
     "DOL_CHILDCARE": [
       "COUNTY"
     ],
@@ -1738,6 +1743,135 @@
       "route_segment": null,
       "served_by_neutral_routes": true,
       "source_code": "CENSUS_SAIPE_SAHIE",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [
+        "cost_report",
+        "characteristics"
+      ],
+      "display_name": "Centers for Medicare & Medicaid Services long-term care facility characteristics and skilled nursing facility cost reports",
+      "observation_dimensions": [
+        "basis",
+        "derivation",
+        "facility_count",
+        "measure_id",
+        "measure_label",
+        "release_title",
+        "series_id",
+        "unplaced_facility_count"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "state_fips",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_code_a",
+            "metric_code_b",
+            "offset",
+            "state_fips"
+          ],
+          "path": "/api/v1/comparison"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "metric_code_a",
+            "metric_code_b",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/correlation"
+        },
+        {
+          "parameters": [
+            "geo_level",
+            "limit",
+            "metric_codes",
+            "offset",
+            "state_fips",
+            "year"
+          ],
+          "path": "/api/v1/comparison/matrix"
+        },
+        {
+          "parameters": [
+            "metric_code_a",
+            "metric_code_b"
+          ],
+          "path": "/api/v1/comparison/preflight"
+        },
+        {
+          "parameters": [
+            "bin_count",
+            "geo_level",
+            "metric_code",
+            "period_start",
+            "state_fips"
+          ],
+          "path": "/api/v1/distribution/bins"
+        },
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": true,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "CMS_LTC",
       "time_grains": [
         "native"
       ]
@@ -3998,6 +4132,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4058,6 +4193,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4118,6 +4254,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4177,6 +4314,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4231,6 +4369,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4297,6 +4436,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4357,6 +4497,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4424,6 +4565,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4489,6 +4631,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4545,6 +4688,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4613,6 +4757,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4677,6 +4822,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4743,6 +4889,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4803,6 +4950,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",
@@ -4862,6 +5010,7 @@
         "CENSUS_LODES",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CMS_LTC",
         "DOL_CHILDCARE",
         "EIA",
         "ELECTIONS",

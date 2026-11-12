@@ -14,7 +14,12 @@ verify:
 
 ## Status
 
-To do. Step 2 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+Built (steps 1-3, 2026-11-12); step 4, the load, follows the deploy. Step 2 of
+[`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md). As built, DQ rules
+are `DQ-CMSLTC-001` (one row per report per file), `-002` (a valid figure
+carries a value) and `-003` (Form 671 facilities not placed on a county,
+WARN); placement statuses are `resolved`, `unmapped`, `ambiguous` and
+`not_listed`.
 
 ## Source
 

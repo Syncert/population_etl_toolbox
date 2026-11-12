@@ -1242,6 +1242,49 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CMS_LTC",
+            latest_relation="gold_cms_ltc.area_latest",
+            released_relation="gold_cms_ltc.area_revision",
+            lineage_schema="gold_cms_ltc",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `<series>:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("series_id", "measure_id"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("series_id", "series_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: residents on the facility's last
+                # survey, or beds on its cost report.
+                ("basis", "basis"),
+                ("release_title", "release_title"),
+                # A sum of CMS's facility figures, never an estimate.
+                ("derivation", "derivation"),
+                ("facility_count", "facility_count::TEXT"),
+                ("unplaced_facility_count", "unplaced_facility_count::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_year >= :year_from"),
+                ("year_to", "period_year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="IRS_MIGRATION",
             latest_relation="gold_irs_migration.total_observation_latest",
             released_relation="gold_irs_migration.total_observation_revision",
@@ -2221,6 +2264,12 @@ def _decennial_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _cms_ltc_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.cms_ltc.registry import SERIES
+
+    return tuple(series.series_id for series in SERIES)
+
+
 def _govfin_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
 
@@ -2314,6 +2363,16 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_decennial_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CMS_LTC",
+            display_name=(
+                "Centers for Medicare & Medicaid Services long-term care facility "
+                "characteristics and skilled nursing facility cost reports"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_cms_ltc_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,
