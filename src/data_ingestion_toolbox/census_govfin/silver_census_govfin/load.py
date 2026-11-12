@@ -329,6 +329,12 @@ def _replay_units(
             ),
             rejected=any(item.source_row_index == 0 for item in parsed.quarantined),
         )
+    _record_measure_items(cursor, run_id)
+    return kept
+
+
+def _record_measure_items(cursor: Any, run_id: UUID) -> None:
+    """The measures each item code of a run counts toward, as the run found them."""
     cursor.execute(
         """
         SELECT item_code FROM silver_census_govfin.unit_amount WHERE run_id = %s
@@ -351,7 +357,6 @@ def _replay_units(
             """,
             pairs,
         )
-    return kept
 
 
 #: The three roll-ups of one edition. Census writes no record for an item a
@@ -528,30 +533,31 @@ def _replay_api(
             ),
             rejected=any(item.source_row_index == 0 for item in parsed.quarantined),
         )
-    cursor.execute(
-        """
-        INSERT INTO silver_census_govfin.fact_observation (
-            dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id,
-            capture_id, run_id, retrieved_at, geo_sk, geo_type, geography_status,
-            value_source, value, value_status, government_count, derivation,
-            source_record_id
-        )
-        SELECT revision.dataset_id, revision.measure_id, revision.government_level,
-               revision.fiscal_year, revision.quarter, revision.geo_id,
-               revision.capture_id, revision.run_id, capture.retrieved_at,
-               entity.geo_sk, revision.geo_type,
-               CASE WHEN entity.geo_sk IS NULL THEN 'unmapped' ELSE 'resolved' END,
-               revision.value_source, revision.value, revision.value_status,
-               NULL, NULL, revision.source_record_id
-        FROM silver_census_govfin.api_revision AS revision
-        JOIN raw_capture.response_capture AS capture ON capture.capture_id = revision.capture_id
-        LEFT JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = revision.geo_id
-        WHERE revision.run_id = %s
-        ON CONFLICT DO NOTHING
-        """,
-        (str(run_id),),
-    )
+    cursor.execute(_API_FACT_SQL, (str(run_id),))
     return expected
+
+
+#: A run's annual-survey revisions conformed into the fact.
+_API_FACT_SQL = """
+    INSERT INTO silver_census_govfin.fact_observation (
+        dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id,
+        capture_id, run_id, retrieved_at, geo_sk, geo_type, geography_status,
+        value_source, value, value_status, government_count, derivation,
+        source_record_id
+    )
+    SELECT revision.dataset_id, revision.measure_id, revision.government_level,
+           revision.fiscal_year, revision.quarter, revision.geo_id,
+           revision.capture_id, revision.run_id, capture.retrieved_at,
+           entity.geo_sk, revision.geo_type,
+           CASE WHEN entity.geo_sk IS NULL THEN 'unmapped' ELSE 'resolved' END,
+           revision.value_source, revision.value, revision.value_status,
+           NULL, NULL, revision.source_record_id
+    FROM silver_census_govfin.api_revision AS revision
+    JOIN raw_capture.response_capture AS capture ON capture.capture_id = revision.capture_id
+    LEFT JOIN silver_ref.dim_geo_entity AS entity ON entity.geo_id = revision.geo_id
+    WHERE revision.run_id = %s
+    ON CONFLICT DO NOTHING
+"""
 
 
 def _api_row(
@@ -720,3 +726,145 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             connection_factory, publisher_schema="gold_census_govfin"
         )
     return int(published)
+
+
+# -- Measures registered after a capture was published -----------------------
+#
+# A capture is replayed once; an unchanged re-capture replays nothing
+# (utility.unchanged). A measure added to the registry later (the spending
+# lines of where-public-money-goes, 2026-11-12) would therefore never reach
+# the captures already held. ``replay_new_measures`` reads the newest
+# published capture of every Census of Governments edition and annual-survey
+# slice from the warehouse -- never the network -- and writes the facts of
+# the measures that capture's run does not have yet. Existing facts are
+# untouched (their keys conflict), so a second call writes nothing.
+
+#: The newest published capture of each period and slice.
+NEWEST_PUBLISHED_SQL = """
+    SELECT DISTINCT ON (slice.dataset_id, slice.period, slice.slice_key)
+           slice.dataset_id, slice.period, slice.run_id::TEXT, slice.slice_key,
+           slice.capture_id::TEXT
+    FROM control.census_govfin_slice AS slice
+    JOIN raw_capture.response_capture AS capture ON capture.capture_id = slice.capture_id
+    WHERE slice.status = 'published' AND slice.dataset_id IN ('cog_units', 'asslgf')
+    ORDER BY slice.dataset_id, slice.period, slice.slice_key,
+             capture.retrieved_at DESC, slice.capture_id DESC
+"""
+
+#: The measures each of those runs already has facts for.
+RUN_MEASURES_SQL = """
+    SELECT run_id::TEXT, measure_id
+    FROM silver_census_govfin.fact_observation
+    WHERE run_id = ANY(%s::UUID[])
+    GROUP BY run_id, measure_id
+"""
+
+
+def registered_measure_ids(dataset_id: str) -> frozenset[str]:
+    if dataset_id == "asslgf":
+        return frozenset(m.measure_id for m in MEASURES if m.govs_code)
+    if dataset_id == "qtax":
+        return frozenset(m.measure_id for m in MEASURES if m.qtax_code)
+    return frozenset(m.measure_id for m in MEASURES)
+
+
+def runs_missing_measures(
+    newest: Sequence[tuple[str, int, str, str, str]],
+    present: Iterable[tuple[str, str]],
+) -> dict[str, tuple[str, int, frozenset[str], list[tuple[str, str]]]]:
+    """Run -> (dataset, period, measures it lacks, [(slice, capture)])."""
+    held: dict[str, set[str]] = {}
+    for run_id, measure_id in present:
+        held.setdefault(run_id, set()).add(measure_id)
+    runs: dict[str, tuple[str, int, frozenset[str], list[tuple[str, str]]]] = {}
+    for dataset_id, period, run_id, slice_key, capture_id in newest:
+        missing = registered_measure_ids(dataset_id) - held.get(run_id, set())
+        if not missing:
+            continue
+        entry = runs.setdefault(
+            run_id, (dataset_id, int(period), frozenset(missing), [])
+        )
+        entry[3].append((slice_key, capture_id))
+    return runs
+
+
+def _backfill_api(
+    connection_factory: Callable[[], Any],
+    cursor: Any,
+    run_id: str,
+    period: int,
+    missing: frozenset[str],
+    slices: list[tuple[str, str]],
+) -> None:
+    for slice_key, capture_id in slices:
+        payload = load_captured_payload(connection_factory, UUID(capture_id))
+        parsed = parse_govs(payload, period=period, slice_key=slice_key)
+        rows = [
+            _api_row(capture_id, UUID(run_id), "asslgf", item)
+            for item in parsed.observations
+            if item.measure_id in missing
+        ]
+        if rows:
+            execute_values(
+                cursor,
+                """
+                INSERT INTO silver_census_govfin.api_revision (
+                    capture_id, source_row_index, run_id, dataset_id, measure_id,
+                    government_level, fiscal_year, quarter, geo_type, geo_source_code,
+                    geo_id, value_source, value, value_status, source_record_id,
+                    source_record
+                ) VALUES %s
+                ON CONFLICT (capture_id, source_row_index) DO NOTHING
+                """,
+                rows,
+            )
+    cursor.execute(_API_FACT_SQL, (run_id,))
+
+
+def replay_new_measures(connection_factory: Callable[[], Any]) -> int:
+    """Write registered measures the newest published captures lack; return facts written."""
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(NEWEST_PUBLISHED_SQL)
+            newest = [tuple(row) for row in cursor.fetchall()]
+            if not newest:
+                connection.commit()
+                return 0
+            cursor.execute(RUN_MEASURES_SQL, ([row[2] for row in newest],))
+            runs = runs_missing_measures(newest, cursor.fetchall())
+        connection.commit()
+    finally:
+        connection.close()
+    written = 0
+    # One transaction per run, as a replay is.
+    for run_id, (dataset_id, period, missing, slices) in sorted(runs.items()):
+        connection = connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                before = _count(
+                    cursor,
+                    "SELECT COUNT(*) FROM silver_census_govfin.fact_observation WHERE run_id = %s",
+                    UUID(run_id),
+                )
+                _measure_dimension(cursor, dataset_id, period)
+                if dataset_id == "cog_units":
+                    _record_measure_items(cursor, UUID(run_id))
+                    _rollup(cursor, UUID(run_id), period)
+                else:
+                    _backfill_api(
+                        connection_factory, cursor, run_id, period, missing, slices
+                    )
+                after = _count(
+                    cursor,
+                    "SELECT COUNT(*) FROM silver_census_govfin.fact_observation WHERE run_id = %s",
+                    UUID(run_id),
+                )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        written += after - before
+    return written

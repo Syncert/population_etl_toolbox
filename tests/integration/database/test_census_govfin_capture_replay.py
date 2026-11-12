@@ -13,10 +13,13 @@ import pytest
 from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.census_govfin import plan
-from data_ingestion_toolbox.census_govfin.registry import MEASURES
+from data_ingestion_toolbox.census_govfin.registry import MEASURES, SPENDING_MIX_LINES
 from data_ingestion_toolbox.census_govfin.schema import (
     REQUIRED_RELATIONS,
     ensure_census_govfin_schema,
+)
+from data_ingestion_toolbox.census_govfin.silver_census_govfin.load import (
+    replay_new_measures,
 )
 from data_ingestion_toolbox.quality.sources import (
     govfin_slice_reconciliation,
@@ -158,6 +161,105 @@ def test_unit_files_roll_up_to_county_areas_and_states(
     )
     assert mix["tax_property"] == Decimal("93.77")
     assert mix["tax_individual_income"] == Decimal("0.00")
+
+
+def test_spending_lines_roll_up_and_share_direct_general_spending(
+    govfin_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-118 -- where-public-money-goes slice 1: county-area spending by Census line."""
+    _load_units(govfin_warehouse)
+    dane = dict(
+        _rows(
+            govfin_warehouse,
+            """
+            SELECT measure_id, value FROM gold_census_govfin.observation_latest
+            WHERE geo_id = 'state:55|county:025' AND fiscal_year = 2022
+              AND measure_id LIKE 'spend%%'
+            """,
+        )
+    )
+    # Summed by hand from finestdat_2022_excerpt.txt: the county (E44 99,999,
+    # E62 40,000, F62 5,000, I89 3,000), Madison (E62 60,000, E92 20,000) and
+    # the school district (E12 600,000, F12 50,000).
+    assert dane["spend_police"] == Decimal(105_000)
+    assert dane["spend_elementary_secondary_education"] == Decimal(650_000)
+    assert dane["spend_education"] == Decimal(650_000)
+    assert dane["spend_highways"] == Decimal(99_999)
+    assert dane["spend_interest_general_debt"] == Decimal(3_000)
+    assert dane["spend_general_total"] == Decimal(857_999)
+    # Electric utility spending is direct spending outside general spending.
+    assert dane["spend_utility_electric"] == Decimal(20_000)
+    assert dane["spend_utility_total"] == Decimal(20_000)
+    # A line no government reported is zero, never missing.
+    assert dane["spend_fire"] == Decimal(0)
+
+    mix = dict(
+        _rows(
+            govfin_warehouse,
+            """
+            SELECT measure_id, share_of_general_spending_pct
+            FROM gold_census_govfin.spending_mix
+            WHERE geo_id = 'state:55|county:025' AND dataset_id = 'cog_units'
+            """,
+        )
+    )
+    assert len(mix) == len(SPENDING_MIX_LINES)
+    assert "spend_utility_electric" not in mix and "spend_education" not in mix
+    assert mix["spend_elementary_secondary_education"] == Decimal("75.76")
+    assert mix["spend_police"] == Decimal("12.24")
+    assert abs(sum(mix.values()) - 100) <= Decimal("0.05")
+
+
+def test_measures_registered_later_reach_captures_already_published(
+    govfin_warehouse: Callable[[], connection],
+) -> None:
+    """Covers: ETL-118 -- stored captures gain new measures without a re-download; a rerun writes nothing."""
+    _load_units(govfin_warehouse)
+    client = census_govfin.FixtureClient(census_govfin.api_responses())
+    census_govfin.run_to_gold(govfin_warehouse, "asslgf", 2022, client)
+    held = _rows(
+        govfin_warehouse,
+        "SELECT COUNT(*) FROM silver_census_govfin.fact_observation WHERE measure_id LIKE 'spend%%'",
+    )[0][0]
+    assert held > 0
+    # Stand in for captures published before the spending lines were
+    # registered: remove their spending facts and revisions.
+    _write(
+        govfin_warehouse,
+        "DELETE FROM silver_census_govfin.fact_observation WHERE measure_id LIKE 'spend%%'",
+    )
+    _write(
+        govfin_warehouse,
+        "DELETE FROM silver_census_govfin.api_revision WHERE measure_id LIKE 'spend%%'",
+    )
+
+    assert replay_new_measures(govfin_warehouse) == held
+    assert replay_new_measures(govfin_warehouse) == 0
+
+    police = dict(
+        _rows(
+            govfin_warehouse,
+            """
+            SELECT dataset_id || ' ' || geo_id || ' ' || government_level, value
+            FROM gold_census_govfin.observation_latest WHERE measure_id = 'spend_police'
+            """,
+        )
+    )
+    assert police["cog_units state:55|county:025 local"] == Decimal(105_000)
+    assert police["asslgf state:55 state_and_local"] == _fixture_value(
+        "asslgf_2022_state.json", AGG_DESC="LF0153", GOVTYPE="001"
+    )
+    # Census's published state lines add to its published general spending
+    # within its own rounding.
+    shares = _rows(
+        govfin_warehouse,
+        """
+        SELECT SUM(share_of_general_spending_pct) FROM gold_census_govfin.spending_mix
+        WHERE dataset_id = 'asslgf' AND geo_id = 'state:55'
+          AND government_level = 'state_and_local'
+        """,
+    )[0][0]
+    assert abs(shares - 100) <= Decimal("0.1")
 
 
 def test_tax_burden_divides_by_bea_personal_income_of_the_same_year(
@@ -350,7 +452,7 @@ def test_state_and_local_tax_burden_matches_census_over_bea(
     assert Decimal(8) < burden[1][1] < Decimal(13)
 
 
-def _outcome(factory: Callable[[], connection], executor):  # noqa: ANN001, ANN202
+def _outcome(factory: Callable[[], connection], executor):
     reader = factory()
     try:
         with reader.cursor() as cursor:

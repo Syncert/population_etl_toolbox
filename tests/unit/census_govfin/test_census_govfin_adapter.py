@@ -29,9 +29,13 @@ from data_ingestion_toolbox.census_govfin.registry import (
     CENSUS_STATE_TO_FIPS,
     GOVS_VARIABLES,
     MEASURES,
+    SPENDING_LINES,
+    SPENDING_MIX_LINES,
+    SPENDING_TOTAL,
     UNIT_LAYOUT_2002,
     USPS_TO_FIPS,
     get_edition,
+    govs_measure,
     measures_for_item,
     registered_periods,
     slice_keys,
@@ -117,7 +121,19 @@ def test_census_state_codes_are_alphabetical_not_fips() -> None:
         ("41A", set()),
         ("64V", {"debt_outstanding"}),
         ("19T", set()),
-        ("E44", set()),
+        ("E44", {"spend_highways", "spend_general_total"}),
+        (
+            "E12",
+            {
+                "spend_elementary_secondary_education",
+                "spend_education",
+                "spend_general_total",
+            },
+        ),
+        ("E92", {"spend_utility_electric", "spend_utility_total"}),
+        ("I89", {"spend_interest_general_debt", "spend_general_total"}),
+        ("M89", set()),
+        ("X40", {"spend_insurance_trust"}),
     ],
 )
 def test_item_codes_count_toward_their_measures(item: str, expected: set[str]) -> None:
@@ -137,6 +153,28 @@ def test_tax_types_partition_total_taxes() -> None:
         assert "taxes_total" in found
         assert len(found & types) == 1, item
     assert {measure.measure_id for measure in MEASURES} >= types
+
+
+def test_spending_lines_partition_direct_general_spending() -> None:
+    """Covers: ETL-118 -- every item of Census line 66 is in exactly one spending-mix line."""
+    codes = {line[0]: set(line[5]) for line in SPENDING_LINES}
+    general = codes[SPENDING_TOTAL]
+    seen: list[str] = [
+        code for measure in SPENDING_MIX_LINES for code in codes[measure]
+    ]
+    assert len(seen) == len(set(seen))
+    assert set(seen) == general
+    assert codes["spend_education"] == (
+        codes["spend_higher_education"]
+        | codes["spend_elementary_secondary_education"]
+        | codes["spend_other_education"]
+    )
+    # Payments to other governments (M, Q, S items) are never direct spending.
+    every = set().union(*codes.values())
+    assert not any(code[0] in "MQS" for code in every)
+    # Each line names the govslocalfin aggregate Census labels the same way.
+    assert len({line[2] for line in SPENDING_LINES}) == len(SPENDING_LINES)
+    assert all(govs_measure(line[2]) == line[0] for line in SPENDING_LINES)
 
 
 def test_registered_periods_and_slices() -> None:
@@ -287,9 +325,9 @@ def test_unit_fixture_parses_with_quarantine_reasons() -> None:
         for item in parsed.quarantined
         if item.member.endswith("2022FinEstDAT_07152026modp.txt")
     }
-    assert unit_errors == {("unreadable_government", 29), ("short_record", 30)}
+    assert unit_errors == {("unreadable_government", 37), ("short_record", 38)}
     amounts = [item for item in parsed.amounts if item.fips_state == "55"]
-    assert len(amounts) == 25
+    assert len(amounts) == 33
     dane_property = next(
         item for item in amounts
         if (item.government_code, item.item_code) == ("551025000001", "T01")

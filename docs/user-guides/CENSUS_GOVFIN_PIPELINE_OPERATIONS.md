@@ -15,7 +15,7 @@ millions. Each figure carries its government level: `state_and_local`,
 
 ## Measures
 
-Fifteen measures, defined by the Census aggregate-line definitions
+Fifty-three measures (fifteen revenue, aid and debt; thirty-eight spending), defined by the Census aggregate-line definitions
 (`Finance_Aggregate_Lines_2017.xlsx`):
 
 - Taxes: total, property, general sales, selective sales (T10 to T19),
@@ -26,8 +26,23 @@ Fifteen measures, defined by the Census aggregate-line definitions
 - Intergovernmental revenue: from the federal government (B), from the
   state (C), from local governments (D), and the total.
 - Debt outstanding at the end of the fiscal year (44T, 49U and 64V).
+- Spending (where-public-money-goes, 2026-11-12): one measure per Census
+  aggregate line of direct spending, each the item codes the file lists for
+  it (`registry.SPENDING_LINES`): direct general spending (line 66) and its
+  29 function lines (higher, elementary and secondary and other education;
+  libraries; public welfare; hospitals; health; police; fire; correction;
+  highways; parks; interest on general debt; and the rest), education's
+  total (line 69), utilities (water, electric, gas, transit and their
+  total), liquor stores, and insurance trust payments. Payments to other
+  governments (M, Q and S items) are not direct spending and are not read,
+  so a county area never counts a payment from one of its governments to
+  another twice.
 
-Census publishes no labels for the API's `AGG_DESC` codes. The registry's
+`govslocalfin` carries an `AGG_DESC_LABEL` attribute. The spending codes
+(`LF0103` direct general spending to `LF0222` insurance trust) were mapped
+by that label on 2026-11-12, and the 2017 and 2024 national lines were
+checked to add to `LF0103` and `LF0107`. The revenue codes predate the
+label check: the registry's
 mapping (`LF0008` taxes, `LF0009` property, `LF0011` general sales, `LF0012`
 selective sales, `LF0023` individual income, `LF0024` corporate income,
 `LF0041` current charges, `LF0059` miscellaneous, `LF0007` own source,
@@ -41,6 +56,13 @@ Derived, in gold, labelled as derived (ADR-0009):
 - `gold_census_govfin.tax_mix`: each tax type's share of a place's taxes in
   the same dataset, level and period. No share where the total is missing
   (`suppressed_input`) or zero (`denominator_zero`).
+- `gold_census_govfin.spending_mix`: each of the 29 function lines as a
+  share of direct general spending (line 66) in the same dataset, level,
+  year and place. Their item codes partition line 66, so a place's shares
+  add to 100 (Census's published annual lines within its rounding).
+  Utilities, liquor stores and insurance trust payments are outside general
+  spending and are never in these shares. County areas exist only for
+  Census of Governments years.
 - `gold_census_govfin.tax_burden`: state and local taxes over BEA personal
   income (CAINC1 line 1) and per person (CAINC1 line 2) for the same place
   and year. No ratio where BEA has not loaded that place and year
@@ -132,6 +154,14 @@ need no key.
 3. `publish_<dataset>` marks reconciled slices `published`, which exposes
    them in `gold_census_govfin.observation_revision` (every capture) and
    `observation_latest` (the newest), and signals the glossary harvest.
+4. `replay_new_measures` reads the newest published capture of every
+   unit-file edition and annual-survey slice from the warehouse (never the
+   network) and writes the facts of any registered measure its run does
+   not hold yet, one transaction per run. It is how measures added to the
+   registry after a capture was published (the spending lines) reach the
+   captures already held, since an unchanged re-capture replays nothing.
+   Existing facts are never rewritten; a second call writes nothing. When it
+   writes, it requeues the glossary harvest for `gold_census_govfin`.
 
 ## Checks after a run
 
@@ -149,6 +179,13 @@ SELECT measure_id, value, government_count, record_coverage
 FROM gold_census_govfin.observation_latest
 WHERE geo_id = 'state:55|county:025' AND fiscal_year = 2022
   AND measure_id LIKE 'tax%';
+
+-- Dane County's 2022 local spending by Census line.
+SELECT measure_id, spending_amount, share_of_general_spending_pct
+FROM gold_census_govfin.spending_mix
+WHERE geo_id = 'state:55|county:025' AND dataset_id = 'cog_units'
+  AND fiscal_year = 2022
+ORDER BY spending_amount DESC;
 
 SELECT geo_id, fiscal_year, taxes_pct_of_personal_income, taxes_per_person_dollars
 FROM gold_census_govfin.tax_burden
