@@ -46,7 +46,7 @@ To do. Step 6 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
 ## Size
 
 About 5,000 facilities x about 230 weeks x 8 columns: about 9 million facts,
-about 3 GB with capture.
+about 12 GB with capture at the measured 1,300 bytes per fact (was 3 GB).
 
 ## Acceptance criteria
 

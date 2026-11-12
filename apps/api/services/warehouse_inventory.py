@@ -507,6 +507,42 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CENSUS_DECENNIAL",
     ),
     WarehouseSource(
+        code="CMS_LTC",
+        name="Nursing homes (CMS Form 671 and cost reports)",
+        publisher="Centers for Medicare & Medicaid Services",
+        topic="Health",
+        module="cms_ltc",
+        dag="cms_ltc_ingest",
+        cadence="Monthly, 20th 18:00 UTC",
+        release="CMS-671 each quarter; cost reports each year",
+        grains={"nation": "d", "state": "d", "county": "d"},
+        years=[(2011, 2026)],
+        years_note="CMS-671 quarters from 2023-10; cost reports 2011-2024",
+        datasets=[
+            "characteristics (Long-Term Care Facility Characteristics, CMS Form 671)",
+            "cost_report (Skilled Nursing Facility Cost Report)",
+        ],
+        measures=(
+            "Per facility: residents on its last survey (total, Medicare, Medicaid, other), "
+            "beds, bed days and patient days on its cost report; summed by county (placed by "
+            "the cost report's county name), state and nation. No coordinates."
+        ),
+        raw=[],
+        control=["control.cms_ltc_file"],
+        silver=[
+            "silver_cms_ltc.facility_report",
+            "silver_cms_ltc.facility_count",
+            "silver_cms_ltc.area_total",
+        ],
+        gold=[
+            "gold_cms_ltc.area_revision",
+            "gold_cms_ltc.area_latest",
+            "gold_cms_ltc.facility_latest",
+        ],
+        credential="none",
+        catalog_source_code="CMS_LTC",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

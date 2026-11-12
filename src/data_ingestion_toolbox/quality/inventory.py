@@ -84,6 +84,7 @@ SOURCES: tuple[str, ...] = (
     "IRS_SOI",
     "CENSUS_SAIPE_SAHIE",
     "CENSUS_DECENNIAL",
+    "CMS_LTC",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2551,6 +2552,122 @@ _SAE_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# CMS long-term care facilities (CMS Form 671 and SNF cost reports).
+# ---------------------------------------------------------------------------
+
+_CMS_LTC_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cms_ltc_file",
+        "control",
+        "CMS_LTC",
+        grain="run_id (one read of one catalog release's CSV)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="releases data.cms.gov/data.json lists for the two registered series",
+        cadence="monthly; releases not yet published from the same URL",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cms_ltc.dim_measure",
+        "silver",
+        "CMS_LTC",
+        grain="series_id, measure_id",
+        scope_method="registered figures in cms_ltc/registry.py",
+        cadence="per CMS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cms_ltc.quarantine",
+        "silver",
+        "CMS_LTC",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per CMS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_cms_ltc.facility_report",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, report_key",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every facility row of a replayed file; cost reports placed by county name",
+        cadence="per CMS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cms_ltc.facility_count",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, report_key, measure_id",
+        lineage="silver_cms_ltc.facility_report",
+        scope_method="registered figures of every stored facility row",
+        cadence="per CMS replay",
+        empty_behavior="a blank figure is retained with status missing, never zero",
+    ),
+    _obj(
+        "silver_cms_ltc.area_total",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, measure_id, geo_id",
+        lineage="silver_cms_ltc.facility_count, silver_cms_ltc.facility_report",
+        scope_method="sums of published facility figures by county, state and nation",
+        cadence="per CMS replay",
+        empty_behavior="an area with no facility figure has no row",
+    ),
+    _obj(
+        "gold_cms_ltc.area_revision",
+        "gold",
+        "CMS_LTC",
+        grain="run_id, measure_id, geo_id (published files only)",
+        lineage="silver_cms_ltc.area_total, control.cms_ltc_file",
+        scope_method="published files; areas in the shared geography",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.area_latest",
+        "gold",
+        "CMS_LTC",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_cms_ltc.area_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.facility_latest",
+        "gold",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report, silver_cms_ltc.facility_count",
+        scope_method="newest published CMS-671 quarter and cost report per facility",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.measure_export",
+        "publisher",
+        "CMS_LTC",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cms_ltc.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cms_ltc.metric_publisher",
+        "publisher",
+        "CMS_LTC",
+        grain="source_object_key (series:measure)",
+        lineage="gold_cms_ltc.area_latest, silver_cms_ltc.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
     ),
 )
 
@@ -5201,6 +5318,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _IRS_SOI_OBJECTS
     + _SAE_OBJECTS
     + _DECENNIAL_OBJECTS
+    + _CMS_LTC_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -5590,6 +5708,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
             "gold_census_decennial.metric_publisher",
+            "gold_cms_ltc.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -7434,6 +7553,80 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "`SaeReconciliationError` and commits nothing when a run does not "
             "reconcile, so a mismatch cannot reach gold, but no executor "
             "re-measures retained runs afterwards."
+        ),
+    ),
+    # -- CMS long-term care facilities ----------------------------------------
+    _rule(
+        "DQ-CMSLTC-001",
+        "BLOCK",
+        "uniqueness",
+        "A CMS file holds one row per report: a CMS-671 facility once per "
+        "quarter, a cost report once per year's file; a second read is a "
+        "second run beside the first, never an overwrite.",
+        (
+            "silver_cms_ltc.facility_report",
+            "silver_cms_ltc.facility_count",
+            "silver_cms_ltc.area_total",
+            "gold_cms_ltc.area_revision",
+            "gold_cms_ltc.area_latest",
+            "gold_cms_ltc.facility_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated report key aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_cms_ltc.facility_report", ("run_id", "report_key")),
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count", ("run_id", "report_key", "measure_id")
+            ),
+            EnforcedGrain(
+                "silver_cms_ltc.area_total", ("run_id", "measure_id", "geo_id")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CMSLTC-002",
+        "BLOCK",
+        "conformance",
+        "A valid CMS figure carries a whole number and a blank one carries "
+        "none: a blank is never stored as zero.",
+        (
+            "silver_cms_ltc.facility_count",
+            "gold_cms_ltc.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cms_ltc_count_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cms_ltc_count_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CMSLTC-003",
+        "WARN",
+        "completeness",
+        "Facilities in the newest published CMS-671 quarter that no cost "
+        "report places on a county (no cost report, or a county name that "
+        "matches no county or two) are counted. They are in their state's and "
+        "the nation's sums and in no county's.",
+        (
+            "silver_cms_ltc.facility_report",
+            "control.cms_ltc_file",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

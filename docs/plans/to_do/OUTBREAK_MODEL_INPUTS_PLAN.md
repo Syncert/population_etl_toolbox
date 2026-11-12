@@ -82,27 +82,38 @@ blocks came in one 4-second response.
 - Read speed gate: every new served view answers a place's read in under
   500 ms (BEGIN / EXPLAIN ANALYZE / ROLLBACK on the internal stack).
 
-## Order and size (estimates, before any probe)
+## Order and size
 
 Drive H had 4,043 GB free on 2026-11-12. Estimates count raw capture, silver,
-gold and indexes, and are rough (about a factor of two either way).
+gold and indexes.
+
+**Basis corrected 2026-11-12 after the first load.** The first estimates used
+150 to 200 bytes per fact. Slice 1 measured on OFFICE_LAB (run
+`decennial_368_20261112`): 1,241,366 facts took 1,610 MB in
+`silver_census_decennial` plus 12 MB of raw capture, about **1,300 bytes per
+fact**. The cost comes from the method every capture-first adapter here uses:
+each published cell is stored twice (the revision row as read, and the fact
+row), with text keys, a primary key on each, and three lookup indexes on the
+fact table. The estimates below are each plan's row count times 1,300 bytes
+until that slice's own load is measured; measured figures replace them as
+loads land.
 
 | # | Plan | Grain | Estimate |
 | --- | --- | --- | --- |
-| 1 | [`group-quarters-by-type`](GROUP_QUARTERS_BY_TYPE_PLAN.md) | nation, state, county, tract; block for Dane | 0.3 GB |
-| 2 | [`nursing-home-locations`](NURSING_HOME_LOCATIONS_PLAN.md) | facility point, monthly | 0.2 GB a year |
-| 3 | [`lodes-block-grain-for-dane`](LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | block, Dane, 2002 to 2023 | 0.6 GB (no new download) |
-| 4 | [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | block, Dane, 2020 | 0.1 GB |
-| 5 | [`college-housing-capacity`](COLLEGE_HOUSING_CAPACITY_PLAN.md) | campus point | under 0.1 GB |
-| 6 | [`hospital-capacity-and-locations`](HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | facility, weekly 2020 to 2024 | 3 GB |
-| 7 | [`places-tract-release`](PLACES_TRACT_RELEASE_PLAN.md) | tract | 1 GB a release |
-| 8 | [`outbreak-calibration-sets`](OUTBREAK_CALIBRATION_SETS_PLAN.md) | county by month by age; facility weekly; state weekly | 3.5 GB (about 20 GB if the full case file were captured) |
-| 9 | [`air-travel-and-mobility`](AIR_TRAVEL_AND_MOBILITY_PLAN.md) | airport, monthly | 2 GB |
-| | Total | | about 12 GB, 30 GB at most |
+| 1 | [`group-quarters-by-type`](GROUP_QUARTERS_BY_TYPE_PLAN.md) | nation, state, county, tract | **1.6 GB measured** (Dane blocks would add about 0.2 GB) |
+| 2 | [`nursing-home-locations`](NURSING_HOME_LOCATIONS_PLAN.md) | facility, quarterly and yearly | about 0.1 GB a year |
+| 3 | [`lodes-block-grain-for-dane`](LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | block, Dane, 2002 to 2023 | about 5 GB (no new download) |
+| 4 | [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | block, Dane, 2020 | about 1 GB |
+| 5 | [`college-housing-capacity`](COLLEGE_HOUSING_CAPACITY_PLAN.md) | campus point | about 0.5 GB for every published year |
+| 6 | [`hospital-capacity-and-locations`](HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | facility, weekly 2020 to 2024 | about 12 GB |
+| 7 | [`places-tract-release`](PLACES_TRACT_RELEASE_PLAN.md) | tract | about 4 GB a release |
+| 8 | [`outbreak-calibration-sets`](OUTBREAK_CALIBRATION_SETS_PLAN.md) | county by month by age; facility weekly; state weekly | about 23 GB (about 130 GB if the full case file were captured) |
+| 9 | [`air-travel-and-mobility`](AIR_TRAVEL_AND_MOBILITY_PLAN.md) | airport, monthly | about 12 GB |
+| | Total | | about 60 GB, 150 GB at most (was 12 GB, 30 GB at most) |
 
-The two volumes that would matter: block grain beyond Dane (LODES jobs by
-block for every county about 150 GB; 2020 people and age by block for every
-county 80 to 100 GB), and capturing the whole 106-million-row case file.
+The volumes that would matter: block grain beyond Dane (LODES jobs by block
+for every county about 1,300 GB; 2020 people and age by block for every
+county about 660 GB), and capturing the whole 106-million-row case file.
 
 Steps 1 to 4 are what the Dane County slice needs first; 5 to 9 can follow
 the first playable.
@@ -116,21 +127,23 @@ project. **Until he decides, `lodes-block-grain-for-dane` and
 and facility plans go ahead.
 
 The 2020 Census has about 8.1 million blocks. Figures below are estimates
-from row counts and the warehouse's measured bytes per fact (about 150 to
-200 bytes with indexes); none is measured yet. A Dane load (about 0.7 GB in
-all) would measure the real bytes per block, and every figure here scales
+from row counts at the measured 1,300 bytes per fact (corrected 2026-11-12
+from the first 150 to 200 bytes; see the size section above). A Dane load
+(about 6 GB in all) would measure the real bytes per block, and every figure here scales
 from Dane by roughly 1 to 230 for people and 1 to 170 for jobs.
 
 | Item | Rows | Disk | Requests or files | Load time (estimate) |
 | --- | --- | --- | --- | --- |
 | Block shapes (TIGER `tabblock20`, 56 state files) | 8.1 M shapes | 10 to 15 GB | 56 downloads, about 8 GB zipped | hours |
-| 2020 people and age by block (P12 + P1/H1/P5 totals) | about 510 M facts | 80 to 100 GB | about 85,000 Census API calls (one per tract), or 52 DHC summary files | about a day of requests at the Census API pace used for tracts; then silver and gold refresh of a day or more |
-| LODES jobs by block, 2002 to 2023, 29 columns | about 4.4 billion facts at full width; about 1 billion with zeros dropped | about 150 GB | none (files already captured) | several days of replay and indexing |
+| 2020 people and age by block (P12 + P1/H1/P5 totals) | about 510 M facts | about 660 GB | about 85,000 Census API calls (one per tract), or 52 DHC summary files | about a day of requests at the Census API pace used for tracts; then silver and gold refresh of a day or more |
+| LODES jobs by block, 2002 to 2023, 29 columns | about 4.4 billion facts at full width; about 1 billion with zeros dropped | about 1,300 GB | none (files already captured) | several days of replay and indexing |
 | Block map tiles (Martin) | from the shapes | 5 to 20 GB of tile cache | none | per request |
-| **Total** | | **about 250 to 290 GB** | | **about a week of loading** |
+| **Total** | | **about 2,000 GB** (was 250 to 290 GB before the correction) | | **about a week of loading** |
 
-That is about 7% of the 4,043 GB free on drive H, and it would make block
-the warehouse's largest grain after ACS tracts.
+That is about half of the 4,043 GB free on drive H, and it would make block
+the warehouse's largest grain, ahead of ACS tracts. A leaner layout for block
+facts (one stored row per cell instead of two, fewer indexes) would cut this,
+but it is not designed or measured.
 
 What in this repository would use block data today: **nothing yet.** The
 finest grain the website and API serve is the tract (ACS, PLACES county

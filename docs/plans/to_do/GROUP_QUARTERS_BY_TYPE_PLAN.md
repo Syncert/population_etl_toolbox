@@ -88,15 +88,19 @@ ACS adapter, which keeps its crosswalk-to-ACS design for 2000 and 1990):
 
 ## Size
 
-About 0.9 million facts nationally (10 variables x 88,000 counties and
-tracts, plus P1 and H1) and about 0.15 million for Dane blocks: about 0.3 GB
-with captures and indexes.
+Estimated first at about 0.9 million facts and 0.3 GB. **Measured on
+OFFICE_LAB 2026-11-12** (run `decennial_368_20261112`, 3.4 minutes, 55
+requests): 1,241,366 facts across 85,395 tracts, all counties, states and
+the nation; `silver_census_decennial` 1,610 MB and raw capture 12 MB, about
+1,300 bytes per fact (each cell is stored as a revision row and a fact row,
+each with its keys and indexes). Dane blocks would add about 0.15 million
+facts, about 0.2 GB.
 
 ## Later (not in this plan)
 
 DHC PCO3, PCO5 and PCO8 (residents of adult correctional, nursing and college
 housing by sex by age) at county grain, if the model needs ages inside a
-group-quarters type. About 0.1 GB.
+group-quarters type. About 0.7 GB at the measured 1,300 bytes per fact.
 
 ## Acceptance criteria
 

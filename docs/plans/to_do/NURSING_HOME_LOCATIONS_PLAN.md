@@ -14,7 +14,12 @@ verify:
 
 ## Status
 
-To do. Step 2 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+Built (steps 1-3, 2026-11-12); step 4, the load, follows the deploy. Step 2 of
+[`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md). As built, DQ rules
+are `DQ-CMSLTC-001` (one row per report per file), `-002` (a valid figure
+carries a value) and `-003` (Form 671 facilities not placed on a county,
+WARN); placement statuses are `resolved`, `unmapped`, `ambiguous` and
+`not_listed`.
 
 ## Source
 
@@ -87,7 +92,7 @@ covers it.
 
 ## Size
 
-About 14,700 facilities: about 10 MB a quarter and 30 MB a cost-report year with capture; under 1 GB for every published year.
+About 14,700 facilities: about 15,000 rows a quarter and 15,000 a cost-report year, about 75,000 rows a year. At the 1,300 bytes per stored row measured on the first outbreak load (see the umbrella plan), about 0.1 GB a year with capture; under 2 GB for every published year.
 
 ## Acceptance criteria
 

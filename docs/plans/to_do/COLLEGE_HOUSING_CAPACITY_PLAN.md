@@ -39,7 +39,7 @@ not be read from the cloud session) and how many years are published.
 
 ## Size
 
-About 6,000 institutions a year: under 0.1 GB for every published year.
+About 6,000 institutions a year, a directory row and up to four figures each: about 30,000 rows a year, about 0.5 GB for 2012 to 2024 at the measured 1,300 bytes per row.
 
 ## Acceptance criteria
 
