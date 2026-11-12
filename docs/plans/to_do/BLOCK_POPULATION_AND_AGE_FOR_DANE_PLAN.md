@@ -5,9 +5,9 @@ depends_on:
 parallel_safe: true
 complexity: medium
 verify:
-  - python -m pytest tests/unit/census_dec2020 tests/unit/silver_ref tests/unit/api -q
+  - python -m pytest tests/unit/census_decennial tests/unit/silver_ref tests/unit/api -q
   - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "dec2020 or block" -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "decennial or block" -q
   - python -m pytest tests/dags -m dag -q
 ---
 
@@ -35,7 +35,7 @@ Places people inside a district smaller than a tract.
 - `silver_ref` gains a block geography for scoped counties: geo id
   `state:55|county:025|tract:NNNNNN|block:NNNN`, shape, land and water area,
   vintage 2020; only blocks of `55025` are kept from the state file.
-- `census_dec2020` adds the `dhc` dataset and P12, block grain scoped to
+- `census_decennial` adds the `dhc` dataset and P12, block grain scoped to
   `55025`; facts resolve to the block reference.
 - Gold block view with Martin tiles for the Dane block map (one metric at a
   time, as the tract map does).

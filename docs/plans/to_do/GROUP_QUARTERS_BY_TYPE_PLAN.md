@@ -4,9 +4,9 @@ depends_on: []
 parallel_safe: true
 complexity: medium
 verify:
-  - python -m pytest tests/unit/census_dec2020 tests/unit/api tests/unit/shared -q
+  - python -m pytest tests/unit/census_decennial tests/unit/api tests/unit/shared -q
   - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "dec2020" -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "decennial" -q
   - python -m pytest tests/dags -m dag -q
 ---
 
@@ -47,7 +47,7 @@ County (55025) only**. The 2020 count is published once (reference date
 
 ## Design
 
-A new adapter `census_dec2020` (the 2020 Census as its own source, beside the
+A new adapter `census_decennial` (the 2020 Census as its own source, beside the
 ACS adapter, which keeps its crosswalk-to-ACS design for 2000 and 1990):
 
 - `registry.py`: datasets (`pl` now; `dhc` for
@@ -58,21 +58,21 @@ ACS adapter, which keeps its crosswalk-to-ACS design for 2000 and 1990):
   state (blocks: per tract of a scoped county), each captured losslessly in
   `raw_capture` before parsing; the key is never in a capture, fingerprint or
   log (redaction as in `census_acs`).
-- Silver `silver_census_dec2020.fact_count`: one row per variable and
+- Silver `silver_census_decennial.fact_count`: one row per variable and
   geography, the published integer as written, `geo_id` in the shared form
   (`state:55|county:025|tract:000100`, blocks `...|block:1001`), a lineage row
   per fact. A value the API returns null is missing, never zero.
 - Block geography: tracts resolve against `silver_ref` 2020 tracts; blocks are
   kept with `geography_status = 'unmapped'` until the block reference of
   `block-population-and-age-for-dane` lands, and are not served before then.
-- Gold `gold_census_dec2020` latest view, publisher metrics (catalog rows per
+- Gold `gold_census_decennial` latest view, publisher metrics (catalog rows per
   variable), API discovery and observation dispatch entries, glossary
   harvest.
-- DAG `dec2020_ingest`, manual trigger only (arrives paused), with an
+- DAG `census_decennial_ingest`, manual trigger only (arrives paused), with an
   `ensure_*_schema` task upstream of capture.
-- DQ: `DQ-DEC2020-001` the parts add to the totals as published
+- DQ: `DQ-DECENNIAL-001` the parts add to the totals as published
   (P5_002 + P5_007 = P5_001; P5_003..006 = P5_002; P5_008..010 = P5_007);
-  `DQ-DEC2020-002` tract sums equal the county figure; `DQ-DEC2020-003` every
+  `DQ-DECENNIAL-002` tract sums equal the county figure; `DQ-DECENNIAL-003` every
   registered variable is present for every geography requested. A mismatch
   is reported (WARN) and the figures stay as published.
 
@@ -102,6 +102,6 @@ group-quarters type. About 0.1 GB.
 
 1. `GET /api/v1/observations` returns P5 counts for Dane County, its tracts,
    Wisconsin and the nation, as published, with the source named.
-2. DQ-DEC2020-001..003 pass or report published discrepancies.
+2. DQ-DECENNIAL-001..003 pass or report published discrepancies.
 3. No race, ethnicity, income or poverty variable is requested.
 4. Speed gate under 500 ms on the served view.
