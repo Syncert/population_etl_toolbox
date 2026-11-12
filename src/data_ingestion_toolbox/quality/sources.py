@@ -2479,6 +2479,64 @@ _DECENNIAL_LATEST = """
 """
 
 
+def nces_ipeds_point_outside_county(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-IPEDS-003 — directory points outside the county their code names."""
+    del scope
+    published = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.nces_ipeds_file "
+        "WHERE status = 'published' AND component_id = 'HD'",
+    )
+    if published == 0:
+        return [RuleOutcome("silver_nces_ipeds.institution", "not_applicable")]
+    # The newest published directory only, and each institution's own county
+    # shape (any valid vintage): a bounded point-in-polygon per row.
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH directory AS (
+            SELECT file.run_id FROM control.nces_ipeds_file AS file
+             WHERE file.status = 'published' AND file.component_id = 'HD'
+               AND file.collection_year = (
+                   SELECT MAX(collection_year) FROM control.nces_ipeds_file
+                    WHERE status = 'published' AND component_id = 'HD'
+               )
+        )
+        SELECT institution.unitid, institution.county_geo_id, institution.institution_name
+          FROM silver_nces_ipeds.institution AS institution
+          JOIN directory ON directory.run_id = institution.run_id
+         WHERE institution.county_status = 'resolved'
+           AND institution.longitude IS NOT NULL
+           AND institution.latitude IS NOT NULL
+           AND EXISTS (
+               SELECT 1 FROM silver_ref.dim_geo_geometry_version AS shape
+                WHERE shape.geo_sk = institution.county_geo_sk AND shape.is_valid
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM silver_ref.dim_geo_geometry_version AS shape
+                WHERE shape.geo_sk = institution.county_geo_sk
+                  AND shape.is_valid
+                  AND ST_Covers(
+                      shape.geom,
+                      ST_SetSRID(ST_MakePoint(institution.longitude, institution.latitude), 4326)
+                  )
+           )
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "silver_nces_ipeds.institution",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def cms_ltc_unplaced_facilities(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -5419,6 +5477,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-TREASURY-002": treasury_mts_page_reconciliation,
     "DQ-TREASURY-004": treasury_mts_function_total,
     "DQ-CMSLTC-003": cms_ltc_unplaced_facilities,
+    "DQ-IPEDS-003": nces_ipeds_point_outside_county,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-STORM-002": storm_events_file_reconciliation,

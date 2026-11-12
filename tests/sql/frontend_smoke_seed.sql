@@ -122,7 +122,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success'),
     ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success'),
     ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success'),
-    ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success')
+    ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success'),
+    ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -190,7 +191,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000dec', '00000000-0000-4000-8000-000000000dec',
      'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB, 'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', 'captured'),
     ('00000000-0000-4000-9000-000000000c71', '00000000-0000-4000-8000-000000000c71',
-     'CMS_LTC', 'smoke://seed', '{}'::JSONB, '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', 'captured')
+     'CMS_LTC', 'smoke://seed', '{}'::JSONB, '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', 'captured'),
+    ('00000000-0000-4000-9000-0000000001ed', '00000000-0000-4000-8000-0000000001ed',
+     'NCES_IPEDS', 'smoke://seed', '{}'::JSONB, 'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -313,6 +316,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000c71', '00000000-0000-4000-9000-000000000c71',
      '00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'smoke://seed', '{}'::JSONB,
      '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000001ed', '00000000-0000-4000-9000-0000000001ed',
+     '00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'smoke://seed', '{}'::JSONB,
+     'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1507,6 +1514,39 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NCES IPEDS -- one county's college housing capacity, summed from the
+-- institutions a published directory places there. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.nces_ipeds_file (
+    run_id, component_id, collection_year, file_stem, download_url, capture_id,
+    payload_checksum, csv_member, row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000001ed', 'IC', 2098, 'IC2098', 'smoke://seed',
+    '00000000-0000-4000-a000-0000000001ed',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 'IC2098_RV.csv', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ipeds.dim_measure (
+    measure_id, component_id, source_column, source_level, measure_label, unit, basis,
+    parser_contract_version
+) VALUES (
+    'housing_capacity', 'IC', 'ROOMCAP', NULL, 'College housing capacity', 'students',
+    'the most students an institution can house in institutionally controlled housing, on or off campus, as the institution reports it to IPEDS',
+    'nces_ipeds_ic_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ipeds.area_total (
+    run_id, measure_id, collection_year, geo_id, geo_type, geo_sk, value,
+    institution_count, unplaced_institution_count, geography_status, source_record_id
+)
+SELECT '00000000-0000-4000-8000-0000000001ed', 'housing_capacity', 2098, 'state:55|county:025',
+       'county', geo_sk, 9484, 2, 0, 'resolved', 'a4d0c6e2f8b1d7c3e9a5b1f7d3c9e5a1'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1553,7 +1593,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usda_ers.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

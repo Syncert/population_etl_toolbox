@@ -491,7 +491,10 @@ captures every 2020 Census slice not yet answered
 ([operations](../user-guides/CENSUS_DECENNIAL_PIPELINE_OPERATIONS.md)). Unpause and
 trigger `cms_ltc_ingest` once after the shared geography loads: a plain
 run loads every CMS nursing home release the catalog lists, cost reports
-first ([operations](../user-guides/CMS_LTC_PIPELINE_OPERATIONS.md)). Trigger
+first ([operations](../user-guides/CMS_LTC_PIPELINE_OPERATIONS.md)). Unpause and
+trigger `nces_ipeds_ingest` once after the shared geography loads: a plain
+run reads every registered IPEDS year from 2012
+([operations](../user-guides/NCES_IPEDS_PIPELINE_OPERATIONS.md)). Trigger
 `census_govfin_ingest` once after BEA loads: a plain run captures every
 registered annual finance year, QTAX year and Census of Governments edition
 not yet answered, so there is no history run

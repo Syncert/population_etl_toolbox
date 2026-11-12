@@ -14,7 +14,29 @@ verify:
 
 ## Status
 
-To do. Step 5 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+Built 2026-11-12; the load follows the deploy. Step 5 of
+[`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+
+As built (probes 6 to 8 on the internal stack, 2026-11-12):
+
+- Files: HD (directory, county code `COUNTYCD`, point), IC (`ROOM`, `ROOMCAP`)
+  and EF A (`EFTOTLT` at the all, full-time and part-time levels). Registered
+  from 2012: HD2008 has no county code or point and the 2002 files name the
+  enrolment total `efrace24`; 2009 to 2011 were not checked.
+- **2024 housing capacity has no located file.** IC2024 no longer carries
+  `ROOM`/`ROOMCAP` (IPEDS 2024-25 moved them), the Data Center file list
+  answers a plain client with a redirect, and names were not guessed further.
+  Housing capacity is served through 2023 and labelled with its year.
+- **Revised members:** a zip holding `<file>_rv.csv` beside the original is
+  read from the revised member, NCES's current statement of that year (the
+  institutions' corrections in the following collection). The capture keeps
+  the whole zip, original included.
+- DQ: `DQ-IPEDS-001` one row per institution (and level) per file, enforced;
+  `-002` a figure marked not applicable or not reported carries no number,
+  enforced; `-003` (WARN) institutions whose published point lies outside
+  the county their code names.
+- Dane County 2023: housing capacity 9,484 at 2 institutions (UW-Madison
+  8,949, Edgewood 535); fall enrolment 69,371 at 8.
 Madison's campus is the district's densest young-adult cluster.
 
 ## Source
