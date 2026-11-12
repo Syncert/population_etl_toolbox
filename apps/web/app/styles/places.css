@@ -1324,6 +1324,109 @@
   }
 }
 
+/* Climate averages (place-climate-normals): a county's twelve months of
+   NOAA normals. The mean temperature cell carries a range bar (mean daily
+   low to high, a tick at the mean) on one scale for the year; precipitation
+   reuses the childcare bar. */
+.place-climate-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0 0 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.place-climate-table caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+.place-climate-table caption .subtle {
+  font-weight: 400;
+}
+.place-climate-table .block {
+  display: block;
+}
+.place-climate-table th,
+.place-climate-table td {
+  white-space: normal;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.3rem 0.75rem 0.3rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.place-climate-table tbody th {
+  font-size: inherit;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: inherit;
+}
+.place-climate-table thead th {
+  font-weight: 400;
+  color: var(--muted);
+  border-top: 0;
+}
+.place-climate-short {
+  display: none;
+}
+.place-climate-value {
+  display: block;
+  color: var(--ink);
+}
+.place-climate-range {
+  position: relative;
+  display: block;
+  height: 8px;
+  margin-top: 4px;
+  max-width: 220px;
+}
+.place-climate-range-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.45;
+  border-radius: 4px;
+}
+.place-climate-range-mean {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+@media (max-width: 640px) {
+  .place-climate-table {
+    font-size: 0.9rem;
+  }
+  .place-climate-table th,
+  .place-climate-table td {
+    padding-right: 0.4rem;
+    overflow-wrap: normal;
+  }
+  .place-climate-table th:first-child {
+    width: 3.75rem;
+  }
+  .place-climate-long {
+    display: none;
+  }
+  .place-climate-short {
+    display: inline;
+  }
+}
+@media (forced-colors: active) {
+  .place-climate-range-band {
+    background: CanvasText;
+    opacity: 0.5;
+  }
+  .place-climate-range-mean {
+    background: Highlight;
+  }
+}
+
 /* Starting a family (starting-a-family-collection): one compact row per
    measure, in four groups, each with its value, period and level strip. */
 .place-family-group {
