@@ -136,6 +136,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
         "gold_census_sae": "CENSUS_SAIPE_SAHIE",
         "gold_census_decennial": "CENSUS_DECENNIAL",
         "gold_cms_ltc": "CMS_LTC",
+        "gold_nces_ipeds": "NCES_IPEDS",
         "gold_cdc": "CDC",
         "gold_census": "CENSUS_ACS",
         "gold_census_bps": "CENSUS_BPS",

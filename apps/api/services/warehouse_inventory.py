@@ -543,6 +543,43 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CMS_LTC",
     ),
     WarehouseSource(
+        code="NCES_IPEDS",
+        name="College housing capacity and enrolment (IPEDS)",
+        publisher="National Center for Education Statistics",
+        topic="Schools and broadband",
+        module="nces_ipeds",
+        dag="nces_ipeds_ingest",
+        cadence="Monthly, 25th 17:00 UTC",
+        release="Each IPEDS collection year, as NCES posts its files",
+        grains={"nation": "d", "state": "d", "county": "d"},
+        years=[(2012, 2024)],
+        years_note="Housing capacity 2012-2023 (no 2024 file located); enrolment from 2012",
+        datasets=[
+            "HD (Institutional Characteristics: Directory information)",
+            "IC (Institutional Characteristics: housing)",
+            "EFA (Fall Enrollment by level and attendance)",
+        ],
+        measures=(
+            "Per institution: housing capacity and fall headcount (all, full-time, part-time) "
+            "as reported to IPEDS; summed by county (the directory's published county code), "
+            "state and nation. Race, ethnicity and gender columns are not read."
+        ),
+        raw=[],
+        control=["control.nces_ipeds_file"],
+        silver=[
+            "silver_nces_ipeds.institution",
+            "silver_nces_ipeds.institution_value",
+            "silver_nces_ipeds.area_total",
+        ],
+        gold=[
+            "gold_nces_ipeds.area_revision",
+            "gold_nces_ipeds.area_latest",
+            "gold_nces_ipeds.institution_year",
+        ],
+        credential="none",
+        catalog_source_code="NCES_IPEDS",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

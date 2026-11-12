@@ -1285,6 +1285,48 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="NCES_IPEDS",
+            latest_relation="gold_nces_ipeds.area_latest",
+            released_relation="gold_nces_ipeds.area_revision",
+            lineage_schema="gold_nces_ipeds",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `ipeds:<measure>`, the same text
+            # the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="make_date(period_year, 1, 1)::TEXT",
+            period_end_expression="make_date(period_year, 12, 31)::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: housing capacity, or fall headcount,
+                # as each institution reports it to IPEDS.
+                ("basis", "basis"),
+                ("file_stem", "file_stem"),
+                # A sum of IPEDS's institution figures, never an estimate.
+                ("derivation", "derivation"),
+                ("institution_count", "institution_count::TEXT"),
+                ("unplaced_institution_count", "unplaced_institution_count::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_year >= :year_from"),
+                ("year_to", "period_year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_year"),
+            released_order=("period_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="IRS_MIGRATION",
             latest_relation="gold_irs_migration.total_observation_latest",
             released_relation="gold_irs_migration.total_observation_revision",
@@ -2264,6 +2306,12 @@ def _decennial_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _nces_ipeds_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.nces_ipeds.registry import COMPONENTS
+
+    return tuple(component.component_id for component in COMPONENTS)
+
+
 def _cms_ltc_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.cms_ltc.registry import SERIES
 
@@ -2373,6 +2421,16 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_cms_ltc_datasets,
+        ),
+        SourceDiscovery(
+            source_code="NCES_IPEDS",
+            display_name=(
+                "National Center for Education Statistics IPEDS college housing "
+                "capacity and fall enrolment"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_nces_ipeds_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,

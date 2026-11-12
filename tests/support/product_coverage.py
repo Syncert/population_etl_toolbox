@@ -544,6 +544,41 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="nces_ipeds.area_total",
+        source="NCES_IPEDS",
+        publisher_schema="gold_nces_ipeds",
+        datasets=("HD", "IC", "EFA"),
+        fixtures=(
+            "tests/fixtures/nces_ipeds/HD2023_wi.zip",
+            "tests/fixtures/nces_ipeds/IC2023_wi.zip",
+            "tests/fixtures/nces_ipeds/EF2023A_wi.zip",
+            "tests/fixtures/nces_ipeds/HD2012_uw.zip",
+            "tests/fixtures/nces_ipeds/IC2012_uw.zip",
+            "tests/fixtures/nces_ipeds/EF2012A_uw.zip",
+        ),
+        serving_relations=(
+            "gold_nces_ipeds.area_revision",
+            "gold_nces_ipeds.area_latest",
+            "gold_nces_ipeds.institution_year",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_nces_ipeds_pipeline.py::"
+            "test_dane_college_housing_and_enrolment_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The IPEDS files publish no source-specific HTTP route: each area "
+            "sum is the neutral observation shape with its basis and "
+            "institution count as dimensions, so `/api/v1/observations` "
+            "serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

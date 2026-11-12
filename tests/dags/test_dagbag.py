@@ -47,6 +47,7 @@ EXPECTED_DAG_IDS = {
     "census_saipe_sahie_ingest",
     "census_decennial_ingest",
     "cms_ltc_ingest",
+    "nces_ipeds_ingest",
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
@@ -104,6 +105,9 @@ EXPECTED_SCHEDULES = {
     # Monthly: CMS posts quarters and cost-report years on no fixed calendar,
     # and a release already published is not read again.
     "cms_ltc_ingest": "0 18 20 * *",
+    # Monthly: NCES posts IPEDS files on no fixed calendar; a run asks only for
+    # years not yet answered and the year after the newest published.
+    "nces_ipeds_ingest": "0 17 25 * *",
     # Monthly: annual finances publish each autumn, QTAX a quarter after the
     # quarter, the unit files every five years; a run captures its revision
     # window and every registered period never answered.
@@ -194,6 +198,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_saipe_sahie_ingest": 2,
     "census_decennial_ingest": 2,
     "cms_ltc_ingest": 2,
+    "nces_ipeds_ingest": 2,
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,
