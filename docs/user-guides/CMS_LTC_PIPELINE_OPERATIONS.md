@@ -45,6 +45,15 @@ airflow dags trigger cms_ltc_ingest
 `--conf '{"history": true}'` reads every release again; identical bytes are
 recorded `unchanged` and write no row.
 
+## Text encoding
+
+CMS writes most files in UTF-8, some with a byte-order mark. Older releases
+(Form_671_Q4_2023.csv, for one) carry Windows-1252 bytes such as 0x92, a right
+single quote. A file is read as UTF-8 when every byte is UTF-8 and otherwise
+as Windows-1252, strictly both times: no byte is dropped or replaced. The
+encoding used is recorded in `control.cms_ltc_file.text_encoding`. A file that
+reads as neither is refused (`not_text`) and set aside whole.
+
 ## Deployment prerequisites
 
 Deploy `src/`, `dags/` and `sql/` from one revision and apply

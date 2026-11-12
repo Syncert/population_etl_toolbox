@@ -55,6 +55,10 @@ def test_every_release_reaches_gold_and_dane_is_placed_by_its_cost_reports(
     ]
     assert [result[2] for result in results] == [314, 323, 323]
     assert all(result[3] == 1 for result in results)
+    assert _rows(
+        cms_warehouse,
+        "SELECT DISTINCT text_encoding FROM control.cms_ltc_file WHERE status = 'published'",
+    ) == [("utf-8-sig",)]
 
     cost = _csv("CostReportsnf_Final_24_wi.csv")
     dane_beds = sum(

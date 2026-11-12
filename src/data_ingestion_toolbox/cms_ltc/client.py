@@ -52,9 +52,29 @@ def _path(url: str) -> str:
     return urlsplit(url).path or url
 
 
+#: The encodings a CMS file is read in, in order. CMS writes UTF-8 (some
+#: files with a byte-order mark), but older releases such as Form_671_Q4_2023
+#: carry Windows-1252 bytes (0x92, a right single quote). A file is read as
+#: UTF-8 when every byte is UTF-8, otherwise as Windows-1252; strict both
+#: times, so no byte is dropped or replaced. A file neither reads is refused.
+TEXT_ENCODINGS = ("utf-8-sig", "cp1252")
+
+
+def decode_csv(raw_bytes: bytes) -> tuple[str, str]:
+    """(text, encoding used) for a CMS CSV; UnicodeDecodeError if neither reads."""
+    error: UnicodeDecodeError | None = None
+    for encoding in TEXT_ENCODINGS:
+        try:
+            return raw_bytes.decode(encoding, errors="strict"), encoding
+        except UnicodeDecodeError as exc:
+            error = exc
+    assert error is not None
+    raise error
+
+
 def header_columns(raw_bytes: bytes) -> list[str]:
-    """The CSV's header row, read as CMS writes it (UTF-8, optional BOM)."""
-    text = raw_bytes.decode("utf-8-sig", errors="strict")
+    """The CSV's header row, read as CMS writes it (see ``TEXT_ENCODINGS``)."""
+    text, _encoding = decode_csv(raw_bytes)
     reader = csv.reader(io.StringIO(text, newline=""))
     return [column.strip() for column in next(reader, [])]
 
@@ -64,7 +84,7 @@ def check_file(raw_bytes: bytes, series: Series, endpoint: str) -> None:
     try:
         header = set(header_columns(raw_bytes))
     except UnicodeDecodeError as exc:
-        raise CmsPayloadError(endpoint, code="not_utf8") from exc
+        raise CmsPayloadError(endpoint, code="not_text") from exc
     except csv.Error as exc:
         raise CmsPayloadError(endpoint, code="not_csv") from exc
     if not series.required_columns <= header:

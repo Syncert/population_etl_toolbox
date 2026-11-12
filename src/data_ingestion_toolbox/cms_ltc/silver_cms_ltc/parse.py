@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from ..client import decode_csv
 from ..registry import USPS_TO_FIPS, Series
 
 _CCN = re.compile(r"^[0-9A-Z]{6}$")
@@ -56,6 +57,9 @@ class ParsedFile:
     rows: tuple[FacilityRow, ...]
     quarantined: tuple[Quarantined, ...]
     row_count: int
+    #: The encoding the file was read in (``client.TEXT_ENCODINGS``), or
+    #: None when it read in neither.
+    encoding: str | None = None
 
 
 def _text(record: dict[str, str], column: str | None) -> str | None:
@@ -74,9 +78,13 @@ def _us_date(value: str | None) -> date | None:
 def parse_file(series: Series, payload: bytes) -> ParsedFile:
     """Every facility row of one captured file, or why a row was set aside."""
     try:
-        text = payload.decode("utf-8-sig")
+        text, encoding = decode_csv(payload)
     except UnicodeDecodeError:
-        return ParsedFile((), (Quarantined(0, "not_utf8", "file is not UTF-8"),), 0)
+        return ParsedFile(
+            (),
+            (Quarantined(0, "not_text", "file is neither UTF-8 nor Windows-1252"),),
+            0,
+        )
     reader = csv.DictReader(io.StringIO(text, newline=""))
     header = {column.strip() for column in reader.fieldnames or ()}
     missing = sorted(series.required_columns - header)
@@ -85,6 +93,7 @@ def parse_file(series: Series, payload: bytes) -> ParsedFile:
             (),
             (Quarantined(0, "unexpected_header", f"missing columns: {missing}"),),
             0,
+            encoding,
         )
     rows: list[FacilityRow] = []
     quarantined: list[Quarantined] = []
@@ -151,7 +160,7 @@ def parse_file(series: Series, payload: bytes) -> ParsedFile:
                 counts=counts,
             )
         )
-    return ParsedFile(tuple(rows), tuple(quarantined), row_count)
+    return ParsedFile(tuple(rows), tuple(quarantined), row_count, encoding)
 
 
 #: Words a county's name carries in the Census reference but CMS may omit.

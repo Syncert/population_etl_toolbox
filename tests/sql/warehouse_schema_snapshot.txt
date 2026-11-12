@@ -360,6 +360,7 @@ r control.cms_ltc_file
     column published_at timestamp with time zone
     column created_at timestamp with time zone NOT NULL DEFAULT now()
     column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    column text_encoding text
     constraint cms_ltc_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint cms_ltc_file_catalog_capture_id_fkey FOREIGN KEY (catalog_capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint cms_ltc_file_kept_row_count_check CHECK ((kept_row_count >= 0))
@@ -372,6 +373,7 @@ r control.cms_ltc_file
     constraint cms_ltc_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
     constraint cms_ltc_file_series_id_check CHECK ((series_id = ANY (ARRAY['characteristics'::text, 'cost_report'::text])))
     constraint cms_ltc_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint cms_ltc_file_text_encoding_check CHECK ((text_encoding = ANY (ARRAY['utf-8-sig'::text, 'cp1252'::text])))
     index cms_ltc_file_capture_idx CREATE INDEX cms_ltc_file_capture_idx ON control.cms_ltc_file USING btree (capture_id)
     index cms_ltc_file_pkey CREATE UNIQUE INDEX cms_ltc_file_pkey ON control.cms_ltc_file USING btree (run_id)
     index cms_ltc_file_release_idx CREATE INDEX cms_ltc_file_release_idx ON control.cms_ltc_file USING btree (series_id, period_start, status)

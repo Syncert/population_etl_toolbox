@@ -16,6 +16,7 @@ from data_ingestion_toolbox.cms_ltc.catalog import CatalogError, Release, releas
 from data_ingestion_toolbox.cms_ltc.client import (
     CmsFetchError,
     CmsPayloadError,
+    decode_csv,
     fetch_file,
 )
 from data_ingestion_toolbox.cms_ltc.config import CmsLtcConfig
@@ -133,6 +134,58 @@ def test_the_cms_671_fixture_parses_every_wisconsin_facility() -> None:
         "medicaid_census",
         "other_census",
     }
+
+
+def _windows_1252_release() -> bytes:
+    """The Q3 fixture re-encoded as Windows-1252, its first facility's name
+    given the right single quote (0x92) Form_671_Q4_2023.csv carries."""
+    text = _fixture("Form_671_Q3_2026_wi.csv").decode("utf-8-sig")
+    header, first, rest = text.split("\n", 2)
+    cells = first.split(",")
+    cells[1] = cells[1] + "\u2019S"  # inside the quoted name
+    return "\n".join([header, ",".join(cells), rest]).encode("cp1252")
+
+
+def test_a_windows_1252_release_is_read_byte_for_byte_and_says_so() -> None:
+    """Covers: ETL-130 -- a file that is not UTF-8 is read as Windows-1252, every
+    byte kept; the encoding used is recorded; a file neither reads is refused."""
+    payload = _windows_1252_release()
+    assert b"\x92" in payload
+    with pytest.raises(UnicodeDecodeError):
+        payload.decode("utf-8-sig")
+    text, encoding = decode_csv(payload)
+    assert encoding == "cp1252"
+    assert text.encode("cp1252") == payload
+    parsed = parse_file(CHARACTERISTICS, payload)
+    assert parsed.encoding == "cp1252"
+    assert parsed.row_count == 323
+    assert parsed.quarantined == ()
+    assert parsed.rows[0].facility_name == "DEERFIELD CARE CENTER\u2019S, LLC"
+    utf8 = parse_file(CHARACTERISTICS, _fixture("Form_671_Q3_2026_wi.csv"))
+    assert utf8.encoding == "utf-8-sig"
+    assert [row.counts for row in parsed.rows] == [row.counts for row in utf8.rows]
+    client = _ScriptedClient([httpx.Response(200, content=payload)])
+    response = fetch_file(
+        "https://data.cms.gov/x/Form_671_Q4_2023.csv",
+        CHARACTERISTICS,
+        config=_config(),
+        client=client,
+    )
+    assert response.raw_bytes == payload
+    # 0x81 is undefined in Windows-1252 and not UTF-8: refused, never replaced.
+    unreadable = payload.replace(b"\x92", b"\x81", 1)
+    assert parse_file(CHARACTERISTICS, unreadable).quarantined[0].error_code == (
+        "not_text"
+    )
+    client = _ScriptedClient([httpx.Response(200, content=unreadable)] * 2)
+    with pytest.raises(CmsPayloadError) as refused:
+        fetch_file(
+            "https://data.cms.gov/x/Form.csv",
+            CHARACTERISTICS,
+            config=_config(),
+            client=client,
+        )
+    assert refused.value.code == "not_text"
 
 
 def test_a_blank_cost_report_figure_is_missing_and_a_bad_one_is_set_aside() -> None:
