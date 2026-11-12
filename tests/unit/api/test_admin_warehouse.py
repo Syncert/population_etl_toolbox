@@ -403,7 +403,7 @@ def test_a_timeout_is_reported_and_cached_briefly() -> None:
 def test_decennial_and_geography_are_described_not_scanned() -> None:
     """Covers: API-183 — shared and reference sources run no statement."""
     db = _Session()
-    assert coverage.measure_source(db, "CENSUS_DECENNIAL")["status"] == "shared"
+    assert coverage.measure_source(db, "CENSUS_ACS_DECENNIAL")["status"] == "shared"
     assert coverage.measure_source(db, "CENSUS_GEO")["status"] == "not_served"
     assert db.statements == []
 

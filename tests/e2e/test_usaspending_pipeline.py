@@ -37,7 +37,7 @@ def test_place_obligations_reach_the_neutral_api_as_published(
     """Covers: E2E-014 — a glossary-discovered USAspending metric answers through
     `/api/v1/observations` for a state and a county with the fixture's values.
 
-    Covers: ETL-129 — the value is the obligation as published, over the
+    Covers: ETL-130 — the value is the obligation as published, over the
     October-to-September fiscal year, at the place of performance.
     """
     factory = usaspending_warehouse

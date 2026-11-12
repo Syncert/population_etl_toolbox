@@ -323,7 +323,7 @@ def measure_source(db: Session, code: str) -> dict[str, Any]:
         "method": None,
         "note": None,
     }
-    if code == "CENSUS_DECENNIAL":
+    if code == "CENSUS_ACS_DECENNIAL":
         return {
             **base,
             "status": "shared",

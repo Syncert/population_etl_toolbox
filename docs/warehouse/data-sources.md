@@ -35,6 +35,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [County Business Patterns](#census_cbp) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 2016–2023 | Monthly | Loaded |
 | [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Loaded |
 | [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Partly loaded |
+| [2020 Census counts](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  |  | ● |  | 2020 | On demand | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -80,7 +81,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Shown on:** every place page (People, Work and Money, Housing, Health chapters); the property tax load card in Work and Money's Taxes and public money group; the map, explorer and compare pages.
 
 <a id="census_decennial"></a>
-### Census 2000 and 1990 (`CENSUS_DECENNIAL`)
+### Census 2000 and 1990 (`CENSUS_ACS_DECENNIAL`)
 
 - **Publisher:** U.S. Census Bureau
 - **Code:** `src/data_ingestion_toolbox/census_acs (decennial.py, load_1990.py)` · DAG `acs_ingest (2000); operator load (1990 discs)` · One-time history load
@@ -227,6 +228,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_census_sae.observation_revision`, `silver_census_sae.fact_estimate`, `silver_census_sae.dim_measure`
 - **Gold:** `gold_census_sae.estimate_revision`, `gold_census_sae.estimate_latest`
 - **Status (live count 2026-10-31):** Partly loaded. Only 2022–2024 is loaded; the registry declares 1989–2024.
+
+<a id="census_decennial"></a>
+### 2020 Census counts (`CENSUS_DECENNIAL`)
+
+- **Publisher:** U.S. Census Bureau
+- **Code:** `src/data_ingestion_toolbox/census_decennial` · DAG `census_decennial_ingest` · On demand (the count is published once a decade)
+- **Publisher releases:** 2020 redistricting data (P.L. 94-171), August 2021
+- **Credential:** CENSUS_API_KEY
+- **Years:** 2020 (Census Day, 2020-04-01)
+- **Datasets:** pl (/2020/dec/pl)
+- **Measures:** Total population; people in group quarters by type (correctional facilities for adults, juvenile facilities, nursing homes, other institutional; college/university student housing, military quarters, other noninstitutional); housing units, occupied and vacant. Each the Bureau's published integer, nothing estimated.
+- **Capture and control:** `control.census_decennial_slice`
+- **Silver:** `silver_census_decennial.observation_revision`, `silver_census_decennial.fact_count`, `silver_census_decennial.dim_variable`
+- **Gold:** `gold_census_decennial.count_revision`, `gold_census_decennial.count_latest`
+- **Status:** Not loaded yet (added 2026-11-12, plan `group-quarters-by-type`). Blocks are captured only for a county the registry scopes, and none is scoped yet.
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)

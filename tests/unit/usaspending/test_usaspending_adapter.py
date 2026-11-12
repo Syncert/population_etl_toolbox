@@ -1,6 +1,6 @@
 """Offline contracts for the USAspending place-of-performance adapter.
 
-Covers: ETL-129
+Covers: ETL-130
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _answer(rows: list[dict[str, Any]], layer: str = "state") -> bytes:
 
 
 def test_configuration_imports_with_no_io_and_no_credential() -> None:
-    """Covers: ETL-129 — importing the configuration reads nothing and needs no key."""
+    """Covers: ETL-130 — importing the configuration reads nothing and needs no key."""
     sys.modules.pop("data_ingestion_toolbox.usaspending.config", None)
     module = importlib.import_module("data_ingestion_toolbox.usaspending.config")
     config = module.UsaspendingConfig()
@@ -80,7 +80,7 @@ def test_configuration_imports_with_no_io_and_no_credential() -> None:
 
 
 def test_the_fiscal_year_turns_in_october() -> None:
-    """Covers: ETL-129 — October 1 starts the next federal fiscal year."""
+    """Covers: ETL-130 — October 1 starts the next federal fiscal year."""
     assert current_fiscal_year(date(2026, 9, 30)) == 2026
     assert current_fiscal_year(date(2026, 10, 1)) == 2027
 
@@ -88,7 +88,7 @@ def test_the_fiscal_year_turns_in_october() -> None:
 def test_an_ordinary_run_reads_two_years_and_history_adds_the_rest_oldest_first() -> (
     None
 ):
-    """Covers: ETL-129 — refresh years first, then fiscal 2008 onward."""
+    """Covers: ETL-130 — refresh years first, then fiscal 2008 onward."""
     assert fiscal_years(date(2025, 3, 1), history=False) == [2025, 2024]
     history = fiscal_years(date(2025, 3, 1), history=True)
     assert history[:2] == [2025, 2024]
@@ -96,7 +96,7 @@ def test_an_ordinary_run_reads_two_years_and_history_adds_the_rest_oldest_first(
 
 
 def test_each_cut_filters_the_year_and_nothing_else() -> None:
-    """Covers: ETL-129 — the body names the scope, layer, period and one cut."""
+    """Covers: ETL-130 — the body names the scope, layer, period and one cut."""
     period = {"start_date": "2023-10-01", "end_date": "2024-09-30"}
     whole = geography_body(RequestKey(2024, "state", CUT_ALL, ""))
     assert whole == {
@@ -126,7 +126,7 @@ def test_each_cut_filters_the_year_and_nothing_else() -> None:
 
 
 def test_a_year_plans_every_cut_for_both_layers() -> None:
-    """Covers: ETL-129 — all awards, each group and each agency, per layer."""
+    """Covers: ETL-130 — all awards, each group and each agency, per layer."""
     keys = list(planned_geography_keys(2024, [("DOD", "Department of Defense")]))
     per_layer = 1 + len(AWARD_GROUPS) + 1
     assert len(keys) == 2 * per_layer
@@ -135,13 +135,13 @@ def test_a_year_plans_every_cut_for_both_layers() -> None:
 
 
 def test_award_groups_do_not_share_a_code() -> None:
-    """Covers: ETL-129 — no award type is counted in two groups."""
+    """Covers: ETL-130 — no award type is counted in two groups."""
     codes = [code for group in AWARD_GROUPS for code in group.codes]
     assert len(codes) == len(set(codes))
 
 
 def test_shape_codes_map_to_shared_geographies_or_stay_unplaced() -> None:
-    """Covers: ETL-129 — postal codes and county FIPS place; an empty code does not."""
+    """Covers: ETL-130 — postal codes and county FIPS place; an empty code does not."""
     assert geo_id_of("state", "WI") == "state:55"
     assert geo_id_of("state", "PR") == "state:72"
     assert geo_id_of("state", "") is None
@@ -152,7 +152,7 @@ def test_shape_codes_map_to_shared_geographies_or_stay_unplaced() -> None:
 
 
 def test_the_reviewed_state_answer_parses_every_row_as_published() -> None:
-    """Covers: ETL-129 — amounts keep USAspending's text; the empty code is kept."""
+    """Covers: ETL-130 — amounts keep USAspending's text; the empty code is kept."""
     parsed = parse_geography(STATE_ALL.read_bytes(), geo_layer="state")
     assert parsed.row_count == NATION_FY2024_STATE_ROWS
     assert len(parsed.rows) == NATION_FY2024_STATE_ROWS
@@ -165,7 +165,7 @@ def test_the_reviewed_state_answer_parses_every_row_as_published() -> None:
 
 
 def test_the_reviewed_county_answer_parses_dane_county_grants() -> None:
-    """Covers: ETL-129 — the county layer reads five-digit FIPS codes."""
+    """Covers: ETL-130 — the county layer reads five-digit FIPS codes."""
     parsed = parse_geography(COUNTY_GRANTS.read_bytes(), geo_layer="county")
     assert len(parsed.rows) == WI_COUNTIES
     dane = next(row for row in parsed.rows if row.shape_code == "55025")
@@ -174,7 +174,7 @@ def test_the_reviewed_county_answer_parses_dane_county_grants() -> None:
 
 
 def test_a_null_amount_is_missing_never_zero() -> None:
-    """Covers: ETL-129 — ``null`` is missing with no number."""
+    """Covers: ETL-130 — ``null`` is missing with no number."""
     parsed = parse_geography(
         _answer(
             [
@@ -192,7 +192,7 @@ def test_a_null_amount_is_missing_never_zero() -> None:
 
 
 def test_unreadable_and_repeated_rows_are_set_aside_with_their_reason() -> None:
-    """Covers: ETL-129 — a bad row is quarantined; the rest still load."""
+    """Covers: ETL-130 — a bad row is quarantined; the rest still load."""
     parsed = parse_geography(
         _answer(
             [
@@ -216,14 +216,14 @@ def test_unreadable_and_repeated_rows_are_set_aside_with_their_reason() -> None:
 
 
 def test_an_answer_for_another_layer_is_refused_whole() -> None:
-    """Covers: ETL-129 — a county answer read as a state answer is row 0."""
+    """Covers: ETL-130 — a county answer read as a state answer is row 0."""
     parsed = parse_geography(COUNTY_GRANTS.read_bytes(), geo_layer="state")
     assert parsed.rows == []
     assert [item.source_row_index for item in parsed.quarantined] == [0]
 
 
 def test_the_reviewed_agency_list_parses_all_78_agencies() -> None:
-    """Covers: ETL-129 — code, name, id and amount as published."""
+    """Covers: ETL-130 — code, name, id and amount as published."""
     parsed = parse_agencies(AGENCIES.read_bytes())
     assert len(parsed.rows) == 78
     first = parsed.rows[0]
@@ -235,7 +235,7 @@ def test_the_reviewed_agency_list_parses_all_78_agencies() -> None:
 
 
 def test_the_transport_checks_layer_scope_fields_and_paging() -> None:
-    """Covers: ETL-129 — only the expected answer is kept."""
+    """Covers: ETL-130 — only the expected answer is kept."""
     assert check_geography(STATE_ALL.read_bytes(), geo_layer="state") == 57
     with pytest.raises(UsaspendingPayloadError, match="wrong_layer_or_scope"):
         check_geography(STATE_ALL.read_bytes(), geo_layer="county")
@@ -249,7 +249,7 @@ def test_the_transport_checks_layer_scope_fields_and_paging() -> None:
 
 
 def test_the_scripted_client_answers_only_the_reviewed_reads() -> None:
-    """Covers: ETL-129 — other reads answer USAspending's empty result."""
+    """Covers: ETL-130 — other reads answer USAspending's empty result."""
     client = FixtureClient()
     response = post_search(
         GEOGRAPHY_PATH,
@@ -289,7 +289,7 @@ def _scripted(statuses: list[int], body: bytes) -> FixtureClient:
 def test_a_rate_refusal_is_retried_and_logged_with_rate_headers_only(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Covers: ETL-129 — 429 retries with backoff; a later 200 is kept."""
+    """Covers: ETL-130 — 429 retries with backoff; a later 200 is kept."""
     client = _scripted([429], STATE_ALL.read_bytes())
     sleeps: list[float] = []
     retries: list[BaseException] = []
@@ -309,7 +309,7 @@ def test_a_rate_refusal_is_retried_and_logged_with_rate_headers_only(
 
 
 def test_a_client_error_fails_at_once_and_names_path_and_status() -> None:
-    """Covers: ETL-129 — 4xx other than 429 is not retried."""
+    """Covers: ETL-130 — 4xx other than 429 is not retried."""
     client = _scripted([400], b"")
     with pytest.raises(UsaspendingFetchError) as raised:
         post_search(
@@ -326,7 +326,7 @@ def test_a_client_error_fails_at_once_and_names_path_and_status() -> None:
 
 
 def test_server_errors_exhaust_the_attempts() -> None:
-    """Covers: ETL-129 — 5xx retries up to max_attempts, then fails."""
+    """Covers: ETL-130 — 5xx retries up to max_attempts, then fails."""
     client = _scripted([503, 503], b"")
     with pytest.raises(UsaspendingFetchError, match="retry_exhausted"):
         post_search(
@@ -341,7 +341,7 @@ def test_server_errors_exhaust_the_attempts() -> None:
 
 
 def test_a_transport_error_is_retried() -> None:
-    """Covers: ETL-129 — a dropped connection counts as one attempt."""
+    """Covers: ETL-130 — a dropped connection counts as one attempt."""
 
     class Flaky(FixtureClient):
         def post(self, url: str, **kwargs: Any) -> httpx.Response:
@@ -362,7 +362,7 @@ def test_a_transport_error_is_retried() -> None:
 
 
 def test_a_negative_obligation_is_kept_as_published() -> None:
-    """Covers: ETL-129 — a deobligation (negative amount) keeps its sign and text."""
+    """Covers: ETL-130 — a deobligation (negative amount) keeps its sign and text."""
     parsed = parse_geography(
         b'{"scope": "place_of_performance", "geo_layer": "county", "results": '
         b'[{"shape_code": "55025", "display_name": "Dane County", '

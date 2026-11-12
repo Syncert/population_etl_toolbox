@@ -45,6 +45,7 @@ EXPECTED_DAG_IDS = {
     "bls_qcew_ingest",
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
+    "census_decennial_ingest",
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
@@ -98,6 +99,8 @@ EXPECTED_SCHEDULES = {
     "census_building_permits_ingest": "0 13 25 * *",
     # Monthly: SAIPE publishes each December and SAHIE each spring.
     "census_saipe_sahie_ingest": "0 6 15 * *",
+    # Operator-triggered: the 2020 count is published once.
+    "census_decennial_ingest": None,
     # Monthly: annual finances publish each autumn, QTAX a quarter after the
     # quarter, the unit files every five years; a run captures its revision
     # window and every registered period never answered.
@@ -188,6 +191,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "bls_qcew_ingest": 2,
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
+    "census_decennial_ingest": 2,
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,
@@ -224,6 +228,7 @@ EXPECTED_INGEST_POOLS = {
     "census_building_permits_ingest": "census_bps_files",
     # One host and one key with the ACS, so one rate limit.
     "census_saipe_sahie_ingest": "census_api",
+    "census_decennial_ingest": "census_api",
     "census_govfin_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
     "irs_soi_ingest": "irs_soi_files",

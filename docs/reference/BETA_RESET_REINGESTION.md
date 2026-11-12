@@ -492,7 +492,10 @@ Then trigger the configured history in `acs_ingest`, `census_pep_ingest`,
 reference succeeds. Trigger `census_saipe_sahie_ingest`; since ETL-110 a plain run captures every
 registered year not yet answered as well as the two newest, so the first run
 loads the whole history (`--conf '{"history": true}'` re-asks for every year)
-([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). Trigger
+([operations](../user-guides/CENSUS_SAIPE_SAHIE_PIPELINE_OPERATIONS.md)). Unpause and
+trigger `census_decennial_ingest` once: it has no schedule, and a plain run
+captures every 2020 Census slice not yet answered
+([operations](../user-guides/CENSUS_DECENNIAL_PIPELINE_OPERATIONS.md)). Trigger
 `census_govfin_ingest` once after BEA loads: a plain run captures every
 registered annual finance year, QTAX year and Census of Governments edition
 not yet answered, so there is no history run

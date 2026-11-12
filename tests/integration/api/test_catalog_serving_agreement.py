@@ -38,6 +38,7 @@ from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
 from tests.support import dol_childcare as ndcp_support
 from tests.support import irs_soi as soi_support
+from tests.support import census_decennial as decennial_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
@@ -949,6 +950,18 @@ def published_bps_metric(
 
 
 @pytest.fixture
+def published_decennial_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the 2020 Census counts through their real pipeline."""
+    factory = decennial_support.reviewed_warehouse(postgres_connection_factory, request)
+    decennial_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_census_decennial"))
+    return _one_published_code(factory, "CENSUS_DECENNIAL")
+
+
+@pytest.fixture
 def published_sae_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1273,6 +1286,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_irs_migration_metric: str,
     published_irs_soi_metric: str,
     published_sae_metric: str,
+    published_decennial_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1339,6 +1353,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("IRS_SOI", published_irs_soi_metric),
         ("CENSUS_PEP", published_pep_metric),
         ("CENSUS_SAIPE_SAHIE", published_sae_metric),
+        ("CENSUS_DECENNIAL", published_decennial_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1501,6 +1516,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_acs_grain_metric: str,
     published_cdc_metric: str,
     published_sae_metric: str,
+    published_decennial_metric: str,
     published_cdc_county_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,

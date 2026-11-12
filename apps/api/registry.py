@@ -1201,6 +1201,47 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CENSUS_DECENNIAL",
+            latest_relation="gold_census_decennial.count_latest",
+            released_relation="gold_census_decennial.count_revision",
+            lineage_schema="gold_census_decennial",
+            lineage_relation="count_revision",
+            # The publisher's lineage key is `<dataset>:<variable>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "variable_id"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("variable_id", "variable_id"),
+                ("variable_label", "variable_label"),
+                ("universe", "universe"),
+                ("parent_variable", "parent_variable"),
+                ("census_year", "census_year::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "census_year >= :year_from"),
+                ("year_to", "census_year <= :year_to"),
+            ),
+            # One row per (metric, geography) in the latest view: the count
+            # describes Census Day alone.
+            latest_order=("geo_id",),
+            released_order=("geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="IRS_MIGRATION",
             latest_relation="gold_irs_migration.total_observation_latest",
             released_relation="gold_irs_migration.total_observation_revision",
@@ -2217,6 +2258,12 @@ def _sae_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _decennial_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_decennial.registry import DATASETS
+
+    return tuple(dataset.dataset_id for dataset in DATASETS)
+
+
 def _govfin_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
 
@@ -2303,6 +2350,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_sae_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_DECENNIAL",
+            display_name="Census Bureau 2020 Decennial Census",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_decennial_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,

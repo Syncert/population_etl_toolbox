@@ -238,6 +238,13 @@ FACTS = [
         "silver_census_sae.fact_estimate",
         "valid",
     ),
+    # A count the API returns as null is `missing`, with no number.
+    FactContract(
+        "CENSUS_DECENNIAL",
+        SRC / "census_decennial/DDL/silver_census_decennial.sql",
+        "silver_census_decennial.fact_count",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

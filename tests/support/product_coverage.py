@@ -479,6 +479,38 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="census_decennial.count",
+        source="CENSUS_DECENNIAL",
+        publisher_schema="gold_census_decennial",
+        datasets=("pl",),
+        fixtures=(
+            "tests/fixtures/census_decennial/pl_us_1.json",
+            "tests/fixtures/census_decennial/pl_state_all.json",
+            "tests/fixtures/census_decennial/pl_county_all.json",
+            "tests/fixtures/census_decennial/pl_tract_55.json",
+        ),
+        serving_relations=(
+            "gold_census_decennial.count_revision",
+            "gold_census_decennial.count_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_decennial_pipeline.py::"
+            "test_group_quarters_reach_the_neutral_api_for_dane_and_its_tracts"
+        ),
+        api_absence_reason=(
+            "The 2020 Census counts publish no source-specific HTTP route: each "
+            "row is the neutral observation shape with its variable, universe "
+            "and parent variable as dimensions, so `/api/v1/observations` "
+            "serves them through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

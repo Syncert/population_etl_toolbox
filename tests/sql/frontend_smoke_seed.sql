@@ -121,7 +121,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
     ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success'),
     ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success'),
-    ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success')
+    ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success'),
+    ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -187,7 +188,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000501', '00000000-0000-4000-8000-000000000501',
      'IRS_SOI', 'smoke://seed', '{}'::JSONB, '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', 'captured'),
     ('00000000-0000-4000-9000-000000000dc0', '00000000-0000-4000-8000-000000000dc0',
-     'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB, 'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', 'captured')
+     'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB, 'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', 'captured'),
+    ('00000000-0000-4000-9000-000000000dec', '00000000-0000-4000-8000-000000000dec',
+     'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB, 'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -306,6 +309,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000dc0', '00000000-0000-4000-9000-000000000dc0',
      '00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB,
      'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000dec', '00000000-0000-4000-9000-000000000dec',
+     '00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB,
+     'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1456,6 +1463,38 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- 2020 Census -- one county's people in group quarters, as the Bureau
+-- publishes it for Census Day. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_decennial_slice (
+    run_id, dataset_id, geo_level, scope, capture_id, captured_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000dec', 'pl', 'county', '*',
+    '00000000-0000-4000-a000-000000000dec', 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_decennial.dim_variable (
+    dataset_id, variable_id, variable_label, universe, unit, parent_variable,
+    methodology_url, parser_contract_version
+) VALUES (
+    'pl', 'P5_001N', 'People in group quarters', 'Population in group quarters',
+    'people', NULL, 'https://www.census.gov/programs-surveys/decennial-census/about/rdo/summary-files.html',
+    'census_decennial_pl:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_decennial.fact_count (
+    dataset_id, variable_id, geo_id, capture_id, run_id, retrieved_at, geo_sk,
+    geo_type, geography_status, value_source, value, value_status, source_record_id
+)
+SELECT 'pl', 'P5_001N', 'state:55|county:025', '00000000-0000-4000-a000-000000000dec',
+       '00000000-0000-4000-8000-000000000dec', '2098-12-31 00:00:00+00', geo_sk,
+       'county', 'resolved', '17465', 17465, 'valid', 'd3c5a1e0f7b9d2c4e6a8b0d2f4e6a8c0'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1501,7 +1540,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hud_fmr_il.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ccd.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usda_ers.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

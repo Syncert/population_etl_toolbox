@@ -84,6 +84,7 @@ SOURCES: tuple[str, ...] = (
     "IRS_MIGRATION",
     "IRS_SOI",
     "CENSUS_SAIPE_SAHIE",
+    "CENSUS_DECENNIAL",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2548,6 +2549,104 @@ _SAE_OBJECTS: tuple[WarehouseObject, ...] = (
         "CENSUS_SAIPE_SAHIE",
         grain="source_object_key (dataset:measure)",
         lineage="gold_census_sae.estimate_latest, silver_census_sae.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# 2020 Census redistricting data (group quarters by type).
+# ---------------------------------------------------------------------------
+
+_DECENNIAL_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_decennial_slice",
+        "control",
+        "CENSUS_DECENNIAL",
+        grain="run_id, geo_level, scope (one request per grain and area)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered slices: nation, states, counties, tracts by state, "
+        "blocks of declared counties",
+        cadence="operator-triggered; never-answered slices only",
+        empty_behavior="an area the API does not publish (HTTP 204) is status empty",
+    ),
+    _obj(
+        "silver_census_decennial.dim_variable",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id",
+        scope_method="registered variables in census_decennial/registry.py",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_decennial.observation_revision",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="capture_id, source_row_index, variable_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_decennial.observation_quarantine",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_decennial.fact_count",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id, capture_id",
+        lineage="silver_census_decennial.observation_revision, "
+        "silver_ref.geography_resolution",
+        scope_method="registered variables x registered slices",
+        cadence="per 2020 Census replay",
+        empty_behavior="a missing count is retained with status missing, never zero",
+    ),
+    _obj(
+        "gold_census_decennial.count_revision",
+        "gold",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id, capture_id (published slices only)",
+        lineage="silver_census_decennial.fact_count, control.census_decennial_slice",
+        scope_method="published slices; blocks are not served",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_decennial.count_latest",
+        "gold",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id (newest capture)",
+        lineage="gold_census_decennial.count_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_decennial.measure_export",
+        "publisher",
+        "CENSUS_DECENNIAL",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_census_decennial.dim_variable",
+        scope_method="registered variables",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_decennial.metric_publisher",
+        "publisher",
+        "CENSUS_DECENNIAL",
+        grain="source_object_key (dataset:variable)",
+        lineage="gold_census_decennial.count_latest, silver_census_decennial.dim_variable",
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published slice",
@@ -5239,6 +5338,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _IRS_MIGRATION_OBJECTS
     + _IRS_SOI_OBJECTS
     + _SAE_OBJECTS
+    + _DECENNIAL_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -5627,6 +5727,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_irs_soi.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
+            "gold_census_decennial.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -7472,6 +7573,88 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "`SaeReconciliationError` and commits nothing when a run does not "
             "reconcile, so a mismatch cannot reach gold, but no executor "
             "re-measures retained runs afterwards."
+        ),
+    ),
+    # -- 2020 Census redistricting data (group quarters) ---------------------
+    _rule(
+        "DQ-DECENNIAL-001",
+        "BLOCK",
+        "uniqueness",
+        "2020 Census counts are unique per (dataset, variable, geography, "
+        "capture): a second read is a second row beside the first, never an "
+        "overwrite.",
+        (
+            "silver_census_decennial.fact_count",
+            "gold_census_decennial.count_revision",
+            "gold_census_decennial.count_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary "
+            "key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("dataset_id", "variable_id", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-002",
+        "BLOCK",
+        "conformance",
+        "A valid count carries a number and a missing one carries none: a "
+        "null or non-numeric count is never coerced to zero.",
+        (
+            "silver_census_decennial.fact_count",
+            "silver_census_decennial.observation_revision",
+            "gold_census_decennial.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints on the revision "
+            "and the fact refuse a status that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="decennial_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="decennial_fact_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-003",
+        "WARN",
+        "reconciliation",
+        "For every area, a count's published parts add to it: the group "
+        "quarters types to the institutional and noninstitutional totals, "
+        "those to all group quarters, and occupied plus vacant to housing "
+        "units. A mismatch is reported and the counts stay as published.",
+        (
+            "silver_census_decennial.fact_count",
+            "silver_census_decennial.dim_variable",
+            "control.census_decennial_slice",
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-004",
+        "WARN",
+        "reconciliation",
+        "A county's tracts add to the county's own published count, for "
+        "every variable. A mismatch is reported and the counts stay as "
+        "published.",
+        (
+            "silver_census_decennial.fact_count",
+            "control.census_decennial_slice",
         ),
     ),
     # -- IRS SOI county migration -------------------------------------------

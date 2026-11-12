@@ -2454,6 +2454,115 @@ def treasury_mts_function_total(
     ]
 
 
+#: The newest published capture of every 2020 Census count with a value.
+#: The newest published capture of each count. Written without ORDER BY (the
+#: offender helper refuses one): the newest is the largest
+#: (retrieved_at, capture_id) pair among the published captures.
+_DECENNIAL_LATEST = """
+    SELECT fact.dataset_id, fact.variable_id, fact.geo_id, fact.geo_type, fact.value
+      FROM silver_census_decennial.fact_count AS fact
+      JOIN control.census_decennial_slice AS slice
+        ON slice.capture_id = fact.capture_id AND slice.status = 'published'
+     WHERE fact.value_status = 'valid'
+       AND NOT EXISTS (
+           SELECT 1
+             FROM silver_census_decennial.fact_count AS newer
+             JOIN control.census_decennial_slice AS newer_slice
+               ON newer_slice.capture_id = newer.capture_id
+              AND newer_slice.status = 'published'
+            WHERE newer.dataset_id = fact.dataset_id
+              AND newer.variable_id = fact.variable_id
+              AND newer.geo_id = fact.geo_id
+              AND (newer.retrieved_at, newer.capture_id)
+                  > (fact.retrieved_at, fact.capture_id)
+       )
+"""
+
+
+def decennial_part_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-DECENNIAL-003 — each count's parts add to it as published, per area."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.census_decennial_slice WHERE status = 'published'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_census_decennial.fact_count", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH latest AS MATERIALIZED ({_DECENNIAL_LATEST})
+        SELECT parent.geo_id, parent.variable_id, parent.value, SUM(child.value) AS parts
+          FROM latest AS parent
+          JOIN silver_census_decennial.dim_variable AS variable
+            ON variable.dataset_id = parent.dataset_id
+           AND variable.parent_variable = parent.variable_id
+          JOIN latest AS child
+            ON child.dataset_id = parent.dataset_id
+           AND child.geo_id = parent.geo_id
+           AND child.variable_id = variable.variable_id
+         GROUP BY parent.geo_id, parent.variable_id, parent.value
+        HAVING parent.value <> SUM(child.value)
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_census_decennial.fact_count",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def decennial_tract_county_sums(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-DECENNIAL-004 — a county's tracts add to the county's own count."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.census_decennial_slice "
+        "WHERE status = 'published' AND geo_level = 'tract'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_census_decennial.fact_count", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        f"""
+        WITH latest AS MATERIALIZED ({_DECENNIAL_LATEST}),
+        tracts AS (
+            SELECT dataset_id, variable_id,
+                   split_part(geo_id, '|', 1) || '|' || split_part(geo_id, '|', 2) AS county_geo_id,
+                   SUM(value) AS tract_sum
+              FROM latest
+             WHERE geo_type = 'tract'
+             GROUP BY 1, 2, 3
+        )
+        SELECT county.geo_id, county.variable_id, county.value, tracts.tract_sum
+          FROM latest AS county
+          JOIN tracts
+            ON tracts.dataset_id = county.dataset_id
+           AND tracts.variable_id = county.variable_id
+           AND tracts.county_geo_id = county.geo_id
+         WHERE county.geo_type = 'county'
+           AND county.value <> tracts.tract_sum
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "silver_census_decennial.fact_count",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def usaspending_request_reconciliation(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
@@ -5359,6 +5468,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-CLIMDIV-004": climdiv_value_range,
     "DQ-TREASURY-002": treasury_mts_page_reconciliation,
     "DQ-TREASURY-004": treasury_mts_function_total,
+    "DQ-DECENNIAL-003": decennial_part_sums,
+    "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,
     "DQ-USASPENDING-004": usaspending_group_total,
     "DQ-STORM-002": storm_events_file_reconciliation,
