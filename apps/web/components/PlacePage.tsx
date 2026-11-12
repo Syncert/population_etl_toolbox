@@ -104,7 +104,7 @@ import type { MetroPageResponse, MetroSummary } from "../lib/metroPages";
 import { CHILDCARE_CODES, CHILDCARE_CPI_CODE } from "../lib/childcare";
 import type { InfantCareRead } from "../lib/childcare";
 import { FAMILY_CODES } from "../lib/familyCodes";
-import { NORMALS_CODES } from "../lib/climateNormals";
+import { NORMALS_CODES } from "../lib/climateCodes";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
 /** The grains `/public-money` answers (taxes-and-public-money T-6). */

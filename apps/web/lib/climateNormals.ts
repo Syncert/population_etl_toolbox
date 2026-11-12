@@ -24,7 +24,8 @@ export const NORMALS_MEASURES: readonly { key: NormalsMeasure; code: string; tit
   { key: "low", code: `${NORMALS_SOURCE}:monthly_mean_minimum_temperature`, title: "Mean daily low", short: "Low" },
   { key: "precipitation", code: `${NORMALS_SOURCE}:monthly_precipitation`, title: "Precipitation", short: "Precip." },
 ];
-export const NORMALS_CODES: readonly string[] = NORMALS_MEASURES.map((measure) => measure.code);
+import { NORMALS_CODES } from "./climateCodes";
+export { NORMALS_CODES };
 
 export const MONTHS = [
   "January", "February", "March", "April", "May", "June",
