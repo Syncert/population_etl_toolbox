@@ -7797,7 +7797,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "In every published archive, no precipitation, snowfall or degree-day "
         "normal is negative, no station sits on a county boundary, and every station "
         "NCEI codes to the United States (GHCN country US) falls inside a "
-        "county of the recorded boundary vintage.",
+        "county of the recorded boundary vintage or is placed on the nearest "
+        "county within 1,000 metres of it.",
         (
             "silver_noaa_normals.station",
             "silver_noaa_normals.station_normal",

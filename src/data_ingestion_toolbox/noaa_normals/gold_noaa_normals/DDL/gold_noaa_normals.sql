@@ -10,7 +10,9 @@ SELECT measure.measure, measure.measure_label, measure.unit,
        'NOAA U.S. Climate Normals 1991-2020 (' || measure.archive || ', by station): a 30-year '
        || 'normal, not the value of any one year' || measure.period_note || '. NCEI publishes '
        || 'normals for stations, not counties; this warehouse''s county figure is the unweighted '
-       || 'mean of the stations it places inside the county boundary, counting only stations NCEI '
+       || 'mean of the stations it places inside the county boundary (or, for a station no county '
+       || 'boundary covers, on the nearest county when that county''s boundary is within 1,000 '
+       || 'metres, as named in the placement note), counting only stations NCEI '
        || 'flags standard (S) or representative (R) for that element. It is a derived summary, '
        || 'not an NCEI product. ' || measure.statistic || ' Source: NOAA National Centers for '
        || 'Environmental Information, U.S. Climate Normals 1991-2020.' AS observation_basis,
@@ -64,7 +66,8 @@ SELECT normal.run_id, normal.station_id, station.station_name, station.latitude,
        station.geography_status, station.geography_reason,
        normal.variable, normal.measure, normal.value_source, normal.value, normal.value_status,
        normal.missing_reason, normal.measurement_flag, normal.completeness_flag, normal.years,
-       normal.source_record_id, normal.capture_id, file.archive_version, file.published_at
+       normal.source_record_id, normal.capture_id, file.archive_version, file.published_at,
+       station.placement_method, station.placement_distance_m
 FROM silver_noaa_normals.station_normal AS normal
 JOIN silver_noaa_normals.station AS station
   ON station.run_id = normal.run_id AND station.station_id = normal.station_id
@@ -79,7 +82,8 @@ SELECT normal.run_id, normal.station_id, station.station_name, station.latitude,
        station.geography_status, station.geography_reason,
        normal.variable, normal.measure, normal.month, normal.value_source, normal.value,
        normal.value_status, normal.missing_reason, normal.measurement_flag, normal.completeness_flag,
-       normal.years, normal.source_record_id, normal.capture_id, file.archive_version, file.published_at
+       normal.years, normal.source_record_id, normal.capture_id, file.archive_version, file.published_at,
+       station.placement_method, station.placement_distance_m
 FROM silver_noaa_normals.station_monthly_normal AS normal
 JOIN silver_noaa_normals.station AS station
   ON station.run_id = normal.run_id AND station.station_id = normal.station_id
@@ -93,7 +97,8 @@ CREATE OR REPLACE VIEW gold_noaa_normals.observation_revision AS
 WITH eligible AS (
     SELECT station.run_id, station.measure, NULL::SMALLINT AS month, station.geo_id,
            station.geo_sk, station.value, station.station_id, station.boundary_vintage,
-           station.archive_version, station.capture_id, station.published_at
+           station.archive_version, station.capture_id, station.published_at,
+           station.placement_method, station.placement_distance_m
     FROM gold_noaa_normals.station_observation AS station
     WHERE station.geography_status = 'resolved'
       AND station.completeness_flag IN ('S', 'R')
@@ -101,7 +106,8 @@ WITH eligible AS (
     UNION ALL
     SELECT station.run_id, station.measure, station.month, station.geo_id,
            station.geo_sk, station.value, station.station_id, station.boundary_vintage,
-           station.archive_version, station.capture_id, station.published_at
+           station.archive_version, station.capture_id, station.published_at,
+           station.placement_method, station.placement_distance_m
     FROM gold_noaa_normals.station_monthly_observation AS station
     WHERE station.geography_status = 'resolved'
       AND station.completeness_flag IN ('S', 'R')
@@ -116,7 +122,10 @@ county AS (
            MIN(eligible.boundary_vintage) AS boundary_vintage,
            MIN(eligible.archive_version) AS archive_version,
            MIN(eligible.capture_id::TEXT)::UUID AS capture_id,
-           MIN(eligible.published_at) AS published_at
+           MIN(eligible.published_at) AS published_at,
+           STRING_AGG(eligible.station_id || ' (' || ROUND(eligible.placement_distance_m)::TEXT || ' m)',
+                      ', ' ORDER BY eligible.station_id)
+               FILTER (WHERE eligible.placement_method = 'nearest_county') AS nearest_stations
     FROM eligible
     GROUP BY eligible.run_id, eligible.measure, eligible.month, eligible.geo_id
 )
@@ -148,7 +157,13 @@ SELECT county.measure AS metric_key,
            || COALESCE('|' || LPAD(county.month::TEXT, 2, '0'), '')) AS source_record_id,
        county.capture_id,
        county.run_id,
-       county.month
+       county.month,
+       -- Stations no county boundary covers, placed on the nearest county
+       -- within 1,000 m (the loader's NEAREST_COUNTY_CAP_METRES).
+       CASE WHEN county.nearest_stations IS NOT NULL
+            THEN 'Includes stations no county boundary covers, placed on this county as the '
+                 || 'nearest county boundary within 1,000 metres: ' || county.nearest_stations || '.'
+       END AS placement_note
 FROM county
 JOIN gold_noaa_normals.measure_definition AS definition ON definition.measure = county.measure;
 

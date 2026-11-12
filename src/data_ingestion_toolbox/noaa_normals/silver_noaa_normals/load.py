@@ -7,7 +7,9 @@ the quarantine land together or not at all. A run the capture found
 
 NCEI gives each station coordinates, not a county. The county is assigned
 here: the county boundary of the newest loaded vintage that covers the point,
-and that vintage is recorded on the run and on every station.
+or, for a point no boundary covers, the nearest county within
+``NEAREST_COUNTY_CAP_METRES`` (recorded as ``nearest_county`` with its
+distance). That vintage is recorded on the run and on every station.
 """
 
 from __future__ import annotations
@@ -75,8 +77,41 @@ _STAGE_COUNTY_SHAPES = (
     "ANALYZE normals_station_point",
 )
 
+#: A station no county shape covers is placed on the nearest county only when
+#: that county's shape is within this many metres of the station: the 1:500k
+#: shapes follow a generalised shoreline, so a pier, point or harbour station
+#: can sit just off them while standing in the county. Nothing farther is
+#: placed (Nick, 2026-11-12).
+NEAREST_COUNTY_CAP_METRES = 1000
+
+#: The nearest county shape of every station no shape covers, when it lies
+#: within the cap. The five nearest shapes by the index are measured on the
+#: spheroid and the closest is taken.
+_STAGE_NEAREST = """
+CREATE TEMPORARY TABLE normals_nearest ON COMMIT DROP AS
+SELECT point.station_id, nearest.geo_sk, nearest.geo_id, ROUND(nearest.metres::NUMERIC, 1) AS metres
+FROM normals_station_point AS point
+CROSS JOIN LATERAL (
+    SELECT candidate.geo_sk, candidate.geo_id,
+           ST_Distance(candidate.geom::geography, point.point::geography) AS metres
+    FROM (
+        SELECT shape.geo_sk, shape.geo_id, shape.geom
+        FROM normals_county_shape AS shape
+        ORDER BY shape.geom <-> point.point
+        LIMIT 5
+    ) AS candidate
+    ORDER BY 3, 1
+    LIMIT 1
+) AS nearest
+WHERE NOT EXISTS (
+    SELECT 1 FROM normals_county_shape AS shape WHERE ST_Covers(shape.geom, point.point)
+)
+  AND nearest.metres <= %(cap)s
+"""
+
 #: Each station point probes the county shape index; a point on a shared
-#: boundary is covered by more than one county and is not placed.
+#: boundary is covered by more than one county and is not placed. Only a
+#: station whose placement changed is rewritten (churn rule).
 _ASSIGN_COUNTIES = """
 WITH matched AS (
     SELECT point.station_id,
@@ -88,29 +123,110 @@ WITH matched AS (
     GROUP BY point.station_id
 ),
 assigned AS (
-    SELECT point.station_id, point.boundary_vintage, COALESCE(matched.counties, 0) AS counties,
-           matched.geo_sk, matched.geo_id
+    SELECT point.station_id, point.boundary_vintage,
+           COALESCE(matched.counties, 0) AS counties,
+           COALESCE(matched.geo_sk, nearest.geo_sk) AS geo_sk,
+           COALESCE(matched.geo_id, nearest.geo_id) AS geo_id,
+           nearest.metres AS nearest_metres
     FROM normals_station_point AS point
     LEFT JOIN matched ON matched.station_id = point.station_id
+    LEFT JOIN normals_nearest AS nearest ON nearest.station_id = point.station_id
+),
+placed AS (
+    SELECT assigned.station_id, assigned.boundary_vintage,
+           CASE WHEN assigned.counties = 1 OR assigned.nearest_metres IS NOT NULL
+                THEN assigned.geo_sk END AS geo_sk,
+           CASE WHEN assigned.counties = 1 OR assigned.nearest_metres IS NOT NULL
+                THEN assigned.geo_id END AS geo_id,
+           CASE
+               WHEN assigned.counties = 1 OR assigned.nearest_metres IS NOT NULL THEN 'resolved'
+               WHEN assigned.counties > 1 THEN 'ambiguous'
+               ELSE 'unmapped'
+           END AS geography_status,
+           CASE
+               WHEN assigned.counties = 1 OR assigned.nearest_metres IS NOT NULL THEN NULL
+               WHEN assigned.counties > 1 THEN 'on_county_boundary'
+               WHEN assigned.boundary_vintage IS NULL THEN 'no_county_boundaries'
+               ELSE 'outside_counties'
+           END AS geography_reason,
+           CASE
+               WHEN assigned.counties = 1 THEN 'inside_county'
+               WHEN assigned.nearest_metres IS NOT NULL THEN 'nearest_county'
+           END AS placement_method,
+           assigned.nearest_metres AS placement_distance_m
+    FROM assigned
 )
 UPDATE silver_noaa_normals.station AS station
-   SET boundary_vintage = assigned.boundary_vintage,
-       geo_sk = CASE WHEN assigned.counties = 1 THEN assigned.geo_sk END,
-       geo_id = CASE WHEN assigned.counties = 1 THEN assigned.geo_id END,
-       geography_status = CASE
-           WHEN assigned.counties = 1 THEN 'resolved'
-           WHEN assigned.counties > 1 THEN 'ambiguous'
-           ELSE 'unmapped'
-       END,
-       geography_reason = CASE
-           WHEN assigned.counties = 1 THEN NULL
-           WHEN assigned.counties > 1 THEN 'on_county_boundary'
-           WHEN assigned.boundary_vintage IS NULL THEN 'no_county_boundaries'
-           ELSE 'outside_counties'
-       END
-FROM assigned
-WHERE station.run_id = %(run_id)s AND station.station_id = assigned.station_id
+   SET boundary_vintage = placed.boundary_vintage,
+       geo_sk = placed.geo_sk,
+       geo_id = placed.geo_id,
+       geography_status = placed.geography_status,
+       geography_reason = placed.geography_reason,
+       placement_method = placed.placement_method,
+       placement_distance_m = placed.placement_distance_m
+FROM placed
+WHERE station.run_id = %(run_id)s AND station.station_id = placed.station_id
+  AND (station.boundary_vintage, station.geo_sk, station.geo_id, station.geography_status,
+       station.geography_reason, station.placement_method, station.placement_distance_m)
+      IS DISTINCT FROM
+      (placed.boundary_vintage, placed.geo_sk, placed.geo_id, placed.geography_status,
+       placed.geography_reason, placed.placement_method, placed.placement_distance_m)
 """
+
+
+def _place_stations(cursor: Any, run_id: UUID | str) -> None:
+    """Assign every station of a run to a county of the newest boundary vintage."""
+    parameters = {"run_id": str(run_id), "cap": NEAREST_COUNTY_CAP_METRES}
+    for statement in _STAGE_COUNTY_SHAPES:
+        cursor.execute(statement, parameters)
+    cursor.execute(_STAGE_NEAREST, parameters)
+    cursor.execute(_ASSIGN_COUNTIES, parameters)
+    cursor.execute(
+        "DROP TABLE normals_nearest, normals_station_point, normals_county_shape"
+    )
+
+
+def place_published_stations(connection_factory: Callable[[], Any]) -> list[UUID]:
+    """Place again the stations of every published run placed before the current rule.
+
+    A run whose archive is unchanged replays nothing, so a placement rule
+    added later reaches its stations here: a run with a station that has no
+    placement method yet (placed before nearest-county placement) is placed
+    again, one transaction per run, rewriting only stations that change.
+    """
+    reader = connection_factory()
+    try:
+        with reader.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT file.run_id::TEXT
+                FROM control.noaa_normals_file AS file
+                WHERE file.status = 'published'
+                  AND EXISTS (
+                      SELECT 1 FROM silver_noaa_normals.station AS station
+                      WHERE station.run_id = file.run_id
+                        AND station.geography_status = 'resolved'
+                        AND station.placement_method IS NULL
+                  )
+                ORDER BY file.run_id
+                """
+            )
+            runs = [UUID(row[0]) for row in cursor.fetchall()]
+        reader.commit()
+    finally:
+        reader.close()
+    for run_id in runs:
+        connection = connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                _place_stations(cursor, run_id)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+    return runs
 
 
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
@@ -168,10 +284,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     ],
                     page_size=5000,
                 )
-                for statement in _STAGE_COUNTY_SHAPES:
-                    cursor.execute(statement, {"run_id": str(run_id)})
-                cursor.execute(_ASSIGN_COUNTIES, {"run_id": str(run_id)})
-                cursor.execute("DROP TABLE normals_station_point, normals_county_shape")
+                _place_stations(cursor, run_id)
             if parsed.observations and monthly:
                 execute_values(
                     cursor,

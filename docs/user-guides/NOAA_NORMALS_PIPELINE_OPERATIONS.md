@@ -59,9 +59,11 @@ such as `-9999` without one of those flags quarantines the station file.
 Replay places each station in the county boundary
 (`silver_ref.dim_geo_geometry_version`, `geo_type = 'county'`) of the newest
 boundary vintage loaded that covers its coordinates, and records that
-vintage on the run and every station. A station inside no county
-(Canada, territories without boundaries, offshore) is kept as `unmapped`
-with reason `outside_counties`; one on a shared edge is `ambiguous`; with no
+vintage on the run and every station. A station inside no county is placed
+on the nearest county when that county's boundary is within 1,000 m (a
+shoreline station just off the generalised shape, described below);
+otherwise (Canada, territories without boundaries, offshore) it is kept as
+`unmapped` with reason `outside_counties`; one on a shared edge is `ambiguous`; with no
 county boundaries loaded at all every station is `unmapped`
 (`no_county_boundaries`). Load the reference geography's boundaries before
 the first run, and re-run the DAG after a new boundary vintage loads to
@@ -127,7 +129,19 @@ SELECT metric_key, COUNT(*) FROM gold_noaa_normals.observation_latest GROUP BY 1
   failing and its error is in that task's log.
 - `DQ-NOAA-004` warns on a negative precipitation or degree-day normal, a
   station on a county edge, or a station NCEI codes to the United States
-  (GHCN country `US`) that falls outside every county.
+  (GHCN country `US`) that falls outside every county and is not within
+  1,000 m of one.
+
+The county shapes are Census 1:500k cartographic boundaries, which follow a
+generalised shoreline, so a pier, point or harbour station can sit just off
+every shape. A station no shape covers is placed on the nearest county when
+that county's shape is within 1,000 m (`placement_method = 'nearest_county'`,
+with `placement_distance_m`), and the county row's `placement_note` names it
+with its distance. A station farther away stays `unmapped`
+(`outside_counties`) and is never counted: in the 2025 shapes these are
+Vero Beach Intl AP, FL (10.6 km) and S Padre Is, TX (5.0 km). Each
+`noaa_normals_ingest` run first places again any published run whose
+stations were placed before this rule.
 
 Source: NOAA National Centers for Environmental Information, U.S. Climate
 Normals 1991-2020.

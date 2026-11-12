@@ -26,6 +26,7 @@ from data_ingestion_toolbox.noaa_normals.schema import ensure_noaa_normals_schem
 from data_ingestion_toolbox.noaa_normals.silver_noaa_normals.load import (
     publish_run,
     replay_run,
+    place_published_stations,
     settle_unreplayed_runs,
 )
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -78,6 +79,9 @@ def noaa_normals_ingest():
         # A retry after a failed replay reads the archive again under a new
         # run; finish the run it left behind first (DQ-NOAA-002).
         settled = settle_unreplayed_runs(connection_factory)
+        # A placement rule added after a run was published reaches its
+        # stations here, since an unchanged archive replays nothing.
+        replaced = place_published_stations(connection_factory)
         run_id, status = capture_archive(connection_factory, config=NormalsConfig())
         normals = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))
@@ -85,6 +89,7 @@ def noaa_normals_ingest():
             "run_id": str(run_id),
             "status": status,
             "settled_runs": [str(settled_run) for settled_run in settled],
+            "replaced_runs": [str(replaced_run) for replaced_run in replaced],
             "normals": normals,
             "published": published,
         }
