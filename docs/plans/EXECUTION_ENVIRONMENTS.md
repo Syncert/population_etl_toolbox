@@ -104,7 +104,7 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**15 plans.**
+**16 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -123,6 +123,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`thrifty-food-plan-grocery-cost`](to_do/THRIFTY_FOOD_PLAN_GROCERY_COST_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
 | [`tiles-places-and-metros`](in_progress/PLACE_AND_METRO_MAP_TILES_PLAN.md) | medium | `postgres` | `sub-county-geography`, `grocery-and-gasoline-prices`, `api-place-search` |
 | [`weather-and-disaster-history`](to_do/WEATHER_AND_DISASTER_HISTORY_PLAN.md) | high | `browser`, `postgres` | -- |
+| [`where-public-money-goes`](to_do/WHERE_PUBLIC_MONEY_GOES_PLAN.md) | high | `browser`, `postgres` | -- |
 
 
 ## Notes on the cloud container
