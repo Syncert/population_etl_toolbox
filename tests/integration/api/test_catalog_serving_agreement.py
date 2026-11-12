@@ -41,6 +41,7 @@ from tests.support import irs_soi as soi_support
 from tests.support import census_decennial as decennial_support
 from tests.support import cms_ltc as cms_support
 from tests.support import nces_ipeds as ipeds_support
+from tests.support import cdc_covid_cases as covid_support
 from tests.support import hhs_hospital_capacity as hhs_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
@@ -989,6 +990,18 @@ def published_ipeds_metric(
 
 
 @pytest.fixture
+def published_covid_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the CDC case counts through their real pipeline."""
+    factory = covid_support.reviewed_warehouse(postgres_connection_factory, request)
+    covid_support.load_snapshot(factory)
+    harvest_publisher(factory, Publisher("gold_cdc_covid_cases"))
+    return _one_published_code(factory, "CDC_COVID_CASES")
+
+
+@pytest.fixture
 def published_hhs_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1329,6 +1342,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_cms_metric: str,
     published_ipeds_metric: str,
     published_hhs_metric: str,
+    published_covid_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1399,6 +1413,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CMS_LTC", published_cms_metric),
         ("NCES_IPEDS", published_ipeds_metric),
         ("HHS_HOSPITAL_CAPACITY", published_hhs_metric),
+        ("CDC_COVID_CASES", published_covid_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1565,6 +1580,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_cms_metric: str,
     published_ipeds_metric: str,
     published_hhs_metric: str,
+    published_covid_metric: str,
     published_cdc_county_metric: str,
     published_cdc_tract_metric: str,
     published_fred_metric: str,

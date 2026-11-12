@@ -621,6 +621,43 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="HHS_HOSPITAL_CAPACITY",
     ),
     WarehouseSource(
+        code="CDC_COVID_CASES",
+        name="COVID-19 case records by county, month and age (CDC)",
+        publisher="Centers for Disease Control and Prevention",
+        topic="Health",
+        module="cdc_covid_cases",
+        dag="cdc_covid_cases_ingest",
+        cadence="Operator-triggered (the dataset is frozen)",
+        release="One frozen dataset, case months 2020-01 to 2024-07",
+        grains={"nation": "d", "state": "d", "county": "d"},
+        years=[(2020, 2024)],
+        years_note="Monthly by case month, 2020-01 to 2024-07",
+        datasets=[
+            "n8mc-b4w4 (COVID-19 Case Surveillance Public Use Data with Geography)",
+        ],
+        measures=(
+            "Per county, state and nation of residence, case month and age group: CDC's "
+            "published case records, those hospitalised, those who died, and those whose "
+            "hospitalisation or death is not known; counts of published records, not of all "
+            "cases. Race and ethnicity are not loaded."
+        ),
+        raw=[],
+        control=[
+            "control.cdc_covid_cases_snapshot",
+            "control.cdc_covid_cases_slice",
+        ],
+        silver=[
+            "silver_cdc_covid_cases.slice_group",
+            "silver_cdc_covid_cases.area_month",
+        ],
+        gold=[
+            "gold_cdc_covid_cases.area_revision",
+            "gold_cdc_covid_cases.area_latest",
+        ],
+        credential="none",
+        catalog_source_code="CDC_COVID_CASES",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

@@ -39,6 +39,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Nursing home residents and beds](#cms_ltc) | Centers for Medicare & Medicaid Services | ◐ | ◐ | ◐ |  |  |  |  | 2011–2026 | Monthly | Not loaded yet |
 | [College housing capacity and enrolment](#nces_ipeds) | National Center for Education Statistics | ◐ | ◐ | ◐ |  |  |  |  | 2012–2024 | Monthly | Not loaded yet |
 | [Hospital beds and occupancy by week](#hhs_hospital_capacity) | U.S. Department of Health and Human Services | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
+| [COVID-19 case records by county, month and age](#cdc_covid_cases) | Centers for Disease Control and Prevention | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -293,6 +294,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_hhs_hospital_capacity.facility`, `silver_hhs_hospital_capacity.facility_week_value`, `silver_hhs_hospital_capacity.area_week`, `silver_hhs_hospital_capacity.dim_measure`, `silver_hhs_hospital_capacity.quarantine`
 - **Gold:** `gold_hhs_hospital_capacity.area_revision`, `gold_hhs_hospital_capacity.area_latest`, `gold_hhs_hospital_capacity.facility_latest`, `gold_hhs_hospital_capacity.facility_week`
 - **Status:** Not loaded yet (added 2026-11-12, plan `hospital-capacity-and-locations`).
+
+<a id="cdc_covid_cases"></a>
+### COVID-19 case records by county, month and age (`CDC_COVID_CASES`)
+
+- **Publisher:** Centers for Disease Control and Prevention
+- **Code:** `src/data_ingestion_toolbox/cdc_covid_cases` · DAG `cdc_covid_cases_ingest` · Operator-triggered (the dataset is frozen)
+- **Publisher releases:** "COVID-19 Case Surveillance Public Use Data with Geography", data.cdc.gov Socrata dataset `n8mc-b4w4` (`https://data.cdc.gov/resource/n8mc-b4w4.json`), Public Domain U.S. Government; one row per case record.
+- **Credential:** none
+- **Months:** case months 2020-01 to 2024-07.
+- **Measures:** Per county, state and nation of residence, case month and age group: CDC's published case records, those hospitalised, those who died, and those whose hospitalisation or death is not known. Counts of the records CDC published, not of all cases. Race and ethnicity are never requested.
+- **Placement:** By CDC's county of residence code; CDC writes `NA` where it withholds the county, and those records count in the state and nation only (`unplaced_record_count`). An area, month and age group with no published record has no row, never zero.
+- **Capture and control:** `control.cdc_covid_cases_snapshot`, `control.cdc_covid_cases_slice` (the slice index, then one grouped request per state and month; each slice must add up to the index; an interrupted run resumes at the next slice)
+- **Silver:** `silver_cdc_covid_cases.slice_group`, `silver_cdc_covid_cases.area_month`, `silver_cdc_covid_cases.dim_measure`, `silver_cdc_covid_cases.quarantine`
+- **Gold:** `gold_cdc_covid_cases.area_revision`, `gold_cdc_covid_cases.area_latest`
+- **Status:** Not loaded yet (added 2026-11-12, plan `outbreak-calibration-sets`).
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)

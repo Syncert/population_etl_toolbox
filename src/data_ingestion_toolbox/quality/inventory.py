@@ -88,6 +88,7 @@ SOURCES: tuple[str, ...] = (
     "CMS_LTC",
     "NCES_IPEDS",
     "HHS_HOSPITAL_CAPACITY",
+    "CDC_COVID_CASES",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2958,6 +2959,112 @@ _HHS_HOSPITAL_CAPACITY_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# CDC COVID-19 case surveillance record counts (data.cdc.gov n8mc-b4w4).
+# ---------------------------------------------------------------------------
+
+_CDC_COVID_CASES_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cdc_covid_cases_snapshot",
+        "control",
+        "CDC_COVID_CASES",
+        grain="snapshot_id (one complete read of the frozen dataset)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered dataset; history runs only",
+        cadence="operator-triggered; never read again once published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.cdc_covid_cases_slice",
+        "control",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, slice_index (one state and case month)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every state-month the slice index names; resumes at the next pending slice",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.dim_measure",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="measure_id",
+        scope_method="registered counts in cdc_covid_cases/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.quarantine",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected group, with its record count; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every group conformed",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.slice_group",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, slice_index, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every group CDC's API returned per state-month: county, age group, hospitalisation and death text with its record count",
+        cadence="per replay",
+        empty_behavior="a combination with no published record has no row",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.area_month",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, measure_id, age_key, geo_id, case_month",
+        lineage="silver_cdc_covid_cases.slice_group, silver_ref.dim_geo_entity",
+        scope_method="counts of published case records by county, state and nation, month, age group and measure",
+        cadence="per replay",
+        empty_behavior="an area, month and age group with no published record has no row, never zero",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.area_revision",
+        "gold",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, measure_id, age_key, geo_id, period_start (published snapshots only)",
+        lineage="silver_cdc_covid_cases.area_month, control.cdc_covid_cases_snapshot",
+        scope_method="published snapshots",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.area_latest",
+        "gold",
+        "CDC_COVID_CASES",
+        grain="metric_key, geo_id, period_start (newest published snapshot)",
+        lineage="gold_cdc_covid_cases.area_revision",
+        scope_method="newest-snapshot projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.measure_export",
+        "publisher",
+        "CDC_COVID_CASES",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cdc_covid_cases.dim_measure",
+        scope_method="registered counts",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.metric_publisher",
+        "publisher",
+        "CDC_COVID_CASES",
+        grain="source_object_key (covid:measure:age)",
+        lineage="silver_cdc_covid_cases.area_month, silver_cdc_covid_cases.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # 2020 Census redistricting data (group quarters by type).
 # ---------------------------------------------------------------------------
 
@@ -5744,6 +5851,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _CMS_LTC_OBJECTS
     + _NCES_IPEDS_OBJECTS
     + _HHS_HOSPITAL_CAPACITY_OBJECTS
+    + _CDC_COVID_CASES_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -6136,6 +6244,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cms_ltc.metric_publisher",
             "gold_nces_ipeds.metric_publisher",
             "gold_hhs_hospital_capacity.metric_publisher",
+            "gold_cdc_covid_cases.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -8217,6 +8326,76 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_hhs_hospital_capacity.facility",
             "control.hhs_hospital_capacity_snapshot",
+        ),
+    ),
+    # -- CDC COVID-19 case surveillance counts --------------------------------
+    _rule(
+        "DQ-COVID-001",
+        "BLOCK",
+        "uniqueness",
+        "A CDC case surveillance snapshot holds one row per returned group and "
+        "one count per measure, age group, area and month; a second read is a "
+        "second snapshot beside the first, never an overwrite.",
+        (
+            "control.cdc_covid_cases_slice",
+            "silver_cdc_covid_cases.slice_group",
+            "silver_cdc_covid_cases.area_month",
+            "gold_cdc_covid_cases.area_revision",
+            "gold_cdc_covid_cases.area_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "control.cdc_covid_cases_slice", ("snapshot_id", "slice_index")
+            ),
+            EnforcedGrain(
+                "silver_cdc_covid_cases.slice_group",
+                ("snapshot_id", "slice_index", "source_row_index"),
+            ),
+            EnforcedGrain(
+                "silver_cdc_covid_cases.area_month",
+                ("snapshot_id", "measure_id", "age_key", "geo_id", "case_month"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-COVID-002",
+        "BLOCK",
+        "conformance",
+        "A hospitalised, died or not-known count never exceeds the case "
+        "records of its area, month and age group.",
+        (
+            "silver_cdc_covid_cases.area_month",
+            "silver_cdc_covid_cases.dim_measure",
+            "gold_cdc_covid_cases.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: a named CHECK constraint refuses a count "
+            "above the case records."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_covid_cases.area_month",
+                ("value", "case_record_count"),
+                kind="check",
+                constraint_name="cdc_covid_area_within_records",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-COVID-003",
+        "WARN",
+        "completeness",
+        "Records of the newest published CDC case surveillance snapshot that "
+        "were set aside (a group whose county code, age group or count could "
+        "not be read) are counted. They are in no served count.",
+        (
+            "silver_cdc_covid_cases.quarantine",
+            "control.cdc_covid_cases_snapshot",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

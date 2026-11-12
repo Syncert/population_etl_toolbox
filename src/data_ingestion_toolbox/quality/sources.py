@@ -2643,6 +2643,44 @@ def hhs_unplaced_hospitals(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOu
     ]
 
 
+def cdc_covid_set_aside_records(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-COVID-003 — records of the newest published snapshot set aside."""
+    del scope
+    published = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.cdc_covid_cases_snapshot WHERE status = 'published'",
+    )
+    if published == 0:
+        return [RuleOutcome("silver_cdc_covid_cases.quarantine", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT quarantine.error_code, quarantine.capture_id::TEXT,
+               quarantine.source_row_index, COALESCE(quarantine.record_count, 0)
+          FROM silver_cdc_covid_cases.quarantine AS quarantine
+          JOIN control.cdc_covid_cases_snapshot AS snapshot
+            ON snapshot.snapshot_id = quarantine.snapshot_id
+         WHERE snapshot.status = 'published'
+           AND snapshot.published_at = (
+               SELECT MAX(published_at) FROM control.cdc_covid_cases_snapshot
+                WHERE status = 'published'
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_cdc_covid_cases.quarantine",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def decennial_part_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-DECENNIAL-003 — each count's parts add to it as published, per area."""
     del scope
@@ -5635,6 +5673,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-CMSLTC-003": cms_ltc_unplaced_facilities,
     "DQ-IPEDS-003": nces_ipeds_point_outside_county,
     "DQ-HHS-003": hhs_unplaced_hospitals,
+    "DQ-COVID-003": cdc_covid_set_aside_records,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,

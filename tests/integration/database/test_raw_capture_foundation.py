@@ -148,6 +148,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "nces_ipeds_file"),
         ("control", "hhs_hospital_capacity_snapshot"),
         ("control", "hhs_hospital_capacity_page"),
+        ("control", "cdc_covid_cases_snapshot"),
+        ("control", "cdc_covid_cases_slice"),
         ("control", "census_bps_slice"),
         ("control", "bls_qcew_slice"),
         ("control", "bea_table_capture"),

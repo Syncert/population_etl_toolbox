@@ -504,7 +504,11 @@ run reads every registered IPEDS year from 2012
 ([operations](../user-guides/NCES_IPEDS_PIPELINE_OPERATIONS.md)). Unpause and
 trigger `hhs_hospital_capacity_ingest` once after the shared geography loads:
 it has no schedule, and a plain run reads the frozen HHS weekly hospital file
-once ([operations](../user-guides/HHS_HOSPITAL_CAPACITY_PIPELINE_OPERATIONS.md)). Trigger
+once ([operations](../user-guides/HHS_HOSPITAL_CAPACITY_PIPELINE_OPERATIONS.md)). Unpause and
+trigger `cdc_covid_cases_ingest` once after the shared geography loads: it
+has no schedule, and a plain run reads the frozen CDC case surveillance counts
+once, about 2,900 requests
+([operations](../user-guides/CDC_COVID_CASES_PIPELINE_OPERATIONS.md)). Trigger
 `census_govfin_ingest` once after BEA loads: a plain run captures every
 registered annual finance year, QTAX year and Census of Governments edition
 not yet answered, so there is no history run

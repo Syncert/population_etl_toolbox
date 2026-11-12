@@ -41,6 +41,7 @@ services:
       - ../../src/data_ingestion_toolbox/cms_ltc/DDL/silver_cms_ltc.sql:/docker-entrypoint-initdb.d/111b_silver_cms_ltc.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ipeds/DDL/silver_nces_ipeds.sql:/docker-entrypoint-initdb.d/111c_silver_nces_ipeds.sql:ro
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql:/docker-entrypoint-initdb.d/111d_silver_hhs_hospital_capacity.sql:ro
+      - ../../src/data_ingestion_toolbox/cdc_covid_cases/DDL/silver_cdc_covid_cases.sql:/docker-entrypoint-initdb.d/111e_silver_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql:/docker-entrypoint-initdb.d/112_silver_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql:/docker-entrypoint-initdb.d/113_silver_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/bea/DDL/silver_bea.sql:/docker-entrypoint-initdb.d/114_silver_bea.sql:ro
@@ -88,6 +89,7 @@ services:
       - ../../src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/gold_cms_ltc.sql:/docker-entrypoint-initdb.d/161b_gold_cms_ltc.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/gold_nces_ipeds.sql:/docker-entrypoint-initdb.d/161c_gold_nces_ipeds.sql:ro
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/gold_hhs_hospital_capacity.sql:/docker-entrypoint-initdb.d/161d_gold_hhs_hospital_capacity.sql:ro
+      - ../../src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/gold_cdc_covid_cases.sql:/docker-entrypoint-initdb.d/161e_gold_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql:/docker-entrypoint-initdb.d/162_gold_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql:/docker-entrypoint-initdb.d/163_gold_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql:/docker-entrypoint-initdb.d/163_gold_eia.sql:ro
@@ -126,6 +128,7 @@ services:
       - ../../src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/publisher.sql:/docker-entrypoint-initdb.d/191b_publisher_cms_ltc.sql:ro
       - ../../src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/publisher.sql:/docker-entrypoint-initdb.d/191c_publisher_nces_ipeds.sql:ro
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/publisher.sql:/docker-entrypoint-initdb.d/191d_publisher_hhs_hospital_capacity.sql:ro
+      - ../../src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/publisher.sql:/docker-entrypoint-initdb.d/191e_publisher_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql:/docker-entrypoint-initdb.d/192_publisher_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_eia.sql:ro
