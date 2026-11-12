@@ -1,36 +1,38 @@
----
-id: block-population-and-age-for-dane
-depends_on:
-  - group-quarters-by-type
-parallel_safe: true
-complexity: medium
-verify:
-  - python -m pytest tests/unit/census_decennial tests/unit/silver_ref tests/unit/api -q
-  - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "decennial or block" -q
-  - python -m pytest tests/dags -m dag -q
----
+# Set aside: Dane County shows how many people of each age live on each block
 
-# Dane County shows how many people of each age live on each block
+## Decision
 
-## Status
+Set aside on 2026-11-12 (22:51Z) by Nick, in the game project's thread
+"Research infection spread in populations": "I'd prefer to just spread tract
+data and call it a day. Distribute it reasonably over the buildings and have
+some common sense allocation rules. Avoid burning all my disk space."
 
-To do. Step 4 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+The game spreads tract figures over OpenStreetMap buildings instead. The tract
+figures it needs are in
+[`dane-tract-inputs-for-building-spread`](../../plans/to_do/DANE_TRACT_INPUTS_FOR_BUILDING_SPREAD_PLAN.md).
+The plan as drafted is kept below as the record; its links point to where the
+plans stood when it was set aside.
+
+## The plan as drafted
+
+### Status
+
+To do. Step 4 of [`outbreak-model-inputs`](../../plans/to_do/OUTBREAK_MODEL_INPUTS_PLAN.md).
 Places people inside a district smaller than a tract.
 
-## Sources
+### Sources
 
 - 2020 Census Demographic and Housing Characteristics, `api.census.gov/data/2020/dec/dhc`,
   table **P12 "Sex by age for selected age categories"** (P12_001N to
   P12_049N), at block grain for Dane County. The race iterations P12A to P12I
   are not requested.
-- Totals already requested by [`group-quarters-by-type`](GROUP_QUARTERS_BY_TYPE_PLAN.md)
+- Totals already requested by [`group-quarters-by-type`](../../plans/to_do/GROUP_QUARTERS_BY_TYPE_PLAN.md)
   (P1_001N, H1, P5) at block grain for Dane.
 - Census TIGER/Line 2020 blocks (`tabblock20`, Wisconsin file), for each
   block's shape, land and water area. Free, public domain, the same
   download family `silver_ref` already reads for tracts.
 
-## Design
+### Design
 
 - `silver_ref` gains a block geography for scoped counties: geo id
   `state:55|county:025|tract:NNNNNN|block:NNNN`, shape, land and water area,
@@ -45,14 +47,14 @@ Places people inside a district smaller than a tract.
 - DQ: P12 parts sum to P12_001N per block; blocks sum to the published tract
   and county figures for P1_001N (reported, never adjusted).
 
-## Size
+### Size
 
 Dane has about 11,000 blocks (about 7,000 with people). 49 + 14 variables
 gives about 0.7 million facts plus shapes: about 1 GB at the measured 1,300
 bytes per fact (was 0.1 GB). Every county would be about 660 GB and needs
 Nick's go.
 
-## Acceptance criteria
+### Acceptance criteria
 
 1. Every Dane block has its published total and P12 ages served, with its
    shape and land area.

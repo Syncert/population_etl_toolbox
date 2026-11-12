@@ -21,8 +21,9 @@ facilities for adults, of 561,504 people.
 
 The API answers ``for=block:*`` inside a county with ``in=state:55 county:025
 tract:*`` (10,961 Dane blocks in one 4-second response). Blocks are
-requested only for the counties ``BLOCK_COUNTIES`` declares, and it is empty
-until Nick decides where block data is built (outbreak-model-inputs).
+requested only for the counties ``BLOCK_COUNTIES`` declares, and it is empty:
+Nick set block data aside on 2026-11-12 in favour of spreading tract figures
+over buildings (dane-tract-inputs-for-building-spread).
 """
 
 from __future__ import annotations
@@ -40,8 +41,8 @@ GEO_LEVELS = ("us", "state", "county", "tract", "block")
 #: request per state.
 TRACT_PARENT_FIPS: tuple[str, ...] = ACS_COUNTY_PARENT_FIPS
 
-#: Five-digit county codes whose blocks are requested; none until Nick
-#: decides where block data is built (2026-11-12).
+#: Five-digit county codes whose blocks are requested; none, because Nick
+#: set block data aside on 2026-11-12.
 BLOCK_COUNTIES: tuple[str, ...] = ()
 
 

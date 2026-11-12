@@ -54,7 +54,7 @@ grep was looking for.
 | [`childcare-national-trend`](to_do/CHILDCARE_NATIONAL_PRICE_TREND_PLAN.md) | low | `browser` | `county-childcare-prices` |
 | [`everyday-prices-people-recognise`](to_do/EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md) | medium | `browser` | `groceries-and-gas-cards` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
-| [`outbreak-model-inputs`](to_do/OUTBREAK_MODEL_INPUTS_PLAN.md) | low | none | `group-quarters-by-type`, `nursing-home-locations`, `lodes-block-grain-for-dane`, `block-population-and-age-for-dane`, `college-housing-capacity`, `hospital-capacity-and-locations`, `places-tract-release`, `outbreak-calibration-sets`, `air-travel-and-mobility` |
+| [`outbreak-model-inputs`](to_do/OUTBREAK_MODEL_INPUTS_PLAN.md) | low | none | `group-quarters-by-type`, `nursing-home-locations`, `dane-tract-inputs-for-building-spread`, `college-housing-capacity`, `hospital-capacity-and-locations`, `places-tract-release`, `outbreak-calibration-sets`, `air-travel-and-mobility` |
 | [`place-climate-normals`](to_do/PLACE_CLIMATE_NORMALS_CARD_PLAN.md) | low | `browser` | `weather-and-disaster-history` |
 | [`starting-a-family-collection`](to_do/STARTING_A_FAMILY_COLLECTION_PLAN.md) | medium | `browser` | `county-childcare-prices` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
@@ -105,16 +105,16 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**25 plans.**
+**24 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`age-and-sex-structure-views`](to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md) | high | `browser`, `postgres` | `place-pages`, `api-per-capita-and-shares`, `web-cross-level-compare` |
 | [`air-travel-and-mobility`](to_do/AIR_TRAVEL_AND_MOBILITY_PLAN.md) | medium | `postgres` | -- |
-| [`block-population-and-age-for-dane`](to_do/BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | medium | `postgres` | `group-quarters-by-type` |
 | [`college-housing-capacity`](to_do/COLLEGE_HOUSING_CAPACITY_PLAN.md) | medium | `postgres` | -- |
 | [`cost-of-living-section`](in_progress/COST_OF_LIVING_SECTION_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
 | [`county-childcare-prices`](to_do/COUNTY_CHILDCARE_PRICES_PLAN.md) | high | `browser`, `postgres` | `cost-of-living-section` |
+| [`dane-tract-inputs-for-building-spread`](to_do/DANE_TRACT_INPUTS_FOR_BUILDING_SPREAD_PLAN.md) | medium | `postgres` | `group-quarters-by-type` |
 | [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
 | [`election-results-back-to-1990`](in_progress/ELECTION_RESULTS_BACK_TO_1990_PLAN.md) | medium | `postgres` | -- |
 | [`elections-and-economic-performance`](in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md) | high | `browser`, `postgres` | -- |
@@ -122,7 +122,6 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`group-quarters-by-type`](to_do/GROUP_QUARTERS_BY_TYPE_PLAN.md) | medium | `postgres` | -- |
 | [`home-heating-fuel-prices`](in_progress/HOME_HEATING_FUEL_PRICES_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
 | [`hospital-capacity-and-locations`](to_do/HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
-| [`lodes-block-grain-for-dane`](to_do/LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | medium | `postgres` | `block-population-and-age-for-dane` |
 | [`nursing-home-locations`](to_do/NURSING_HOME_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
 | [`outbreak-calibration-sets`](to_do/OUTBREAK_CALIBRATION_SETS_PLAN.md) | high | `postgres` | `nursing-home-locations` |
 | [`places-tract-release`](to_do/PLACES_TRACT_RELEASE_PLAN.md) | low | `postgres` | -- |
