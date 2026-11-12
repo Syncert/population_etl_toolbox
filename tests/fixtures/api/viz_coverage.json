@@ -3341,6 +3341,7 @@
         "measure",
         "month",
         "observation_basis",
+        "placement_note",
         "station_count",
         "station_ids"
       ],

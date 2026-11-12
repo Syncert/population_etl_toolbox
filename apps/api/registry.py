@@ -1520,6 +1520,10 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 # The calendar month of a monthly normal (1 to 12); absent
                 # for an annual one.
                 ("month", "month::TEXT"),
+                # Stations placed on the county as the nearest county
+                # boundary within 1,000 m, with their distances; absent when
+                # every station is inside the boundary.
+                ("placement_note", "placement_note"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",

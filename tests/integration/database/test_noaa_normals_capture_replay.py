@@ -20,6 +20,7 @@ from data_ingestion_toolbox.glossary.harvest import (
     process_pending_events,
 )
 from data_ingestion_toolbox.noaa_normals.client import NormalsPayloadError
+from data_ingestion_toolbox.noaa_normals.silver_noaa_normals import load as normals_load
 from data_ingestion_toolbox.noaa_normals.schema import (
     REQUIRED_RELATIONS,
     ensure_noaa_normals_schema,
@@ -436,3 +437,85 @@ def test_monthly_normals_publish_twelve_months_per_county(normals_warehouse) -> 
         )
     )
     assert grains == {"monthly_snowfall": "MONTHLY", "annual_precipitation": "ANNUAL"}
+
+
+def test_a_station_just_off_every_boundary_is_placed_on_the_nearest_county(
+    normals_warehouse,
+) -> None:
+    """Covers: ETL-069 — nearest county within 1,000 m, named on the row; farther stays unmapped."""
+    factory = normals_warehouse
+    run_id, _status, _written, _published = normals.run_to_gold(factory)
+    inside = dict(
+        _rows(
+            factory,
+            """
+            SELECT station_id, placement_method FROM silver_noaa_normals.station
+            WHERE run_id = %s AND geography_status = 'resolved'
+            """,
+            (str(run_id),),
+        )
+    )
+    assert set(inside.values()) == {"inside_county"}
+    # Two Kent stations recorded west of every boundary: Felton about 430 m
+    # off the shape, the CoCoRaHS gauge about 4.3 km off; both marked as
+    # placed before the nearest-county rule so the published run is placed again.
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE silver_noaa_normals.station
+                   SET longitude = CASE station_id WHEN 'USC00072730' THEN -75.805 ELSE -75.85 END,
+                       placement_method = NULL
+                 WHERE run_id = %s AND station_id IN ('USC00072730', 'US1DEKN0001')
+                """,
+                (str(run_id),),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    assert normals_load.place_published_stations(factory) == [run_id]
+    placed = {
+        station_id: (status, reason, geo_id, method, distance)
+        for station_id, status, reason, geo_id, method, distance in _rows(
+            factory,
+            """
+            SELECT station_id, geography_status, geography_reason, geo_id, placement_method,
+                   ROUND(placement_distance_m)
+            FROM silver_noaa_normals.station
+            WHERE run_id = %s AND station_id IN ('USC00072730', 'US1DEKN0001')
+            """,
+            (str(run_id),),
+        )
+    }
+    status, reason, geo_id, method, distance = placed["USC00072730"]
+    assert (status, reason, geo_id, method) == (
+        "resolved",
+        None,
+        normals.KENT,
+        "nearest_county",
+    )
+    assert Decimal("400") < distance < Decimal("460")
+    assert placed["US1DEKN0001"] == ("unmapped", "outside_counties", None, None, None)
+    notes = {
+        note
+        for (note,) in _rows(
+            factory,
+            """
+            SELECT placement_note FROM gold_noaa_normals.observation_latest
+            WHERE geo_id = %s AND metric_key = 'annual_mean_temperature'
+            """,
+            (normals.KENT,),
+        )
+    }
+    assert notes == {
+        "Includes stations no county boundary covers, placed on this county as the nearest "
+        f"county boundary within 1,000 metres: USC00072730 ({distance} m)."
+    }
+    # Placed once: a second pass finds no station placed before the rule.
+    assert normals_load.place_published_stations(factory) == []
+    # The gauge 4.3 km off is a U.S. station outside every county: still warned.
+    outcome = _outcome(factory, normals_value_and_geography)
+    assert outcome.result == "warn"
+    assert any("US1DEKN0001" in str(item) for item in outcome.evidence)
+    assert not any("USC00072730" in str(item) for item in outcome.evidence)

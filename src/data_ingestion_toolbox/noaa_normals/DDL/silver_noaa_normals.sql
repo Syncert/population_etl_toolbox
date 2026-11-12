@@ -76,6 +76,30 @@ CREATE TABLE IF NOT EXISTS silver_noaa_normals.station (
 
 CREATE INDEX IF NOT EXISTS noaa_normals_station_county_idx ON silver_noaa_normals.station (geo_id);
 
+-- How a resolved station was placed: inside a county shape, or on the nearest
+-- county because no shape covers its point and the nearest shape is within
+-- the loader's cap (NEAREST_COUNTY_CAP_METRES, 1,000 m), with that distance.
+-- A station placed before this rule has no method until it is placed again.
+ALTER TABLE silver_noaa_normals.station
+    ADD COLUMN IF NOT EXISTS placement_method TEXT
+        CHECK (placement_method IN ('inside_county', 'nearest_county'));
+ALTER TABLE silver_noaa_normals.station
+    ADD COLUMN IF NOT EXISTS placement_distance_m NUMERIC CHECK (placement_distance_m >= 0);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_noaa_normals.station'::regclass
+          AND conname = 'noaa_normals_station_placement'
+    ) THEN
+        ALTER TABLE silver_noaa_normals.station ADD CONSTRAINT noaa_normals_station_placement CHECK (
+            (placement_method IS NULL OR geography_status = 'resolved')
+            AND COALESCE(placement_method = 'nearest_county', FALSE) = (placement_distance_m IS NOT NULL)
+        );
+    END IF;
+END
+$$;
+
 -- Every published annual normal of every station, with NCEI's measurement
 -- and completeness flags. A withheld value (M, V, Y) has no number.
 -- A warehouse built before the pattern admitted lower case keeps the old

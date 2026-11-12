@@ -2257,7 +2257,7 @@ def normals_file_reconciliation(
 def normals_value_and_geography(
     cursor: Any, scope: Mapping[str, Any]
 ) -> list[RuleOutcome]:
-    """DQ-NOAA-004 — no negative accumulation; U.S. stations land in one county."""
+    """DQ-NOAA-004 — no negative accumulation; U.S. stations land in one county within the cap."""
     del scope
     total = _count(
         cursor,
@@ -2274,6 +2274,9 @@ def normals_value_and_geography(
          WHERE file.status = 'published'
            AND (station.geography_status = 'ambiguous'
                 OR (station.geography_status = 'unmapped' AND LEFT(station.station_id, 2) = 'US')
+                -- A nearest-county placement stays within the loader's cap.
+                OR (station.placement_method = 'nearest_county'
+                    AND station.placement_distance_m > 1000)
                 OR EXISTS (
                     SELECT 1 FROM silver_noaa_normals.station_normal AS normal
                      WHERE normal.run_id = station.run_id
