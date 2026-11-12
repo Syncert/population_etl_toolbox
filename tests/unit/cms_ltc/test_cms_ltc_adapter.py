@@ -25,6 +25,7 @@ from data_ingestion_toolbox.cms_ltc.registry import CHARACTERISTICS, COST_REPORT
 from data_ingestion_toolbox.cms_ltc.silver_cms_ltc.parse import (
     parse_file,
     place_county,
+    place_county_with_match,
 )
 
 pytestmark = pytest.mark.unit
@@ -230,6 +231,42 @@ def test_a_county_name_places_a_facility_only_on_one_exact_match() -> None:
     assert place_county("OKALOOSA", "55", counties) == ("unmapped", None, None)
     assert place_county("RICHMOND", "51", counties) == ("ambiguous", None, None)
     assert place_county(None, "55", counties) == ("unmapped", None, None)
+
+
+def test_a_spelling_variant_places_only_when_one_county_answers() -> None:
+    """Covers: ETL-130 -- accents folded and spaces removed (DONA ANA, BLACKHAWK),
+    and the District of Columbia's one county, place; ST. LOUIS and SAINT LOUIS,
+    both a county and an independent city or neither, stay unplaced."""
+    counties = {
+        "35": [
+            ("state:35|county:013", 13, "Do\u00f1a Ana County"),
+            ("state:35|county:001", 1, "Bernalillo County"),
+        ],
+        "19": [("state:19|county:013", 1913, "Black Hawk County")],
+        "11": [("state:11|county:001", 11001, "District of Columbia")],
+        "29": [
+            ("state:29|county:189", 29189, "St. Louis County"),
+            ("state:29|county:510", 29510, "St. Louis city"),
+        ],
+    }
+    assert place_county_with_match("DONA ANA", "35", counties) == (
+        "resolved",
+        "state:35|county:013",
+        13,
+        "spelling",
+    )
+    assert place_county_with_match("BLACKHAWK", "19", counties)[3] == "spelling"
+    assert place_county_with_match("DC", "11", counties) == (
+        "resolved",
+        "state:11|county:001",
+        11001,
+        "only_county",
+    )
+    assert place_county_with_match("DANE", "35", counties)[0] == "unmapped"
+    assert place_county_with_match("ST. LOUIS", "29", counties)[0] == "ambiguous"
+    assert place_county_with_match("ST LOUIS", "29", counties)[0] == "ambiguous"
+    assert place_county_with_match("SAINT LOUIS", "29", counties)[0] == "unmapped"
+    assert place_county_with_match("BERNALILLO", "35", counties)[3] == "exact"
 
 
 def test_a_run_reads_only_releases_not_yet_published_cost_reports_first() -> None:

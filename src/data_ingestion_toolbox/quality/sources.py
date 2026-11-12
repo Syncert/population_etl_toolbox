@@ -2560,7 +2560,16 @@ def cms_ltc_unplaced_facilities(
                     WHERE status = 'published' AND series_id = 'characteristics'
                )
         )
-        SELECT report.ccn, report.state_code, report.facility_name
+        SELECT CASE WHEN EXISTS (
+                        SELECT 1
+                          FROM silver_cms_ltc.facility_report AS any_cost
+                          JOIN control.cms_ltc_file AS any_file
+                            ON any_file.run_id = any_cost.run_id
+                           AND any_file.status = 'published'
+                         WHERE any_cost.ccn = report.ccn
+                           AND any_cost.series_id = 'cost_report'
+                    ) THEN 'county_name_not_matched' ELSE 'no_cost_report' END AS reason,
+               report.ccn, report.state_code, report.facility_name
           FROM silver_cms_ltc.facility_report AS report
           JOIN quarter ON quarter.run_id = report.run_id
          WHERE NOT EXISTS (
@@ -2573,7 +2582,7 @@ def cms_ltc_unplaced_facilities(
                   AND cost.county_status = 'resolved'
          )
         """,
-        order_by="2, 1",
+        order_by="1, 3, 2",
     )
     return [
         RuleOutcome(

@@ -7741,8 +7741,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "completeness",
         "Facilities in the newest published CMS-671 quarter that no cost "
         "report places on a county (no cost report, or a county name that "
-        "matches no county or two) are counted. They are in their state's and "
-        "the nation's sums and in no county's.",
+        "matches no county or two) are counted; each offender says which. "
+        "CMS-671 lists Medicaid-only nursing facilities, which file no Medicare "
+        "cost report, so a steady count is expected. They are in their "
+        "state's and the nation's sums and in no county's.",
         (
             "silver_cms_ltc.facility_report",
             "control.cms_ltc_file",

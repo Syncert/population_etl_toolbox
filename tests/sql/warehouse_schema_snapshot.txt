@@ -5468,6 +5468,7 @@ v gold_cms_ltc.area_latest
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column coverage_note text
     body SELECT DISTINCT ON (metric_key, geo_id, period_start) series_id,
     body     measure_id,
     body     metric_key,
@@ -5493,7 +5494,8 @@ v gold_cms_ltc.area_latest
     body     release_key,
     body     source_record_id,
     body     capture_id,
-    body     run_id
+    body     run_id,
+    body     coverage_note
     body    FROM gold_cms_ltc.area_revision revision
     body   ORDER BY metric_key, geo_id, period_start, retrieved_at DESC, capture_id DESC;
 
@@ -5524,6 +5526,7 @@ v gold_cms_ltc.area_revision
     column source_record_id text
     column capture_id uuid
     column run_id uuid
+    column coverage_note text
     body SELECT measure.series_id,
     body     area.measure_id,
     body     (measure.series_id || ':'::text) || area.measure_id AS metric_key,
@@ -5549,14 +5552,18 @@ v gold_cms_ltc.area_revision
     body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
     body     area.source_record_id,
     body     file.capture_id,
-    body     area.run_id
+    body     area.run_id,
+    body         CASE area.geo_type
+    body             WHEN 'county'::text THEN 'Facilities CMS places on no county (no Medicare cost report, or a cost-report county name that matches no county or two) are in no county sum; they are in their state and national sums.'::text
+    body             ELSE 'Includes facilities CMS places on no county; unplaced_facility_count says how many.'::text
+    body         END AS coverage_note
     body    FROM silver_cms_ltc.area_total area
     body      JOIN control.cms_ltc_file file ON file.run_id = area.run_id
     body      JOIN raw_capture.response_capture capture ON capture.capture_id = file.capture_id
     body      JOIN silver_cms_ltc.dim_measure measure ON measure.series_id = file.series_id AND measure.measure_id = area.measure_id
     body   WHERE file.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
 
-v gold_cms_ltc.facility_latest
+v gold_cms_ltc.facility_history
     column ccn text
     column facility_name text
     column street_address text
@@ -5577,6 +5584,7 @@ v gold_cms_ltc.facility_latest
     column fiscal_year_begin date
     column fiscal_year_end date
     column number_of_beds bigint
+    column in_newest_quarter boolean
     body WITH form_671 AS (
     body          SELECT DISTINCT ON (report.ccn) report.ccn,
     body             report.run_id,
@@ -5635,11 +5643,73 @@ v gold_cms_ltc.facility_latest
     body     EXTRACT(year FROM cost.period_start)::integer AS cost_report_year,
     body     cost.fiscal_year_begin,
     body     cost.fiscal_year_end,
-    body     beds.value AS number_of_beds
+    body     beds.value AS number_of_beds,
+    body     COALESCE(form_671.period_start = (( SELECT max(newest.period_start) AS max
+    body            FROM control.cms_ltc_file newest
+    body           WHERE newest.series_id = 'characteristics'::text AND newest.status = 'published'::text)), false) AS in_newest_quarter
     body    FROM form_671
     body      FULL JOIN cost ON cost.ccn = form_671.ccn
     body      LEFT JOIN silver_cms_ltc.facility_count residents ON residents.run_id = form_671.run_id AND residents.report_key = form_671.report_key AND residents.measure_id = 'total_residents'::text
     body      LEFT JOIN silver_cms_ltc.facility_count beds ON beds.run_id = cost.run_id AND beds.report_key = cost.report_key AND beds.measure_id = 'number_of_beds'::text;
+
+v gold_cms_ltc.facility_latest
+    column ccn text
+    column facility_name text
+    column street_address text
+    column city text
+    column state_code text
+    column state_fips text
+    column zip_code text
+    column cost_report_county_name text
+    column county_geo_id text
+    column county_status text
+    column ownership_type text
+    column hospital_based text
+    column certification_date text
+    column residents_quarter_start date
+    column residents_quarter_end date
+    column total_residents bigint
+    column cost_report_year integer
+    column fiscal_year_begin date
+    column fiscal_year_end date
+    column number_of_beds bigint
+    column county_match text
+    body WITH newest AS (
+    body          SELECT file.run_id,
+    body             file.period_start,
+    body             file.period_end
+    body            FROM control.cms_ltc_file file
+    body           WHERE file.series_id = 'characteristics'::text AND file.status = 'published'::text
+    body           ORDER BY file.period_start DESC, file.published_at DESC
+    body          LIMIT 1
+    body         )
+    body  SELECT report.ccn,
+    body     report.facility_name,
+    body     cost.street_address,
+    body     report.city,
+    body     report.state_code,
+    body     report.state_fips,
+    body     report.zip_code,
+    body     cost.county_name AS cost_report_county_name,
+    body     place.county_geo_id,
+    body     COALESCE(place.county_status, 'no_cost_report'::text) AS county_status,
+    body     report.ownership_type,
+    body     report.hospital_based,
+    body     report.certification_date,
+    body     newest.period_start AS residents_quarter_start,
+    body     newest.period_end AS residents_quarter_end,
+    body     residents.value AS total_residents,
+    body     EXTRACT(year FROM place.period_start)::integer AS cost_report_year,
+    body     cost.fiscal_year_begin,
+    body     cost.fiscal_year_end,
+    body     beds.value AS number_of_beds,
+    body     cost.county_match
+    body    FROM newest
+    body      JOIN silver_cms_ltc.facility_report report ON report.run_id = newest.run_id
+    body      LEFT JOIN silver_cms_ltc.facility_place place ON place.ccn = report.ccn
+    body      LEFT JOIN silver_cms_ltc.facility_report cost ON cost.run_id = place.run_id AND cost.report_key = place.report_key
+    body      LEFT JOIN silver_cms_ltc.facility_count residents ON residents.run_id = report.run_id AND residents.report_key = report.report_key AND residents.measure_id = 'total_residents'::text
+    body      LEFT JOIN silver_cms_ltc.facility_count beds ON beds.run_id = place.run_id AND beds.report_key = place.report_key AND beds.measure_id = 'number_of_beds'::text;
 
 v gold_cms_ltc.measure_export
     column source_dataset text
@@ -15426,6 +15496,24 @@ r silver_cms_ltc.facility_count
     constraint facility_count_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index facility_count_pkey CREATE UNIQUE INDEX facility_count_pkey ON silver_cms_ltc.facility_count USING btree (run_id, report_key, measure_id)
 
+r silver_cms_ltc.facility_place
+    column ccn text NOT NULL
+    column run_id uuid NOT NULL
+    column report_key text NOT NULL
+    column period_start date NOT NULL
+    column fiscal_year_end date
+    column state_fips text
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint facility_place_county_status_check CHECK ((county_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'ambiguous'::text, 'not_listed'::text])))
+    constraint facility_place_pkey PRIMARY KEY (ccn)
+    constraint facility_place_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint facility_place_run_id_report_key_fkey FOREIGN KEY (run_id, report_key) REFERENCES silver_cms_ltc.facility_report(run_id, report_key)
+    index cms_ltc_place_county_idx CREATE INDEX cms_ltc_place_county_idx ON silver_cms_ltc.facility_place USING btree (county_geo_id)
+    index facility_place_pkey CREATE UNIQUE INDEX facility_place_pkey ON silver_cms_ltc.facility_place USING btree (ccn)
+
 r silver_cms_ltc.facility_report
     column run_id uuid NOT NULL
     column report_key text NOT NULL
@@ -15449,10 +15537,12 @@ r silver_cms_ltc.facility_report
     column county_geo_sk bigint
     column county_status text NOT NULL
     column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column county_match text
     constraint cms_ltc_report_county_in_state CHECK (((county_geo_id IS NULL) OR (split_part(county_geo_id, '|'::text, 1) = ('state:'::text || state_fips))))
     constraint cms_ltc_report_resolved_has_county CHECK (((county_status = 'resolved'::text) = (county_geo_sk IS NOT NULL)))
     constraint facility_report_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
     constraint facility_report_ccn_check CHECK ((ccn ~ '^[0-9A-Z]{6}$'::text))
+    constraint facility_report_county_match_check CHECK ((county_match = ANY (ARRAY['exact'::text, 'spelling'::text, 'only_county'::text])))
     constraint facility_report_county_status_check CHECK ((county_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'ambiguous'::text, 'not_listed'::text])))
     constraint facility_report_pkey PRIMARY KEY (run_id, report_key)
     constraint facility_report_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.cms_ltc_file(run_id)

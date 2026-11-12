@@ -144,10 +144,10 @@ def test_a_facility_filing_two_reports_counts_once(
     ]
 
 
-def test_rerun_reads_nothing_new_and_the_facility_list_names_dane(
+def test_rerun_reads_nothing_new_and_the_facility_list_names_dane_current_homes(
     cms_warehouse: Callable[[], connection],
 ) -> None:
-    """Covers: ETL-130 -- the same bytes are `unchanged`; the list carries both periods."""
+    """Covers: ETL-130 -- the same bytes are `unchanged`; the list is the newest quarter's homes; the history keeps the rest."""
     cms_ltc.load_releases(cms_warehouse)
     _found, again = cms_ltc.load_releases(cms_warehouse)
     assert [result[1] for result in again] == ["unchanged"] * 3
@@ -161,4 +161,19 @@ def test_rerun_reads_nothing_new_and_the_facility_list_names_dane(
         """,
         (cms_ltc.DANE,),
     )
-    assert dane == [(17, 1521, 883, "2026-07-01", 2024)]
+    # The list is the newest quarter's 16 homes; the cost-report sum of 1,521
+    # beds also counts a 17th home CMS no longer lists in that quarter.
+    assert dane == [(16, 1456, 883, "2026-07-01", 2024)]
+    history = _rows(
+        cms_warehouse,
+        """
+        SELECT COUNT(*), COUNT(*) FILTER (WHERE in_newest_quarter)
+        FROM gold_cms_ltc.facility_history WHERE county_geo_id = %s
+        """,
+        (cms_ltc.DANE,),
+    )
+    assert history == [(17, 16)]
+    assert _rows(
+        cms_warehouse,
+        "SELECT COUNT(*) FROM control.cms_ltc_file WHERE text_encoding IS NULL",
+    ) == [(0,)]
