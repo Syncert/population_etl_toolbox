@@ -2365,6 +2365,95 @@ def climdiv_file_reconciliation(
     ]
 
 
+def treasury_mts_page_reconciliation(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-TREASURY-002 — no page left unreplayed; no stored line names an unpublished page."""
+    del scope
+    total = _count(cursor, "SELECT COUNT(*) FROM control.treasury_mts_page")
+    if total == 0:
+        return [RuleOutcome("control.treasury_mts_page", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT page.run_id, page.page_number, page.status
+          FROM control.treasury_mts_page AS page
+         WHERE page.status IN ('captured', 'silver_ready')
+        """,
+        order_by="1, 2",
+    )
+    orphans, orphans_total = _offenders(
+        cursor,
+        """
+        SELECT line.record_date, line.line_code, line.run_id
+          FROM silver_treasury_mts.statement_line AS line
+         WHERE NOT EXISTS (
+                SELECT 1 FROM control.treasury_mts_page AS page
+                 WHERE page.run_id = line.run_id
+                   AND page.capture_id = line.capture_id
+                   AND page.status = 'published'
+               )
+        """,
+        order_by="1, 2",
+    )
+    return [
+        RuleOutcome(
+            "control.treasury_mts_page",
+            "fail" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        ),
+        RuleOutcome(
+            "silver_treasury_mts.statement_line",
+            "fail" if orphans else "pass",
+            observed_count=orphans_total,
+            expected_count=0,
+            evidence=orphans[:EVIDENCE_LIMIT],
+        ),
+    ]
+
+
+def treasury_mts_function_total(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-TREASURY-004 — function outlay lines add to total outlays within one dollar."""
+    del scope
+    total = _count(
+        cursor,
+        "SELECT COUNT(*) FROM silver_treasury_mts.statement_line WHERE line_code = '340'",
+    )
+    if total == 0:
+        return [RuleOutcome("silver_treasury_mts.statement_line", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT total.record_date, total.current_fytd_amount, parts.amount
+          FROM silver_treasury_mts.statement_line AS total
+          JOIN (
+                SELECT record_date, SUM(current_fytd_amount) AS amount
+                  FROM silver_treasury_mts.statement_line
+                 WHERE line_code::INTEGER BETWEEN 140 AND 330
+                   AND value_status = 'valid'
+                 GROUP BY record_date
+               ) AS parts ON parts.record_date = total.record_date
+         WHERE total.line_code = '340'
+           AND total.value_status = 'valid'
+           AND ABS(total.current_fytd_amount - parts.amount) > 1
+        """,
+        order_by="1",
+    )
+    return [
+        RuleOutcome(
+            "silver_treasury_mts.statement_line",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def climdiv_value_range(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-CLIMDIV-004 — no negative accumulation; temperatures within -50 to 140 F.
 
@@ -5169,6 +5258,8 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-NOAA-004": normals_value_and_geography,
     "DQ-CLIMDIV-002": climdiv_file_reconciliation,
     "DQ-CLIMDIV-004": climdiv_value_range,
+    "DQ-TREASURY-002": treasury_mts_page_reconciliation,
+    "DQ-TREASURY-004": treasury_mts_function_total,
     "DQ-STORM-002": storm_events_file_reconciliation,
     "DQ-STORM-004": storm_events_era_types,
     "DQ-LODES-002": lodes_slice_reconciliation,

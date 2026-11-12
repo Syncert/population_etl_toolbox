@@ -76,6 +76,7 @@ SOURCES: tuple[str, ...] = (
     "EPA_AQS",
     "NOAA_NORMALS",
     "NOAA_CLIMDIV",
+    "TREASURY_MTS",
     "NOAA_STORM_EVENTS",
     "CENSUS_LODES",
     "CENSUS_CBP",
@@ -3627,6 +3628,122 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Monthly Treasury Statement, Table 9: federal receipts and outlays, nation.
+# ---------------------------------------------------------------------------
+
+_TREASURY_MTS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.treasury_mts_page",
+        "control",
+        "TREASURY_MTS",
+        grain="run_id, page_number",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every page of a Table 9 read from three months before the newest published statement",
+        cadence="monthly",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_treasury_mts.quarantine",
+        "silver",
+        "TREASURY_MTS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated statement line; populated only on failure",
+        cadence="per Table 9 replay",
+        empty_behavior="empty when every line conformed",
+    ),
+    _obj(
+        "silver_treasury_mts.statement_line",
+        "silver",
+        "TREASURY_MTS",
+        grain="record_date, line_code",
+        lineage="control.treasury_mts_page, raw_capture.response_capture",
+        scope_method="the current published row of every statement month and line; a heading line is missing",
+        cadence="per Table 9 replay; only changed or new lines are written",
+        empty_behavior="a heading line's null carries no number, never 0",
+    ),
+    _obj(
+        "silver_treasury_mts.statement_line_revision",
+        "silver",
+        "TREASURY_MTS",
+        grain="record_date, line_code, run_id",
+        lineage="silver_treasury_mts.statement_line",
+        scope_method="every row a later read replaced, as it was published",
+        cadence="per Table 9 replay",
+        empty_behavior="empty until Treasury restates a published month",
+    ),
+    _obj(
+        "gold_treasury_mts.line_definition",
+        "gold",
+        "TREASURY_MTS",
+        grain="line_code",
+        scope_method="the registered Table 9 lines (receipts 20 to 120, outlays 140 to 340)",
+        cadence="static",
+        empty_behavior="never empty: the lines are registered",
+    ),
+    _obj(
+        "gold_treasury_mts.statement_line_revision",
+        "gold",
+        "TREASURY_MTS",
+        grain="record_date, line_code, run_id",
+        lineage="silver_treasury_mts.statement_line, silver_treasury_mts.statement_line_revision, control.treasury_mts_page",
+        scope_method="every statement line of a published page, current and replaced",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_treasury_mts.observation_revision",
+        "gold",
+        "TREASURY_MTS",
+        grain="metric_key, year, run_id",
+        lineage="gold_treasury_mts.statement_line_revision",
+        scope_method="every published fiscal-year total (September fiscal-year-to-date column), current and replaced",
+        cadence="per publication",
+        empty_behavior="a fiscal year with no September statement yet has no row",
+    ),
+    _obj(
+        "gold_treasury_mts.observation_latest",
+        "gold",
+        "TREASURY_MTS",
+        grain="metric_key, year",
+        lineage="silver_treasury_mts.statement_line, control.treasury_mts_page",
+        scope_method="the current published fiscal-year total of each registered line",
+        cadence="per publication",
+        empty_behavior="a fiscal year with no September statement yet has no row",
+    ),
+    _obj(
+        "gold_treasury_mts.outlays_by_function",
+        "gold",
+        "TREASURY_MTS",
+        grain="period_kind, statement_date, line_code",
+        lineage="silver_treasury_mts.statement_line, control.treasury_mts_page, gold_treasury_mts.line_definition",
+        scope_method="each budget function's outlays and share of total outlays: fiscal years, the open fiscal year to date, months",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the line or the total is not published",
+    ),
+    _obj(
+        "gold_treasury_mts.measure_export",
+        "publisher",
+        "TREASURY_MTS",
+        grain="source_object_key (measure)",
+        lineage="gold_treasury_mts.line_definition",
+        scope_method="registered lines",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_treasury_mts.metric_publisher",
+        "publisher",
+        "TREASURY_MTS",
+        grain="source_object_key (measure)",
+        lineage="gold_treasury_mts.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published September statement",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # NOAA nClimDiv county monthly temperature and precipitation, 1895 onward.
 # ---------------------------------------------------------------------------
 
@@ -4977,6 +5094,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
     + _CLIMDIV_OBJECTS
+    + _TREASURY_MTS_OBJECTS
     + _STORM_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
@@ -5385,6 +5503,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_epa_aqs.metric_publisher",
             "gold_noaa_normals.metric_publisher",
             "gold_noaa_climdiv.metric_publisher",
+            "gold_treasury_mts.metric_publisher",
             "gold_noaa_storm_events.metric_publisher",
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
@@ -7906,6 +8025,92 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_noaa_climdiv.county_month",
             "control.noaa_climdiv_file",
+        ),
+    ),
+    # -- Monthly Treasury Statement, Table 9 ------------------------------------
+    _rule(
+        "DQ-TREASURY-001",
+        "BLOCK",
+        "uniqueness",
+        "A statement line is unique per (record date, line code): a repeated "
+        "line in a read is quarantined, and a replaced row is kept once per "
+        "run in the revision table.",
+        (
+            "silver_treasury_mts.statement_line",
+            "silver_treasury_mts.statement_line_revision",
+            "gold_treasury_mts.statement_line_revision",
+            "gold_treasury_mts.observation_revision",
+            "gold_treasury_mts.observation_latest",
+            "gold_treasury_mts.line_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("record_date", "line_code"),
+            ),
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line_revision",
+                ("record_date", "line_code", "run_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured page is left unreplayed, and no stored statement line "
+        "names a page that was not published.",
+        (
+            "control.treasury_mts_page",
+            "silver_treasury_mts.quarantine",
+            "silver_treasury_mts.statement_line",
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-003",
+        "BLOCK",
+        "conformance",
+        "A line Treasury prints as null carries no number, and a valid one "
+        "always carries its fiscal-year-to-date amount: no null becomes zero.",
+        (
+            "silver_treasury_mts.statement_line",
+            "gold_treasury_mts.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "line without an amount and a missing one with an amount."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("value_status", "current_fytd_amount"),
+                kind="check",
+                constraint_name="treasury_mts_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("value_status", "current_fytd_amount"),
+                kind="check",
+                constraint_name="treasury_mts_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-004",
+        "WARN",
+        "reconciliation",
+        "For every published statement month, the budget-function outlay "
+        "lines (140 to 330) add to total outlays (line 340) within one "
+        "dollar, in the fiscal-year-to-date column.",
+        (
+            "silver_treasury_mts.statement_line",
+            "gold_treasury_mts.outlays_by_function",
         ),
     ),
     # -- NOAA Storm Events Database ---------------------------------------------

@@ -122,6 +122,7 @@ def test_publisher_source_codes_are_discovered_for_every_published_schema() -> N
         "gold_epa_aqs": "EPA_AQS",
         "gold_noaa_normals": "NOAA_NORMALS",
         "gold_noaa_climdiv": "NOAA_CLIMDIV",
+        "gold_treasury_mts": "TREASURY_MTS",
         "gold_noaa_storm_events": "NOAA_STORM_EVENTS",
         "gold_census_lodes": "CENSUS_LODES",
         "gold_census_cbp": "CENSUS_CBP",

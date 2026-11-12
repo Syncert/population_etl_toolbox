@@ -967,6 +967,37 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="NOAA_NORMALS",
     ),
     WarehouseSource(
+        code="TREASURY_MTS",
+        name="Monthly Treasury Statement, Table 9 (receipts by source, outlays by function)",
+        publisher="U.S. Treasury, Bureau of the Fiscal Service",
+        topic="Elections and government",
+        module="treasury_mts",
+        dag="treasury_mts_ingest",
+        cadence="Monthly, 16th 16:00 UTC",
+        release="Monthly, eighth business day; recent months restated",
+        grains={"nation": "d"},
+        years=[(2015, 2026)],
+        years_note="Statements from March 2015; fiscal-year totals from fiscal 2015",
+        datasets=["mts_table_9 (Fiscal Data API)"],
+        measures=(
+            "Federal receipts by source and outlays by budget function: each month, the "
+            "fiscal year to date, and fiscal-year totals as published."
+        ),
+        raw=[],
+        control=["control.treasury_mts_page"],
+        silver=[
+            "silver_treasury_mts.statement_line",
+            "silver_treasury_mts.statement_line_revision",
+        ],
+        gold=[
+            "gold_treasury_mts.observation_revision",
+            "gold_treasury_mts.observation_latest",
+            "gold_treasury_mts.outlays_by_function",
+        ],
+        credential="none",
+        catalog_source_code="TREASURY_MTS",
+    ),
+    WarehouseSource(
         code="NOAA_CLIMDIV",
         name="nClimDiv county monthly temperature and precipitation",
         publisher="NOAA NCEI",

@@ -242,6 +242,11 @@
       "path": "src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql"
     },
     {
+      "id": "silver-treasury-mts",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/treasury_mts/DDL/silver_treasury_mts.sql"
+    },
+    {
       "id": "silver-noaa-storm-events",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/noaa_storm_events/DDL/silver_noaa_storm_events.sql"
@@ -452,6 +457,11 @@
       "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql"
     },
     {
+      "id": "gold-treasury-mts",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/gold_treasury_mts.sql"
+    },
+    {
       "id": "gold-noaa-storm-events",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/gold_noaa_storm_events.sql"
@@ -600,6 +610,11 @@
       "id": "publisher-noaa-climdiv",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-treasury-mts",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/publisher.sql"
     },
     {
       "id": "publisher-noaa-storm-events",

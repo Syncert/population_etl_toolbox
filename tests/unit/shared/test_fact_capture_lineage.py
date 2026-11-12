@@ -112,6 +112,14 @@ FACTS = [
         "silver_noaa_climdiv.county_month",
         "valid",
     ),
+    # A Table 9 heading line is printed `null`: `missing`, with no amount.
+    FactContract(
+        "TREASURY_MTS",
+        SRC / "treasury_mts/DDL/silver_treasury_mts.sql",
+        "silver_treasury_mts.statement_line",
+        "valid",
+        value_column="current_fytd_amount",
+    ),
     # A storm event is a record, not one number: each figure on it says
     # whether NCEI published it (`damage_property_status` and its CHECK), and
     # the counts served are derived from the events.

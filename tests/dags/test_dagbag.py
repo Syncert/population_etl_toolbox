@@ -55,6 +55,7 @@ EXPECTED_DAG_IDS = {
     "epa_aqs_ingest",
     "noaa_normals_ingest",
     "noaa_climdiv_ingest",
+    "treasury_mts_ingest",
     "noaa_storm_events_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
@@ -126,6 +127,9 @@ EXPECTED_SCHEDULES = {
     # Monthly on the 12th: NCEI replaces the county files early each month,
     # and a file name already published is not downloaded again.
     "noaa_climdiv_ingest": "0 15 12 * *",
+    # Monthly on the 16th: Treasury publishes the statement on the eighth
+    # business day of the following month.
+    "treasury_mts_ingest": "0 16 16 * *",
     # Monthly on the 20th: NCEI restamps the current year's file each month,
     # and a file name already published is not downloaded again.
     "noaa_storm_events_ingest": "0 16 20 * *",
@@ -191,6 +195,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "epa_aqs_ingest": 2,
     "noaa_normals_ingest": 2,
     "noaa_climdiv_ingest": 2,
+    "treasury_mts_ingest": 2,
     "noaa_storm_events_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
@@ -225,6 +230,7 @@ EXPECTED_INGEST_POOLS = {
     "epa_aqs_ingest": "epa_aqs_files",
     "noaa_normals_ingest": "noaa_normals_files",
     "noaa_climdiv_ingest": "noaa_climdiv_files",
+    "treasury_mts_ingest": "treasury_mts_pages",
     "noaa_storm_events_ingest": "noaa_storm_events_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",

@@ -89,6 +89,9 @@ from __future__ import annotations
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
 #:   ``'NATIONAL'`` as literals. FRED is national by construction.
+#: * ``TREASURY_MTS`` -- the Monthly Treasury Statement is the federal
+#:   government's own account; ``gold_treasury_mts`` writes ``'us:1'`` and
+#:   ``nation`` as literals.
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
@@ -113,6 +116,7 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "TREASURY_MTS": frozenset({"NATIONAL"}),
     "USDA_ERS": frozenset({"COUNTY"}),
     "NCES_CCD": frozenset({"STATE", "COUNTY"}),
     "HUD_FMR_IL": frozenset({"COUNTY"}),

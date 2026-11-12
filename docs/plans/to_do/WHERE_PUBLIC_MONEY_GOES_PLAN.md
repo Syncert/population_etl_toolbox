@@ -175,11 +175,12 @@ Consolidated Federal Funds Report (ended FY2010).
 
 - Fiscal Data API Table 9, paged (`page[size]` up to 10,000), every record
   date from 2015-03-31; a monthly DAG loads record dates never loaded and
-  replays revised months (Treasury restates the prior month). Control table
-  per record date for resume.
-- Silver `silver_treasury_mts.function_line` (record date, classification id,
-  description, line code, parent, current month, fiscal year to date, prior
-  fiscal year to date) as published; `null` stays missing.
+  replays revised months (Treasury restates the prior month).
+- Silver `silver_treasury_mts.statement_line` (record date, line code,
+  classification id, description, parent, current month, fiscal year to date,
+  prior fiscal year to date, each beside its published text) as published;
+  `null` stays missing. Control is per page (`control.treasury_mts_page`):
+  the whole table is one page of about 4,600 rows.
 - Gold `gold_treasury_mts.outlays_by_function`: fiscal-year totals read from
   the September record's fiscal-year-to-date column (never summed from
   months), current fiscal year to date from the newest record, monthly values

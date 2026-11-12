@@ -786,6 +786,31 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="treasury_mts.receipts_and_outlays",
+        source="TREASURY_MTS",
+        publisher_schema="gold_treasury_mts",
+        datasets=("mts_table_9:v1",),
+        fixtures=("tests/fixtures/treasury_mts/mts_table_9_2026-08_2026-09.json",),
+        serving_relations=(
+            "gold_treasury_mts.observation_revision",
+            "gold_treasury_mts.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_treasury_mts_pipeline.py::"
+            "test_fiscal_year_outlays_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "The Monthly Treasury Statement publishes no source-specific HTTP "
+            "route: each fiscal-year line total is the neutral observation "
+            "shape for the nation, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
         product_id="noaa_storm_events.event_counts",
         source="NOAA_STORM_EVENTS",
         publisher_schema="gold_noaa_storm_events",
