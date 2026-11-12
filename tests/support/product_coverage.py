@@ -511,6 +511,39 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="cms_ltc.area_total",
+        source="CMS_LTC",
+        publisher_schema="gold_cms_ltc",
+        datasets=("cost_report", "characteristics"),
+        fixtures=(
+            "tests/fixtures/cms_ltc/data_json_excerpt.json",
+            "tests/fixtures/cms_ltc/CostReportsnf_Final_24_wi.csv",
+            "tests/fixtures/cms_ltc/Form_671_Q2_2026_wi.csv",
+            "tests/fixtures/cms_ltc/Form_671_Q3_2026_wi.csv",
+        ),
+        serving_relations=(
+            "gold_cms_ltc.area_revision",
+            "gold_cms_ltc.area_latest",
+            "gold_cms_ltc.facility_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cms_ltc_pipeline.py::"
+            "test_dane_nursing_home_residents_and_beds_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The CMS long-term care files publish no source-specific HTTP "
+            "route: each area sum is the neutral observation shape with its "
+            "series, basis and facility count as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

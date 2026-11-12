@@ -245,6 +245,13 @@ FACTS = [
         "silver_census_decennial.fact_count",
         "valid",
     ),
+    # A blank CMS figure is `missing`, with no number.
+    FactContract(
+        "CMS_LTC",
+        SRC / "cms_ltc/DDL/silver_cms_ltc.sql",
+        "silver_cms_ltc.facility_count",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

@@ -1,6 +1,6 @@
 """Real PostgreSQL USAspending place-of-performance capture-to-gold contract.
 
-Covers: ETL-130
+Covers: ETL-131
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def _restating(edit: Callable[[list[dict[str, Any]]], None]) -> usa.FixtureClien
 def test_every_read_is_captured_and_amounts_load_as_published(
     usaspending_warehouse,
 ) -> None:
-    """Covers: ETL-130 — each request is one capture; amounts keep USAspending's text."""
+    """Covers: ETL-131 — each request is one capture; amounts keep USAspending's text."""
     factory = usaspending_warehouse
     run_id, requests, written, published = usa.run_to_gold(factory)
     assert (requests, written, published) == (
@@ -134,7 +134,7 @@ def test_every_read_is_captured_and_amounts_load_as_published(
 def test_an_area_with_no_recorded_place_is_kept_but_never_served(
     usaspending_warehouse,
 ) -> None:
-    """Covers: ETL-130 — the empty shape code stays `unsupported`, out of every gold view."""
+    """Covers: ETL-131 — the empty shape code stays `unsupported`, out of every gold view."""
     factory = usaspending_warehouse
     usa.run_to_gold(factory)
     assert _rows(
@@ -155,7 +155,7 @@ def test_an_area_with_no_recorded_place_is_kept_but_never_served(
 
 
 def test_a_share_without_its_place_total_says_so(usaspending_warehouse) -> None:
-    """Covers: ETL-130 — no all-award county read means no share, with the reason."""
+    """Covers: ETL-131 — no all-award county read means no share, with the reason."""
     factory = usaspending_warehouse
     usa.run_to_gold(factory)
     assert _rows(
@@ -177,7 +177,7 @@ def test_a_share_without_its_place_total_says_so(usaspending_warehouse) -> None:
 
 
 def test_a_reread_writes_only_what_changed(usaspending_warehouse) -> None:
-    """Covers: ETL-130 — the churn rule: unchanged rows stay; changed and withdrawn rows are revisions."""
+    """Covers: ETL-131 — the churn rule: unchanged rows stay; changed and withdrawn rows are revisions."""
     factory = usaspending_warehouse
     first_run, _requests, _written, _published = usa.run_to_gold(factory)
     _second, _requests, unchanged, _published = usa.run_to_gold(factory)
@@ -231,7 +231,7 @@ def test_a_reread_writes_only_what_changed(usaspending_warehouse) -> None:
 
 
 def test_a_repeated_place_is_quarantined_alone(usaspending_warehouse) -> None:
-    """Covers: ETL-130 — a shape code answered twice is set aside once; the rest load."""
+    """Covers: ETL-131 — a shape code answered twice is set aside once; the rest load."""
     factory = usaspending_warehouse
 
     def repeat(rows: list[dict[str, Any]]) -> None:
@@ -250,7 +250,7 @@ def test_a_repeated_place_is_quarantined_alone(usaspending_warehouse) -> None:
 def test_a_history_load_resumes_from_the_requests_never_captured(
     usaspending_warehouse,
 ) -> None:
-    """Covers: ETL-130 — a budgeted history run stops; the next one continues, oldest year first."""
+    """Covers: ETL-131 — a budgeted history run stops; the next one continues, oldest year first."""
     factory = usaspending_warehouse
     budget = {"history": True, "max_requests": ORDINARY_RUN_REQUESTS + 8}
     first, requests, _written, _published = usa.run_to_gold(factory, conf=budget)
@@ -288,7 +288,7 @@ def test_a_history_load_resumes_from_the_requests_never_captured(
 def test_an_unreplayed_run_is_settled_by_the_next_attempt(
     usaspending_warehouse,
 ) -> None:
-    """Covers: ETL-130 — captures left by an interrupted run are replayed and published."""
+    """Covers: ETL-131 — captures left by an interrupted run are replayed and published."""
     factory = usaspending_warehouse
     run_id, _requests = capture_awards(
         factory,
@@ -312,7 +312,7 @@ def test_an_unreplayed_run_is_settled_by_the_next_attempt(
 def test_group_totals_check_passes_when_no_state_groups_are_published(
     usaspending_warehouse,
 ) -> None:
-    """Covers: ETL-130 — DQ-USASPENDING-004 compares only years with both reads."""
+    """Covers: ETL-131 — DQ-USASPENDING-004 compares only years with both reads."""
     factory = usaspending_warehouse
     usa.run_to_gold(factory)
     assert [
@@ -321,7 +321,7 @@ def test_group_totals_check_passes_when_no_state_groups_are_published(
 
 
 def test_the_glossary_publishes_the_grains_served(usaspending_warehouse) -> None:
-    """Covers: ETL-130 — the publisher derives each measure's grains from served rows."""
+    """Covers: ETL-131 — the publisher derives each measure's grains from served rows."""
     factory = usaspending_warehouse
     usa.run_to_gold(factory)
     assert harvest_publisher(factory, Publisher("gold_usaspending")) == 2
@@ -343,7 +343,7 @@ def test_the_glossary_publishes_the_grains_served(usaspending_warehouse) -> None
 
 
 def test_schema_is_reapplied_idempotently(usaspending_warehouse) -> None:
-    """Covers: ETL-130 — the source-owned DDL applies twice and names every relation."""
+    """Covers: ETL-131 — the source-owned DDL applies twice and names every relation."""
     factory = usaspending_warehouse
 
     class _Hook:

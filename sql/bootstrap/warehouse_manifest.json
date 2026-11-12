@@ -132,6 +132,11 @@
       "path": "src/data_ingestion_toolbox/census_decennial/DDL/silver_census_decennial.sql"
     },
     {
+      "id": "silver-cms-ltc",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cms_ltc/DDL/silver_cms_ltc.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -352,6 +357,11 @@
       "path": "src/data_ingestion_toolbox/census_decennial/gold_census_decennial/DDL/gold_census_decennial.sql"
     },
     {
+      "id": "gold-cms-ltc",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/gold_cms_ltc.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -525,6 +535,11 @@
       "id": "publisher-census-decennial",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/census_decennial/gold_census_decennial/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cms-ltc",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",

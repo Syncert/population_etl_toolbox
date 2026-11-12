@@ -53,7 +53,7 @@ LODES block figures carry the Bureau's noise infusion; the API note says so.
 
 Dane has roughly 6,000 work blocks and 8,000 home blocks with jobs. 29
 columns x 22 years with zeros dropped by the file is about 4 million rows,
-about 0.6 GB. All counties would be about 150 GB and needs Nick's go.
+about 5 GB at the measured 1,300 bytes per fact (was 0.6 GB at the first 150 to 200 bytes). All counties would be about 1,300 GB and needs Nick's go.
 
 ## Acceptance criteria
 

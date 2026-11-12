@@ -26,7 +26,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | Source | Publisher | Nation | State | County | Metro | Place | Tract | Other | Years | Refresh | Status |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | --- | --- | --- |
 | [American Community Survey](#census_acs) | U.S. Census Bureau | ● | ● | ● | ● | ● | ● |  | 2005–2024 | Monthly check | Partly loaded |
-| [Census 2000 and 1990](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  | ● | ● |  | 1990–2000 | One-time history load | Partly loaded |
+| [Census 2000 and 1990](#census_acs_decennial) | U.S. Census Bureau | ● | ● | ● |  | ● | ● |  | 1990–2000 | One-time history load | Partly loaded |
 | [Population Estimates Program](#census_pep) | U.S. Census Bureau | ● | ● | ● |  | ● |  | ● | 1970–2025 | Monthly check | Loaded |
 | [SOI county-to-county migration](#irs_migration) | IRS Statistics of Income |  |  | ● |  |  |  |  | 1990–2023 | Monthly | Loaded |
 | [BLS labor and prices (LAUS, CPS, CES, CPI, JOLTS, average prices, Consumer Expenditure)](#bls) | Bureau of Labor Statistics | ● | ● | ● | ● | ◌ |  | ◌ | 1990–2026 | Monthly | Loaded |
@@ -36,6 +36,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Regional economic accounts](#bea) | Bureau of Economic Analysis | ● | ● | ● | ◐ |  |  | ● | 1969–2024 | Weekly | Loaded |
 | [SAIPE and SAHIE](#census_saipe_sahie) | U.S. Census Bureau | ● | ● | ● |  |  |  |  | 1989–2024 | Monthly | Partly loaded |
 | [2020 Census counts](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  |  | ● |  | 2020 | On demand | Not loaded yet |
+| [Nursing home residents and beds](#cms_ltc) | Centers for Medicare & Medicaid Services | ◐ | ◐ | ◐ |  |  |  |  | 2011–2026 | Monthly | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -80,7 +81,7 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Status (live count 2026-10-31):** Partly loaded. 5-year: 2009–2024 at nation, state, county, place and tract. 1-year: 2005–2024 at nation, state, county and place (19 releases; the Bureau published no standard 2020 1-year). Metro: 2022–2024 so far; the metro backfill (2024 back to 2005) and the tract wide reload were running at the count.
 - **Shown on:** every place page (People, Work and Money, Housing, Health chapters); the property tax load card in Work and Money's Taxes and public money group; the map, explorer and compare pages.
 
-<a id="census_decennial"></a>
+<a id="census_acs_decennial"></a>
 ### Census 2000 and 1990 (`CENSUS_ACS_DECENNIAL`)
 
 - **Publisher:** U.S. Census Bureau
@@ -243,6 +244,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_census_decennial.observation_revision`, `silver_census_decennial.fact_count`, `silver_census_decennial.dim_variable`
 - **Gold:** `gold_census_decennial.count_revision`, `gold_census_decennial.count_latest`
 - **Status:** Not loaded yet (added 2026-11-12, plan `group-quarters-by-type`). Blocks are captured only for a county the registry scopes, and none is scoped yet.
+
+<a id="cms_ltc"></a>
+### Nursing home residents and beds (`CMS_LTC`)
+
+- **Publisher:** Centers for Medicare & Medicaid Services
+- **Code:** `src/data_ingestion_toolbox/cms_ltc` · DAG `cms_ltc_ingest` · Monthly, 20th 18:00 UTC (releases not yet loaded)
+- **Publisher releases:** Long-Term Care Facility Characteristics (CMS Form 671), quarterly; Skilled Nursing Facility Cost Report, yearly. Both read from the release list in `https://data.cms.gov/data.json`.
+- **Credential:** none
+- **Years:** every release the catalog lists (Form 671 quarters and cost-report years)
+- **Measures:** Total residents and Medicare, Medicaid and other residents on the Form 671 survey; number of beds, bed days available and patient days from the cost report. Area figures are sums of the published facility figures (◐), with the count of facilities summed and of facilities that could not be placed.
+- **Placement:** Form 671 has no county. A facility is placed on the county its newest cost report names, matched by exact name within its state; a name that matches no county or two, or a facility with no cost report, is counted at state and nation only. No address is geocoded. Provider Information (coordinates, certified beds) answered HTTP 403 to the toolbox's client and is not used.
+- **Capture and control:** `control.cms_ltc_file`
+- **Silver:** `silver_cms_ltc.facility_report`, `silver_cms_ltc.facility_count`, `silver_cms_ltc.area_total`, `silver_cms_ltc.dim_measure`, `silver_cms_ltc.quarantine`
+- **Gold:** `gold_cms_ltc.area_revision`, `gold_cms_ltc.area_latest`, `gold_cms_ltc.facility_latest`
+- **Status:** Not loaded yet (added 2026-11-12, plan `nursing-home-locations`).
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)

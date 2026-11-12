@@ -46,6 +46,7 @@ EXPECTED_DAG_IDS = {
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
     "census_decennial_ingest",
+    "cms_ltc_ingest",
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
@@ -101,6 +102,9 @@ EXPECTED_SCHEDULES = {
     "census_saipe_sahie_ingest": "0 6 15 * *",
     # Operator-triggered: the 2020 count is published once.
     "census_decennial_ingest": None,
+    # Monthly: CMS posts quarters and cost-report years on no fixed calendar,
+    # and a release already published is not read again.
+    "cms_ltc_ingest": "0 18 20 * *",
     # Monthly: annual finances publish each autumn, QTAX a quarter after the
     # quarter, the unit files every five years; a run captures its revision
     # window and every registered period never answered.
@@ -192,6 +196,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
     "census_decennial_ingest": 2,
+    "cms_ltc_ingest": 2,
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,

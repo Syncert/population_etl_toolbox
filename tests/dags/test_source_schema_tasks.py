@@ -36,6 +36,7 @@ from data_ingestion_toolbox.irs_soi import schema as irs_soi_schema
 from data_ingestion_toolbox.dol_childcare import schema as dol_childcare_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
 from data_ingestion_toolbox.census_decennial import schema as decennial_schema
+from data_ingestion_toolbox.cms_ltc import schema as cms_ltc_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
@@ -89,6 +90,13 @@ SOURCES = [
         "ingest_batch_",
         decennial_schema,
         "CENSUS_DECENNIAL",
+    ),
+    (
+        "cms_ltc_ingest",
+        "ensure_cms_ltc_schema",
+        "ingest_batch_",
+        cms_ltc_schema,
+        "CMS_LTC",
     ),
     (
         "census_govfin_ingest",

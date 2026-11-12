@@ -2479,6 +2479,55 @@ _DECENNIAL_LATEST = """
 """
 
 
+def cms_ltc_unplaced_facilities(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-CMSLTC-003 — CMS-671 facilities of the newest quarter on no county."""
+    del scope
+    newest = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.cms_ltc_file "
+        "WHERE status = 'published' AND series_id = 'characteristics'",
+    )
+    if newest == 0:
+        return [RuleOutcome("silver_cms_ltc.facility_report", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        WITH quarter AS (
+            SELECT run_id FROM control.cms_ltc_file
+             WHERE status = 'published' AND series_id = 'characteristics'
+               AND period_start = (
+                   SELECT MAX(period_start) FROM control.cms_ltc_file
+                    WHERE status = 'published' AND series_id = 'characteristics'
+               )
+        )
+        SELECT report.ccn, report.state_code, report.facility_name
+          FROM silver_cms_ltc.facility_report AS report
+          JOIN quarter ON quarter.run_id = report.run_id
+         WHERE NOT EXISTS (
+               SELECT 1
+                 FROM silver_cms_ltc.facility_report AS cost
+                 JOIN control.cms_ltc_file AS file
+                   ON file.run_id = cost.run_id AND file.status = 'published'
+                WHERE cost.ccn = report.ccn
+                  AND cost.series_id = 'cost_report'
+                  AND cost.county_status = 'resolved'
+         )
+        """,
+        order_by="2, 1",
+    )
+    return [
+        RuleOutcome(
+            "silver_cms_ltc.facility_report",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def decennial_part_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-DECENNIAL-003 — each count's parts add to it as published, per area."""
     del scope
@@ -5468,6 +5517,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-CLIMDIV-004": climdiv_value_range,
     "DQ-TREASURY-002": treasury_mts_page_reconciliation,
     "DQ-TREASURY-004": treasury_mts_function_total,
+    "DQ-CMSLTC-003": cms_ltc_unplaced_facilities,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,

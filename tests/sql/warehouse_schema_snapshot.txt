@@ -343,6 +343,39 @@ r control.census_sae_slice
     index census_sae_slice_latest_idx CREATE INDEX census_sae_slice_latest_idx ON control.census_sae_slice USING btree (dataset_id, estimate_year, geo_level, created_at DESC)
     index census_sae_slice_pkey CREATE UNIQUE INDEX census_sae_slice_pkey ON control.census_sae_slice USING btree (run_id, geo_level)
 
+r control.cms_ltc_file
+    column run_id uuid NOT NULL
+    column series_id text NOT NULL
+    column period_start date NOT NULL
+    column period_end date NOT NULL
+    column release_title text NOT NULL
+    column catalog_modified text NOT NULL
+    column download_url text NOT NULL
+    column catalog_capture_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cms_ltc_file_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cms_ltc_file_catalog_capture_id_fkey FOREIGN KEY (catalog_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cms_ltc_file_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint cms_ltc_file_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint cms_ltc_file_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint cms_ltc_file_period_order CHECK ((period_start <= period_end))
+    constraint cms_ltc_file_pkey PRIMARY KEY (run_id)
+    constraint cms_ltc_file_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint cms_ltc_file_row_count_check CHECK ((row_count >= 0))
+    constraint cms_ltc_file_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cms_ltc_file_series_id_check CHECK ((series_id = ANY (ARRAY['characteristics'::text, 'cost_report'::text])))
+    constraint cms_ltc_file_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index cms_ltc_file_capture_idx CREATE INDEX cms_ltc_file_capture_idx ON control.cms_ltc_file USING btree (capture_id)
+    index cms_ltc_file_pkey CREATE UNIQUE INDEX cms_ltc_file_pkey ON control.cms_ltc_file USING btree (run_id)
+    index cms_ltc_file_release_idx CREATE INDEX cms_ltc_file_release_idx ON control.cms_ltc_file USING btree (series_id, period_start, status)
+
 v control.data_quality_latest_result
     column rule_id text
     column severity text
@@ -5404,6 +5437,278 @@ v gold_census_sae.metric_publisher
     body            FROM gold_census_sae.estimate_latest latest
     body              JOIN control.census_sae_slice slice ON slice.capture_id = latest.capture_id
     body           WHERE latest.dataset_id = measure.dataset_id AND latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
+v gold_cms_ltc.area_latest
+    column series_id text
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column accrual text
+    column period_start date
+    column period_end date
+    column period_year integer
+    column release_title text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column facility_count integer
+    column unplaced_facility_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) series_id,
+    body     measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     accrual,
+    body     period_start,
+    body     period_end,
+    body     period_year,
+    body     release_title,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     facility_count,
+    body     unplaced_facility_count,
+    body     derivation,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id
+    body    FROM gold_cms_ltc.area_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, retrieved_at DESC, capture_id DESC;
+
+v gold_cms_ltc.area_revision
+    column series_id text
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column accrual text
+    column period_start date
+    column period_end date
+    column period_year integer
+    column release_title text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column facility_count integer
+    column unplaced_facility_count integer
+    column derivation text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT measure.series_id,
+    body     area.measure_id,
+    body     (measure.series_id || ':'::text) || area.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.basis,
+    body     measure.accrual,
+    body     file.period_start,
+    body     file.period_end,
+    body     EXTRACT(year FROM file.period_start)::integer AS period_year,
+    body     file.release_title,
+    body     area.geo_id,
+    body     area.geo_sk,
+    body     area.geo_type,
+    body     gold_glossary.geo_grain(area.geo_type) AS geo_level,
+    body     area.geography_status,
+    body     area.value,
+    body     'valid'::text AS value_status,
+    body     area.facility_count,
+    body     area.unplaced_facility_count,
+    body     'sum_of_published_facility_figures'::text AS derivation,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     area.source_record_id,
+    body     file.capture_id,
+    body     area.run_id
+    body    FROM silver_cms_ltc.area_total area
+    body      JOIN control.cms_ltc_file file ON file.run_id = area.run_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = file.capture_id
+    body      JOIN silver_cms_ltc.dim_measure measure ON measure.series_id = file.series_id AND measure.measure_id = area.measure_id
+    body   WHERE file.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_cms_ltc.facility_latest
+    column ccn text
+    column facility_name text
+    column street_address text
+    column city text
+    column state_code text
+    column state_fips text
+    column zip_code text
+    column cost_report_county_name text
+    column county_geo_id text
+    column county_status text
+    column ownership_type text
+    column hospital_based text
+    column certification_date text
+    column residents_quarter_start date
+    column residents_quarter_end date
+    column total_residents bigint
+    column cost_report_year integer
+    column fiscal_year_begin date
+    column fiscal_year_end date
+    column number_of_beds bigint
+    body WITH form_671 AS (
+    body          SELECT DISTINCT ON (report.ccn) report.ccn,
+    body             report.run_id,
+    body             report.report_key,
+    body             report.facility_name,
+    body             report.city,
+    body             report.state_code,
+    body             report.state_fips,
+    body             report.zip_code,
+    body             report.ownership_type,
+    body             report.hospital_based,
+    body             report.certification_date,
+    body             file.period_start,
+    body             file.period_end
+    body            FROM silver_cms_ltc.facility_report report
+    body              JOIN control.cms_ltc_file file ON file.run_id = report.run_id
+    body           WHERE report.series_id = 'characteristics'::text AND file.status = 'published'::text
+    body           ORDER BY report.ccn, file.period_start DESC, file.published_at DESC
+    body         ), cost AS (
+    body          SELECT DISTINCT ON (report.ccn) report.ccn,
+    body             report.run_id,
+    body             report.report_key,
+    body             report.facility_name,
+    body             report.street_address,
+    body             report.city,
+    body             report.state_code,
+    body             report.state_fips,
+    body             report.zip_code,
+    body             report.county_name,
+    body             report.county_geo_id,
+    body             report.county_status,
+    body             report.fiscal_year_begin,
+    body             report.fiscal_year_end,
+    body             file.period_start
+    body            FROM silver_cms_ltc.facility_report report
+    body              JOIN control.cms_ltc_file file ON file.run_id = report.run_id
+    body           WHERE report.series_id = 'cost_report'::text AND file.status = 'published'::text
+    body           ORDER BY report.ccn, file.period_start DESC, report.fiscal_year_end DESC NULLS LAST, (length(report.report_key)) DESC, report.report_key DESC, file.published_at DESC
+    body         )
+    body  SELECT COALESCE(form_671.ccn, cost.ccn) AS ccn,
+    body     COALESCE(form_671.facility_name, cost.facility_name) AS facility_name,
+    body     cost.street_address,
+    body     COALESCE(form_671.city, cost.city) AS city,
+    body     COALESCE(form_671.state_code, cost.state_code) AS state_code,
+    body     COALESCE(form_671.state_fips, cost.state_fips) AS state_fips,
+    body     COALESCE(form_671.zip_code, cost.zip_code) AS zip_code,
+    body     cost.county_name AS cost_report_county_name,
+    body     cost.county_geo_id,
+    body     COALESCE(cost.county_status, 'no_cost_report'::text) AS county_status,
+    body     form_671.ownership_type,
+    body     form_671.hospital_based,
+    body     form_671.certification_date,
+    body     form_671.period_start AS residents_quarter_start,
+    body     form_671.period_end AS residents_quarter_end,
+    body     residents.value AS total_residents,
+    body     EXTRACT(year FROM cost.period_start)::integer AS cost_report_year,
+    body     cost.fiscal_year_begin,
+    body     cost.fiscal_year_end,
+    body     beds.value AS number_of_beds
+    body    FROM form_671
+    body      FULL JOIN cost ON cost.ccn = form_671.ccn
+    body      LEFT JOIN silver_cms_ltc.facility_count residents ON residents.run_id = form_671.run_id AND residents.report_key = form_671.report_key AND residents.measure_id = 'total_residents'::text
+    body      LEFT JOIN silver_cms_ltc.facility_count beds ON beds.run_id = cost.run_id AND beds.report_key = cost.report_key AND beds.measure_id = 'number_of_beds'::text;
+
+v gold_cms_ltc.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column accrual text
+    column source_column text
+    column schema_version text
+    body SELECT series_id AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     basis,
+    body     accrual,
+    body     source_column,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_cms_ltc.dim_measure measure;
+
+v gold_cms_ltc.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CMS_LTC'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     (measure.series_id || ':'::text) || measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body         CASE measure.accrual
+    body             WHEN 'quarterly'::text THEN ARRAY['QUARTERLY'::text]
+    body             ELSE ARRAY['ANNUAL'::text]
+    body         END AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_cms_ltc', 'relation', 'area_revision', 'key', (measure.series_id || ':'::text) || measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body         CASE measure.series_id
+    body             WHEN 'characteristics'::text THEN 'CMS Long-Term Care Facility Characteristics (CMS Form 671)'::text
+    body             ELSE 'CMS Skilled Nursing Facility Cost Report'::text
+    body         END AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body         CASE measure.series_id
+    body             WHEN 'characteristics'::text THEN 'https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics'::text
+    body             ELSE 'https://data.cms.gov/provider-compliance/cost-report/skilled-nursing-facility-cost-report'::text
+    body         END AS reference_url
+    body    FROM silver_cms_ltc.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(latest.period_start)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(latest.run_id ORDER BY latest.retrieved_at DESC))[1] AS source_run_id,
+    body             max(file.published_at) AS publication_time
+    body            FROM gold_cms_ltc.area_latest latest
+    body              JOIN control.cms_ltc_file file ON file.run_id = latest.run_id
+    body           WHERE latest.series_id = measure.series_id AND latest.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
 
 v gold_dol_childcare.measure_definition
     column metric_key text
@@ -15145,6 +15450,116 @@ r silver_census_sae.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
     index census_sae_revision_run_idx CREATE INDEX census_sae_revision_run_idx ON silver_census_sae.observation_revision USING btree (run_id)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_census_sae.observation_revision USING btree (capture_id, source_row_index, measure_id)
+
+r silver_cms_ltc.area_total
+    column run_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column geo_id text NOT NULL
+    column geo_type text NOT NULL
+    column geo_sk bigint
+    column value bigint NOT NULL
+    column facility_count integer NOT NULL
+    column unplaced_facility_count integer NOT NULL DEFAULT 0
+    column geography_status text NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint area_total_facility_count_check CHECK ((facility_count > 0))
+    constraint area_total_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint area_total_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint area_total_pkey PRIMARY KEY (run_id, measure_id, geo_id)
+    constraint area_total_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.cms_ltc_file(run_id)
+    constraint area_total_unplaced_facility_count_check CHECK ((unplaced_facility_count >= 0))
+    constraint area_total_value_check CHECK ((value >= 0))
+    constraint cms_ltc_area_resolved_has_key CHECK (((geography_status = 'resolved'::text) = (geo_sk IS NOT NULL)))
+    index area_total_pkey CREATE UNIQUE INDEX area_total_pkey ON silver_cms_ltc.area_total USING btree (run_id, measure_id, geo_id)
+    index cms_ltc_area_geo_idx CREATE INDEX cms_ltc_area_geo_idx ON silver_cms_ltc.area_total USING btree (measure_id, geo_id)
+
+r silver_cms_ltc.dim_measure
+    column series_id text NOT NULL
+    column measure_id text NOT NULL
+    column source_column text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column basis text NOT NULL
+    column accrual text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_accrual_check CHECK ((accrual = ANY (ARRAY['quarterly'::text, 'yearly'::text])))
+    constraint dim_measure_pkey PRIMARY KEY (series_id, measure_id)
+    constraint dim_measure_series_id_check CHECK ((series_id = ANY (ARRAY['characteristics'::text, 'cost_report'::text])))
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_cms_ltc.dim_measure USING btree (series_id, measure_id)
+
+r silver_cms_ltc.facility_count
+    column run_id uuid NOT NULL
+    column report_key text NOT NULL
+    column capture_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column value_source text NOT NULL
+    column value bigint
+    column value_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cms_ltc_count_missing_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint cms_ltc_count_not_negative CHECK (((value IS NULL) OR (value >= 0)))
+    constraint cms_ltc_count_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint facility_count_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint facility_count_measure_id_check CHECK ((measure_id = ANY (ARRAY['total_residents'::text, 'medicare_census'::text, 'medicaid_census'::text, 'other_census'::text, 'number_of_beds'::text, 'bed_days_available'::text, 'patient_days'::text])))
+    constraint facility_count_pkey PRIMARY KEY (run_id, report_key, measure_id)
+    constraint facility_count_run_id_report_key_fkey FOREIGN KEY (run_id, report_key) REFERENCES silver_cms_ltc.facility_report(run_id, report_key)
+    constraint facility_count_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    index facility_count_pkey CREATE UNIQUE INDEX facility_count_pkey ON silver_cms_ltc.facility_count USING btree (run_id, report_key, measure_id)
+
+r silver_cms_ltc.facility_report
+    column run_id uuid NOT NULL
+    column report_key text NOT NULL
+    column series_id text NOT NULL
+    column ccn text NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column facility_name text NOT NULL
+    column street_address text
+    column city text
+    column state_code text NOT NULL
+    column state_fips text
+    column zip_code text
+    column county_name text
+    column fiscal_year_begin date
+    column fiscal_year_end date
+    column ownership_type text
+    column hospital_based text
+    column certification_date text
+    column county_geo_id text
+    column county_geo_sk bigint
+    column county_status text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cms_ltc_report_county_in_state CHECK (((county_geo_id IS NULL) OR (split_part(county_geo_id, '|'::text, 1) = ('state:'::text || state_fips))))
+    constraint cms_ltc_report_resolved_has_county CHECK (((county_status = 'resolved'::text) = (county_geo_sk IS NOT NULL)))
+    constraint facility_report_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint facility_report_ccn_check CHECK ((ccn ~ '^[0-9A-Z]{6}$'::text))
+    constraint facility_report_county_status_check CHECK ((county_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'ambiguous'::text, 'not_listed'::text])))
+    constraint facility_report_pkey PRIMARY KEY (run_id, report_key)
+    constraint facility_report_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.cms_ltc_file(run_id)
+    constraint facility_report_series_id_check CHECK ((series_id = ANY (ARRAY['characteristics'::text, 'cost_report'::text])))
+    constraint facility_report_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint facility_report_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    index cms_ltc_report_ccn_idx CREATE INDEX cms_ltc_report_ccn_idx ON silver_cms_ltc.facility_report USING btree (ccn, run_id)
+    index cms_ltc_report_county_idx CREATE INDEX cms_ltc_report_county_idx ON silver_cms_ltc.facility_report USING btree (county_geo_id, run_id)
+    index facility_report_pkey CREATE UNIQUE INDEX facility_report_pkey ON silver_cms_ltc.facility_report USING btree (run_id, report_key)
+
+r silver_cms_ltc.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_cms_ltc.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_cms_ltc.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_cms_ltc.quarantine USING btree (quarantine_sk)
 
 r silver_dol_childcare.fact_price
     column metric_key text NOT NULL

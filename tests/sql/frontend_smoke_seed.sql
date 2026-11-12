@@ -122,7 +122,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success'),
     ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success'),
     ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success'),
-    ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success')
+    ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success'),
+    ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -190,7 +191,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000dc0', '00000000-0000-4000-8000-000000000dc0',
      'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB, 'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', 'captured'),
     ('00000000-0000-4000-9000-000000000dec', '00000000-0000-4000-8000-000000000dec',
-     'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB, 'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', 'captured')
+     'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB, 'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', 'captured'),
+    ('00000000-0000-4000-9000-000000000c71', '00000000-0000-4000-8000-000000000c71',
+     'CMS_LTC', 'smoke://seed', '{}'::JSONB, '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -313,6 +316,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000dec', '00000000-0000-4000-9000-000000000dec',
      '00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB,
      'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000c71', '00000000-0000-4000-9000-000000000c71',
+     '00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'smoke://seed', '{}'::JSONB,
+     '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1495,6 +1502,41 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- CMS nursing homes -- one county's residents on a published Form 671
+-- quarter, summed from the facilities CMS lists there. COUNTY only. The
+-- catalog capture and the file capture are the same seed capture.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.cms_ltc_file (
+    run_id, series_id, period_start, period_end, release_title, catalog_modified,
+    download_url, catalog_capture_id, capture_id, payload_checksum, row_count,
+    kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000c71', 'characteristics', '2098-07-01', '2098-09-30',
+    'Long-Term Care Facility Characteristics : 2098-07-01', '2098-12-31', 'smoke://seed',
+    '00000000-0000-4000-a000-000000000c71', '00000000-0000-4000-a000-000000000c71',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cms_ltc.dim_measure (
+    series_id, measure_id, source_column, measure_label, unit, basis, accrual,
+    parser_contract_version
+) VALUES (
+    'characteristics', 'total_residents', 'Total Residents', 'Nursing home residents',
+    'residents', 'residents counted on the facility''s CMS Form 671 at its most recent survey', 'quarterly', 'cms_ltc_form671_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cms_ltc.area_total (
+    run_id, measure_id, geo_id, geo_type, geo_sk, value, facility_count,
+    unplaced_facility_count, geography_status, source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000c71', 'total_residents', 'state:55|county:025',
+       'county', geo_sk, 883, 16, 0, 'resolved', 'e1b7c3d9f5a2e8c4b0d6f2a8e4c0b6d2'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1541,7 +1583,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ccd.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usda_ers.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url
