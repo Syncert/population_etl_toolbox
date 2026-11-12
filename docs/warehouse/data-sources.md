@@ -45,6 +45,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Crime Data Explorer and Return A master files](#fbi_ucr) | FBI | ● | ● | ◐ |  |  |  | ● | 1990–2025 | Weekly | Loaded |
 | [National Risk Index and disaster declarations](#fema_nri) | FEMA |  |  | ● |  |  |  |  | 1953–2026 | Daily | Loaded |
 | [State and local government finances](#census_govfin) | U.S. Census Bureau | ● | ● | ◐ |  |  |  |  | 1994–2026 | Monthly | Loaded |
+| [Monthly Treasury Statement, federal receipts and outlays](#treasury_mts) | U.S. Treasury, Bureau of the Fiscal Service | ● |  |  |  |  |  |  | 2015–2026 | Monthly | Not loaded yet |
 | [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly + daily lean groups | Loaded |
 | [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
@@ -390,6 +391,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Gold:** `gold_census_govfin.observation_revision`, `gold_census_govfin.observation_latest`, `gold_census_govfin.county_area_government`, `gold_census_govfin.tax_mix`, `gold_census_govfin.tax_burden`
 - **Status (operator checks 2026-11-07):** Loaded: API fiscal years 2017–2024 and the 2002, 2012, 2017 and 2022 unit files (Wisconsin's fiscal 2022 tax burden reads 9.609%). Tax burden exists only for 2017–2024, so a governor whose term starts earlier has none. County areas are sums of each county's governments, a government spanning counties counted whole in its Census home county ([operations](../user-guides/CENSUS_GOVFIN_PIPELINE_OPERATIONS.md)).
 - **Shown on:** place pages, Work and Money, Taxes and public money: "State and local taxes collected, share of personal income" (states and the nation every fiscal year; a county's local governments in Census of Governments years); a state's governor table (tax burden and tax mix by type over each tenure); the lean groups' "similar tax burden" peer group.
+
+<a id="treasury_mts"></a>
+### Monthly Treasury Statement, federal receipts and outlays (`TREASURY_MTS`)
+
+- **Publisher:** U.S. Department of the Treasury, Bureau of the Fiscal Service
+- **Code:** `src/data_ingestion_toolbox/treasury_mts` · DAG `treasury_mts_ingest` · Monthly, 16th 16:00 UTC
+- **Publisher releases:** Monthly, on the eighth business day of the following month; a recent month can be restated
+- **Credential:** none
+- **Years:** statements from March 2015; fiscal-year totals from fiscal 2015 (federal fiscal years end September 30)
+- **Datasets:** Table 9, "Summary of Receipts and Outlays of the U.S. Government by Source/Function" (Fiscal Data API `v1/accounting/mts/mts_table_9`)
+- **Measures:** Federal receipts by source and outlays by budget function (19 functions and their total), each month, the open fiscal year to date, and fiscal-year totals read from the September statement. Derived: each function's share of total outlays. Federal government only, not where the money was spent.
+- **Capture and control:** `control.treasury_mts_page`
+- **Silver:** `silver_treasury_mts.statement_line`, `silver_treasury_mts.statement_line_revision`
+- **Gold:** `gold_treasury_mts.observation_revision`, `gold_treasury_mts.observation_latest`, `gold_treasury_mts.outlays_by_function`
+- **Status:** Not loaded yet (WHERE_PUBLIC_MONEY_GOES_PLAN slice 3). About 4,600 rows, under 0.05 GB ([operations](../user-guides/TREASURY_MTS_PIPELINE_OPERATIONS.md)).
 
 <a id="elections"></a>
 ### Election results and seat holders (`ELECTIONS`)

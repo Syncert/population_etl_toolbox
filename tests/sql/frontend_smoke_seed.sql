@@ -109,6 +109,7 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
     ('00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'success'),
+    ('00000000-0000-4000-8000-00000000075a', 'TREASURY_MTS', 'success'),
     ('00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
@@ -160,6 +161,8 @@ INSERT INTO control.ingestion_request (
      'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
     ('00000000-0000-4000-9000-000000000cd1', '00000000-0000-4000-8000-000000000cd1',
      'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB, 'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', 'captured'),
+    ('00000000-0000-4000-9000-00000000075a', '00000000-0000-4000-8000-00000000075a',
+     'TREASURY_MTS', 'smoke://seed', '{}'::JSONB, 'fea5ec5e83f1121d5f5b6349684c02c22860e50f30724ea5e627df0e6f5edfa6', 'captured'),
     ('00000000-0000-4000-9000-0000000005e1', '00000000-0000-4000-8000-0000000005e1',
      'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB, '230c6a6c4345a9b26b793deab0f1c9a61b7ce7d9670561465f7a1d702edf6153', 'captured'),
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
@@ -248,6 +251,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000cd1', '00000000-0000-4000-9000-000000000cd1',
      '00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB,
      'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000075a', '00000000-0000-4000-9000-00000000075a',
+     '00000000-0000-4000-8000-00000000075a', 'TREASURY_MTS', 'smoke://seed', '{}'::JSONB,
+     'fea5ec5e83f1121d5f5b6349684c02c22860e50f30724ea5e627df0e6f5edfa6', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-0000000005e1', '00000000-0000-4000-9000-0000000005e1',
      '00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB,
@@ -1050,6 +1057,33 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Treasury MTS -- one published September statement line (total outlays),
+-- whose fiscal-year-to-date column is the fiscal year's total. NATIONAL only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.treasury_mts_page (
+    run_id, page_number, since_record_date, capture_id, payload_checksum,
+    row_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-00000000075a', 1, '2098-09-30', '00000000-0000-4000-a000-00000000075a',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_treasury_mts.statement_line (
+    record_date, line_code, classification_id, parent_id, classification_desc,
+    sequence_level, sequence_number_cd, src_line_nbr, print_order_nbr, data_type_cd,
+    record_type_cd, fiscal_year, fiscal_quarter, calendar_month, current_month_source,
+    current_month_amount, value_source, current_fytd_amount, prior_fytd_source,
+    prior_fytd_amount, value_status, run_id, capture_id, source_row_index, source_record_id
+) VALUES (
+    '2098-09-30', '340', '59498966', '59498945', 'Total', 2, '2.20', 33, '33', 'T',
+    'SL', 2098, 4, 9, '584774866340.26', 584774866340.26, '7395799983313.23',
+    7395799983313.23, '7009985661849.26', 7009985661849.26, 'valid',
+    '00000000-0000-4000-8000-00000000075a', '00000000-0000-4000-a000-00000000075a', 1,
+    '0c7d6f6f1b1e4b5a9a3d2e7f8c9b0a12'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- NOAA Storm Events -- one published county-reported tornado and its counts.
 -- NATIONAL, STATE and COUNTY are served by the pipeline; the seed holds the
 -- county count only.
@@ -1426,6 +1460,7 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_epa_aqs.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_normals.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_climdiv.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_treasury_mts.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_storm_events.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fcc_bdc.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fema_nri.metric_publisher

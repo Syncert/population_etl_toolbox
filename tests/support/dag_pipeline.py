@@ -52,6 +52,7 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "epa_aqs_files",
     "noaa_normals_files",
     "noaa_climdiv_files",
+    "treasury_mts_pages",
     "noaa_storm_events_files",
     "census_lodes_files",
     "census_cbp_files",
@@ -1322,6 +1323,19 @@ def stub_noaa_climdiv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(climdiv_capture, "fetch_county_file", fetch_county_file)
 
 
+def stub_treasury_mts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Table 9 page (the August and September 2026 statements)."""
+    from data_ingestion_toolbox.treasury_mts import capture as mts_capture
+    from data_ingestion_toolbox.treasury_mts.client import fetch_page
+    from tests.support.treasury_mts import FixtureClient
+
+    def fetch_reviewed_page(page_number: int, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_page(page_number, **kwargs)
+
+    monkeypatch.setattr(mts_capture, "fetch_page", fetch_reviewed_page)
+
+
 def stub_noaa_storm_events(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed zone-county and 1950, 1995 and 2024 details files."""
     from data_ingestion_toolbox.noaa_storm_events import capture as storm_capture
@@ -1971,6 +1985,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("epa_aqs", stub_epa_aqs),
         ("noaa_normals", stub_noaa_normals),
         ("noaa_climdiv", stub_noaa_climdiv),
+        ("treasury_mts", stub_treasury_mts),
         ("noaa_storm_events", stub_noaa_storm_events),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),

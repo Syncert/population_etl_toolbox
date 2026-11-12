@@ -92,6 +92,7 @@ services:
       airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';
       airflow pools set noaa_normals_files 1 'NOAA climate normals archive (serialized)';
       airflow pools set noaa_climdiv_files 1 'NOAA nClimDiv county files (serialized)';
+      airflow pools set treasury_mts_pages 1 'Treasury Monthly Statement pages (serialized)';
       airflow pools set noaa_storm_events_files 1 'NOAA Storm Events files (serialized)';
       airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)';
       airflow pools set census_cbp_files 1 'Census County Business Patterns files (serialized)';

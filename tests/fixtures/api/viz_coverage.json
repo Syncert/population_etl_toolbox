@@ -124,6 +124,9 @@
       "NATIONAL",
       "STATE"
     ],
+    "TREASURY_MTS": [
+      "NATIONAL"
+    ],
     "USDA_ERS": [
       "COUNTY"
     ],
@@ -3534,6 +3537,76 @@
     },
     {
       "datasets": [],
+      "display_name": "Monthly Treasury Statement: federal receipts and outlays by function",
+      "observation_dimensions": [
+        "measure",
+        "observation_basis"
+      ],
+      "observation_filter_defaults": {},
+      "observation_filters": [
+        "geo_id",
+        "geo_level",
+        "year_from",
+        "year_to"
+      ],
+      "observation_routes": [
+        {
+          "parameters": [
+            "adjustment_status",
+            "county_fips",
+            "domain_desc",
+            "domaincat_desc",
+            "geo_id",
+            "geo_level",
+            "limit",
+            "metric_code",
+            "newest_per_geography",
+            "newest_release_per_period",
+            "offset",
+            "period_start",
+            "reference_period_desc",
+            "release",
+            "scope",
+            "state_fips",
+            "stratum_id",
+            "subject_code",
+            "subject_type",
+            "time_grain",
+            "window",
+            "year_from",
+            "year_to"
+          ],
+          "path": "/api/v1/observations"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset",
+            "scope"
+          ],
+          "path": "/api/v1/observations/periods"
+        },
+        {
+          "parameters": [
+            "limit",
+            "metric_code",
+            "offset"
+          ],
+          "path": "/api/v1/observations/releases"
+        }
+      ],
+      "publishes_aligned_reduction": false,
+      "publishes_value_status": true,
+      "route_segment": null,
+      "served_by_neutral_routes": true,
+      "source_code": "TREASURY_MTS",
+      "time_grains": [
+        "native"
+      ]
+    },
+    {
+      "datasets": [],
       "display_name": "USDA Economic Research Service county classifications and Food Environment Atlas",
       "observation_dimensions": [
         "code_label",
@@ -3763,7 +3836,8 @@
         ]
       ],
       "declined_sources": {
-        "FRED": "source 'FRED' publishes NATIONAL, and the tile boundary draws only COUNTY, STATE: it has no spatial presentation"
+        "FRED": "source 'FRED' publishes NATIONAL, and the tile boundary draws only COUNTY, STATE: it has no spatial presentation",
+        "TREASURY_MTS": "source 'TREASURY_MTS' publishes NATIONAL, and the tile boundary draws only COUNTY, STATE: it has no spatial presentation"
       },
       "page": "/explore",
       "required_filters": [
@@ -3865,6 +3939,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -3923,6 +3998,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -3980,6 +4056,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -4032,6 +4109,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -4054,6 +4132,7 @@
         "CDC": "source 'CDC' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
+        "TREASURY_MTS": "source 'TREASURY_MTS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the explorer's distribution histogram and legend bins: tried /distribution/bins (not declared: /distribution/bins)"
       },
@@ -4154,6 +4233,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -4175,6 +4255,7 @@
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
+        "TREASURY_MTS": "source 'TREASURY_MTS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the explorer's settled trend asks for; the resource refuses the request rather than collapsing the source's strata"
       },
@@ -4236,6 +4317,7 @@
         "CDC": "source 'CDC' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
+        "TREASURY_MTS": "source 'TREASURY_MTS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the comparison workspace's scatter, table, map and export: tried /comparison + /comparison/preflight (not declared: /comparison, /comparison/preflight)"
       },
@@ -4336,6 +4418,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],
@@ -4358,6 +4441,7 @@
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
+        "TREASURY_MTS": "source 'TREASURY_MTS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's cross-sectional scatter asks for; the resource refuses the request rather than collapsing the source's strata"
       },
@@ -4419,6 +4503,7 @@
         "CDC": "source 'CDC' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "FBI_UCR": "source 'FBI_UCR' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
+        "TREASURY_MTS": "source 'TREASURY_MTS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_ERS": "source 'USDA_ERS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata",
         "USDA_NASS": "source 'USDA_NASS' does not publish an aligned per-geography reduction, which the workbench's geography-by-period heatmap asks for; the resource refuses the request rather than collapsing the source's strata"
       },
@@ -4482,6 +4567,7 @@
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
+        "TREASURY_MTS": "source 'TREASURY_MTS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation panel: tried /comparison/correlation + /comparison/preflight (not declared: /comparison/correlation, /comparison/preflight)"
       },
@@ -4545,6 +4631,7 @@
         "CDC": "source 'CDC' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "FBI_UCR": "source 'FBI_UCR' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "NOAA_NORMALS": "source 'NOAA_NORMALS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
+        "TREASURY_MTS": "source 'TREASURY_MTS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "USDA_ERS": "source 'USDA_ERS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)",
         "USDA_NASS": "source 'USDA_NASS' declares no route group that answers the workbench's correlation matrix: tried /comparison/matrix (not declared: /comparison/matrix)"
       },
@@ -4643,6 +4730,7 @@
         "NOAA_CLIMDIV",
         "NOAA_NORMALS",
         "NOAA_STORM_EVENTS",
+        "TREASURY_MTS",
         "USDA_ERS",
         "USDA_NASS"
       ],

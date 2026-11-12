@@ -1125,6 +1125,30 @@ r control.serving_refresh_state
     constraint serving_refresh_state_source_code_check CHECK ((source_code ~ '^[A-Z0-9][A-Z0-9_-]*$'::text))
     index serving_refresh_state_pkey CREATE UNIQUE INDEX serving_refresh_state_pkey ON control.serving_refresh_state USING btree (source_code)
 
+r control.treasury_mts_page
+    column run_id uuid NOT NULL
+    column page_number integer NOT NULL
+    column since_record_date date NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column written_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint treasury_mts_page_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint treasury_mts_page_page_number_check CHECK ((page_number >= 1))
+    constraint treasury_mts_page_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint treasury_mts_page_pkey PRIMARY KEY (run_id, page_number)
+    constraint treasury_mts_page_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint treasury_mts_page_row_count_check CHECK ((row_count >= 0))
+    constraint treasury_mts_page_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint treasury_mts_page_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint treasury_mts_page_written_count_check CHECK ((written_count >= 0))
+    index treasury_mts_page_capture_idx CREATE INDEX treasury_mts_page_capture_idx ON control.treasury_mts_page USING btree (capture_id)
+    index treasury_mts_page_pkey CREATE UNIQUE INDEX treasury_mts_page_pkey ON control.treasury_mts_page USING btree (run_id, page_number)
+
 r control.usda_ers_file
     column run_id uuid NOT NULL
     column product text NOT NULL
@@ -12681,6 +12705,372 @@ v gold_pep.rpt_pep_observations
     body      LEFT JOIN silver_ref.dim_geo_current current USING (geo_sk)
     body      LEFT JOIN silver_ref.dim_time "time" ON "time".date_key = revision.estimate_date;
 
+v gold_treasury_mts.line_definition
+    column line_code text
+    column metric_key text
+    column line_label text
+    column kind text
+    column is_total boolean
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column time_grain text
+    body SELECT line_code,
+    body     measure AS metric_key,
+    body     line_label,
+    body     kind,
+    body     is_total,
+    body     (
+    body         CASE kind
+    body             WHEN 'outlays'::text THEN 'Federal outlays (Monthly Treasury Statement, Table 9)'::text
+    body             ELSE 'Federal receipts (Monthly Treasury Statement, Table 9)'::text
+    body         END || ': '::text) || line_label AS measure_label,
+    body     'US dollars'::text AS unit,
+    body     (((((((('Monthly Treasury Statement, Table 9, line '::text || line_code) || ' ('::text) || line_label) || '), as the Bureau of the Fiscal Service publishes it '::text) || 'through the Fiscal Data API. A fiscal-year value is the September '::text) || 'statement''s fiscal-year-to-date column (the federal fiscal year ends '::text) || 'September 30), never a sum of months. Outlays are net of offsetting '::text) || 'collections, so a line can be negative. Federal government only: not '::text) || 'state or local spending, and not where the money was spent.'::text AS observation_basis,
+    body     'ANNUAL'::text AS time_grain
+    body    FROM ( VALUES ('20'::text,'receipts_individual_income_taxes'::text,'Individual income taxes'::text,'receipts'::text,false), ('30'::text,'receipts_corporation_income_taxes'::text,'Corporation income taxes'::text,'receipts'::text,false), ('50'::text,'receipts_employment_general_retirement'::text,'Social insurance: employment and general retirement'::text,'receipts'::text,false), ('60'::text,'receipts_unemployment_insurance'::text,'Social insurance: unemployment insurance'::text,'receipts'::text,false), ('70'::text,'receipts_other_retirement'::text,'Social insurance: other retirement'::text,'receipts'::text,false), ('80'::text,'receipts_excise_taxes'::text,'Excise taxes'::text,'receipts'::text,false), ('90'::text,'receipts_estate_gift_taxes'::text,'Estate and gift taxes'::text,'receipts'::text,false), ('100'::text,'receipts_customs_duties'::text,'Customs duties'::text,'receipts'::text,false), ('110'::text,'receipts_miscellaneous'::text,'Miscellaneous receipts'::text,'receipts'::text,false), ('120'::text,'receipts_total'::text,'Total receipts'::text,'receipts'::text,true), ('140'::text,'outlays_national_defense'::text,'National defense'::text,'outlays'::text,false), ('150'::text,'outlays_international_affairs'::text,'International affairs'::text,'outlays'::text,false), ('160'::text,'outlays_science_space_technology'::text,'General science, space, and technology'::text,'outlays'::text,false), ('170'::text,'outlays_energy'::text,'Energy'::text,'outlays'::text,false), ('180'::text,'outlays_natural_resources_environment'::text,'Natural resources and environment'::text,'outlays'::text,false), ('190'::text,'outlays_agriculture'::text,'Agriculture'::text,'outlays'::text,false), ('200'::text,'outlays_commerce_housing_credit'::text,'Commerce and housing credit'::text,'outlays'::text,false), ('210'::text,'outlays_transportation'::text,'Transportation'::text,'outlays'::text,false), ('220'::text,'outlays_community_regional_development'::text,'Community and regional development'::text,'outlays'::text,false), ('230'::text,'outlays_education_training_employment_social'::text,'Education, training, employment, and social services'::text,'outlays'::text,false), ('240'::text,'outlays_health'::text,'Health'::text,'outlays'::text,false), ('250'::text,'outlays_medicare'::text,'Medicare'::text,'outlays'::text,false), ('260'::text,'outlays_income_security'::text,'Income security'::text,'outlays'::text,false), ('270'::text,'outlays_social_security'::text,'Social Security'::text,'outlays'::text,false), ('280'::text,'outlays_veterans_benefits'::text,'Veterans benefits and services'::text,'outlays'::text,false), ('290'::text,'outlays_administration_of_justice'::text,'Administration of justice'::text,'outlays'::text,false), ('300'::text,'outlays_general_government'::text,'General government'::text,'outlays'::text,false), ('320'::text,'outlays_net_interest'::text,'Net interest'::text,'outlays'::text,false), ('330'::text,'outlays_undistributed_offsetting_receipts'::text,'Undistributed offsetting receipts'::text,'outlays'::text,false), ('340'::text,'outlays_total'::text,'Total outlays'::text,'outlays'::text,true)) line(line_code, measure, line_label, kind, is_total);
+
+v gold_treasury_mts.measure_export
+    column source_object_key text
+    column measure text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column schema_version text
+    column time_grain text
+    body SELECT metric_key AS source_object_key,
+    body     metric_key AS measure,
+    body     measure_label,
+    body     unit,
+    body     observation_basis,
+    body     'treasury_mts_table9:v1'::text AS schema_version,
+    body     time_grain
+    body    FROM gold_treasury_mts.line_definition;
+
+v gold_treasury_mts.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'TREASURY_MTS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     served.metric_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     export.measure_label || ' (US Treasury)'::text AS metric_display_name,
+    body     export.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY[export.time_grain] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_treasury_mts', 'relation', 'observation_revision', 'key', served.metric_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'U.S. Department of the Treasury, Bureau of the Fiscal Service'::text AS source_name,
+    body     'government-statistical-program'::text AS source_type,
+    body     'https://fiscaldata.treasury.gov/datasets/monthly-treasury-statement/'::text AS reference_url
+    body    FROM ( SELECT definition.metric_key,
+    body             'MTS '::text || to_char(newest.period_end::timestamp with time zone, 'YYYY-MM'::text) AS source_watermark,
+    body             newest.run_id AS source_run_id,
+    body             newest.published_at AS publication_time,
+    body             COALESCE(( SELECT array_agg(DISTINCT gold_glossary.geo_grain(latest.geo_type) ORDER BY (gold_glossary.geo_grain(latest.geo_type))) FILTER (WHERE latest.value IS NOT NULL) AS array_agg
+    body                    FROM ( SELECT sample.geo_type,
+    body                             sample.value
+    body                            FROM gold_treasury_mts.observation_latest sample
+    body                           WHERE sample.metric_key = definition.metric_key
+    body                          LIMIT 1) latest), ARRAY[]::text[]) AS valid_geo_grains
+    body            FROM gold_treasury_mts.line_definition definition
+    body              JOIN LATERAL ( SELECT latest.period_end,
+    body                     latest.run_id,
+    body                     latest.published_at
+    body                    FROM gold_treasury_mts.observation_latest latest
+    body                   WHERE latest.metric_key = definition.metric_key AND latest.value IS NOT NULL
+    body                   ORDER BY latest.period_end DESC
+    body                  LIMIT 1) newest ON true) served
+    body      JOIN gold_treasury_mts.measure_export export ON export.source_object_key = served.metric_key
+    body   WHERE cardinality(served.valid_geo_grains) > 0;
+
+v gold_treasury_mts.observation_latest
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT definition.metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     current.fiscal_year AS year,
+    body     make_date(current.fiscal_year - 1, 10, 1) AS period_start,
+    body     current.record_date AS period_end,
+    body     'us:1'::text AS geo_id,
+    body     entity.geo_sk,
+    body     'nation'::text AS geo_type,
+    body     gold_glossary.geo_grain('nation'::text) AS geo_level,
+    body     current.current_fytd_amount AS value,
+    body     current.value_status,
+    body     (('MTS '::text || to_char(current.record_date::timestamp with time zone, 'YYYY-MM'::text)) || ' read '::text) || to_char((page.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text) AS release_key,
+    body     page.published_at,
+    body     current.source_record_id,
+    body     current.capture_id,
+    body     current.run_id
+    body    FROM silver_treasury_mts.statement_line current
+    body      JOIN control.treasury_mts_page page ON page.run_id = current.run_id AND page.capture_id = current.capture_id
+    body      JOIN gold_treasury_mts.line_definition definition ON definition.line_code = current.line_code
+    body      LEFT JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = 'us:1'::text
+    body   WHERE page.status = 'published'::text AND current.calendar_month = 9 AND current.value_status = 'valid'::text;
+
+v gold_treasury_mts.observation_revision
+    column metric_key text
+    column measure_label text
+    column unit text
+    column observation_basis text
+    column year integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column value numeric
+    column value_status text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT definition.metric_key,
+    body     definition.measure_label,
+    body     definition.unit,
+    body     definition.observation_basis,
+    body     line_row.fiscal_year AS year,
+    body     make_date(line_row.fiscal_year - 1, 10, 1) AS period_start,
+    body     line_row.record_date AS period_end,
+    body     'us:1'::text AS geo_id,
+    body     entity.geo_sk,
+    body     'nation'::text AS geo_type,
+    body     gold_glossary.geo_grain('nation'::text) AS geo_level,
+    body     line_row.current_fytd_amount AS value,
+    body     line_row.value_status,
+    body     (('MTS '::text || to_char(line_row.record_date::timestamp with time zone, 'YYYY-MM'::text)) || ' read '::text) || to_char((line_row.published_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD'::text) AS release_key,
+    body     line_row.published_at,
+    body     line_row.source_record_id,
+    body     line_row.capture_id,
+    body     line_row.run_id
+    body    FROM gold_treasury_mts.statement_line_revision line_row
+    body      JOIN gold_treasury_mts.line_definition definition ON definition.line_code = line_row.line_code
+    body      LEFT JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = 'us:1'::text
+    body   WHERE line_row.calendar_month = 9 AND line_row.value_status = 'valid'::text;
+
+v gold_treasury_mts.outlays_by_function
+    column period_kind text
+    column fiscal_year integer
+    column statement_date date
+    column calendar_month integer
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_type text
+    column line_code text
+    column metric_key text
+    column budget_function text
+    column outlays_amount numeric
+    column total_outlays_amount numeric
+    column share_of_total_outlays_pct numeric
+    column unavailable_reason text
+    column release_key text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body WITH served AS (
+    body          SELECT current.record_date,
+    body             current.line_code,
+    body             current.fiscal_year,
+    body             current.calendar_month,
+    body             current.current_month_amount,
+    body             current.current_fytd_amount,
+    body             current.value_status,
+    body             current.source_record_id,
+    body             current.capture_id,
+    body             current.run_id,
+    body             page.published_at
+    body            FROM silver_treasury_mts.statement_line current
+    body              JOIN control.treasury_mts_page page ON page.run_id = current.run_id AND page.capture_id = current.capture_id
+    body           WHERE page.status = 'published'::text
+    body         ), newest AS (
+    body          SELECT served.fiscal_year,
+    body             max(served.record_date) AS record_date,
+    body             bool_or(served.calendar_month = 9) AS complete
+    body            FROM served
+    body           GROUP BY served.fiscal_year
+    body         ), periods AS (
+    body          SELECT 'fiscal_year'::text AS period_kind,
+    body             served.record_date,
+    body             served.line_code,
+    body             served.fiscal_year,
+    body             served.calendar_month,
+    body             served.current_month_amount,
+    body             served.current_fytd_amount,
+    body             served.value_status,
+    body             served.source_record_id,
+    body             served.capture_id,
+    body             served.run_id,
+    body             served.published_at,
+    body             served.current_fytd_amount AS amount
+    body            FROM served
+    body           WHERE served.calendar_month = 9
+    body         UNION ALL
+    body          SELECT 'fiscal_year_to_date'::text,
+    body             served.record_date,
+    body             served.line_code,
+    body             served.fiscal_year,
+    body             served.calendar_month,
+    body             served.current_month_amount,
+    body             served.current_fytd_amount,
+    body             served.value_status,
+    body             served.source_record_id,
+    body             served.capture_id,
+    body             served.run_id,
+    body             served.published_at,
+    body             served.current_fytd_amount
+    body            FROM served
+    body              JOIN newest ON newest.fiscal_year = served.fiscal_year AND newest.record_date = served.record_date
+    body           WHERE NOT newest.complete
+    body         UNION ALL
+    body          SELECT 'month'::text,
+    body             served.record_date,
+    body             served.line_code,
+    body             served.fiscal_year,
+    body             served.calendar_month,
+    body             served.current_month_amount,
+    body             served.current_fytd_amount,
+    body             served.value_status,
+    body             served.source_record_id,
+    body             served.capture_id,
+    body             served.run_id,
+    body             served.published_at,
+    body             served.current_month_amount
+    body            FROM served
+    body         )
+    body  SELECT part.period_kind,
+    body     part.fiscal_year,
+    body     part.record_date AS statement_date,
+    body     part.calendar_month,
+    body         CASE
+    body             WHEN part.period_kind = 'month'::text THEN date_trunc('month'::text, part.record_date::timestamp with time zone)::date
+    body             ELSE make_date(part.fiscal_year - 1, 10, 1)
+    body         END AS period_start,
+    body     part.record_date AS period_end,
+    body     'us:1'::text AS geo_id,
+    body     'nation'::text AS geo_type,
+    body     definition.line_code,
+    body     definition.metric_key,
+    body     definition.line_label AS budget_function,
+    body     part.amount AS outlays_amount,
+    body     total.amount AS total_outlays_amount,
+    body         CASE
+    body             WHEN part.amount IS NULL OR total.amount IS NULL OR total.amount = 0::numeric THEN NULL::numeric
+    body             ELSE round(100::numeric * part.amount / total.amount, 2)
+    body         END AS share_of_total_outlays_pct,
+    body         CASE
+    body             WHEN part.amount IS NULL THEN 'not published for this line and period'::text
+    body             WHEN total.amount IS NULL THEN 'total outlays not published for this period'::text
+    body             WHEN total.amount = 0::numeric THEN 'total outlays are zero'::text
+    body             ELSE NULL::text
+    body         END AS unavailable_reason,
+    body     'MTS '::text || to_char(part.record_date::timestamp with time zone, 'YYYY-MM'::text) AS release_key,
+    body     part.published_at,
+    body     part.source_record_id,
+    body     part.capture_id,
+    body     part.run_id
+    body    FROM periods part
+    body      JOIN gold_treasury_mts.line_definition definition ON definition.line_code = part.line_code AND definition.kind = 'outlays'::text AND NOT definition.is_total
+    body      LEFT JOIN periods total ON total.period_kind = part.period_kind AND total.record_date = part.record_date AND total.line_code = '340'::text;
+
+v gold_treasury_mts.statement_line_revision
+    column record_date date
+    column line_code text
+    column classification_desc text
+    column fiscal_year integer
+    column calendar_month integer
+    column current_month_amount numeric
+    column current_fytd_amount numeric
+    column prior_fytd_amount numeric
+    column value_status text
+    column published_at timestamp with time zone
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    body SELECT line_row.record_date,
+    body     line_row.line_code,
+    body     line_row.classification_desc,
+    body     line_row.fiscal_year,
+    body     line_row.calendar_month,
+    body     line_row.current_month_amount,
+    body     line_row.current_fytd_amount,
+    body     line_row.prior_fytd_amount,
+    body     line_row.value_status,
+    body     page.published_at,
+    body     line_row.source_record_id,
+    body     line_row.capture_id,
+    body     line_row.run_id
+    body    FROM ( SELECT current.record_date,
+    body             current.line_code,
+    body             current.classification_desc,
+    body             current.fiscal_year,
+    body             current.calendar_month,
+    body             current.current_month_amount,
+    body             current.current_fytd_amount,
+    body             current.prior_fytd_amount,
+    body             current.value_status,
+    body             current.source_record_id,
+    body             current.capture_id,
+    body             current.run_id
+    body            FROM silver_treasury_mts.statement_line current
+    body         UNION ALL
+    body          SELECT revision.record_date,
+    body             revision.line_code,
+    body             revision.classification_desc,
+    body             revision.fiscal_year,
+    body             revision.calendar_month,
+    body             revision.current_month_amount,
+    body             revision.current_fytd_amount,
+    body             revision.prior_fytd_amount,
+    body             revision.value_status,
+    body             revision.source_record_id,
+    body             revision.capture_id,
+    body             revision.run_id
+    body            FROM silver_treasury_mts.statement_line_revision revision) line_row
+    body      JOIN control.treasury_mts_page page ON page.run_id = line_row.run_id AND page.capture_id = line_row.capture_id
+    body   WHERE page.status = 'published'::text;
+
 v gold_usda_ers.measure_definition
     column measure text
     column measure_label text
@@ -16837,6 +17227,97 @@ r silver_ref.tract_decade_crosswalk
     constraint tract_decade_crosswalk_total_area_part_m2_check CHECK ((total_area_part_m2 >= (0)::numeric))
     index tract_decade_crosswalk_later_idx CREATE INDEX tract_decade_crosswalk_later_idx ON silver_ref.tract_decade_crosswalk USING btree (later_vintage, later_geo_sk)
     index tract_decade_crosswalk_pkey CREATE UNIQUE INDEX tract_decade_crosswalk_pkey ON silver_ref.tract_decade_crosswalk USING btree (earlier_vintage, earlier_geo_sk, later_geo_sk)
+
+r silver_treasury_mts.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_treasury_mts.quarantine_quarantine_sk_seq'::regclass)
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_treasury_mts.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_treasury_mts.quarantine USING btree (quarantine_sk)
+
+r silver_treasury_mts.statement_line
+    column record_date date NOT NULL
+    column line_code text NOT NULL
+    column classification_id text NOT NULL
+    column parent_id text
+    column classification_desc text NOT NULL
+    column sequence_level integer
+    column sequence_number_cd text
+    column src_line_nbr integer
+    column print_order_nbr text
+    column data_type_cd text
+    column record_type_cd text
+    column fiscal_year integer NOT NULL
+    column fiscal_quarter integer
+    column calendar_month integer NOT NULL
+    column current_month_source text NOT NULL
+    column current_month_amount numeric
+    column value_source text NOT NULL
+    column current_fytd_amount numeric
+    column prior_fytd_source text NOT NULL
+    column prior_fytd_amount numeric
+    column value_status text NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint statement_line_calendar_month_check CHECK (((calendar_month >= 1) AND (calendar_month <= 12)))
+    constraint statement_line_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint statement_line_fiscal_quarter_check CHECK (((fiscal_quarter >= 1) AND (fiscal_quarter <= 4)))
+    constraint statement_line_fiscal_year_check CHECK ((fiscal_year >= 2015))
+    constraint statement_line_line_code_check CHECK ((line_code ~ '^[0-9]+$'::text))
+    constraint statement_line_pkey PRIMARY KEY (record_date, line_code)
+    constraint statement_line_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint statement_line_source_record_id_check CHECK ((source_record_id ~ '^[0-9a-f]{32}$'::text))
+    constraint statement_line_source_row_index_check CHECK ((source_row_index >= 1))
+    constraint statement_line_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text])))
+    constraint treasury_mts_missing_value_absent CHECK (((value_status = 'valid'::text) OR (current_fytd_amount IS NULL)))
+    constraint treasury_mts_valid_value_present CHECK (((value_status <> 'valid'::text) OR (current_fytd_amount IS NOT NULL)))
+    index statement_line_pkey CREATE UNIQUE INDEX statement_line_pkey ON silver_treasury_mts.statement_line USING btree (record_date, line_code)
+    index treasury_mts_statement_line_fiscal_idx CREATE INDEX treasury_mts_statement_line_fiscal_idx ON silver_treasury_mts.statement_line USING btree (line_code, fiscal_year, calendar_month)
+    index treasury_mts_statement_line_run_idx CREATE INDEX treasury_mts_statement_line_run_idx ON silver_treasury_mts.statement_line USING btree (run_id)
+
+r silver_treasury_mts.statement_line_revision
+    column record_date date NOT NULL
+    column line_code text NOT NULL
+    column classification_id text NOT NULL
+    column parent_id text
+    column classification_desc text NOT NULL
+    column sequence_level integer
+    column sequence_number_cd text
+    column src_line_nbr integer
+    column print_order_nbr text
+    column data_type_cd text
+    column record_type_cd text
+    column fiscal_year integer NOT NULL
+    column fiscal_quarter integer
+    column calendar_month integer NOT NULL
+    column current_month_source text NOT NULL
+    column current_month_amount numeric
+    column value_source text NOT NULL
+    column current_fytd_amount numeric
+    column prior_fytd_source text NOT NULL
+    column prior_fytd_amount numeric
+    column value_status text NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column source_record_id text NOT NULL
+    column created_at timestamp with time zone NOT NULL
+    column superseded_by_run_id uuid NOT NULL
+    column superseded_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint statement_line_revision_pkey PRIMARY KEY (record_date, line_code, run_id)
+    index statement_line_revision_pkey CREATE UNIQUE INDEX statement_line_revision_pkey ON silver_treasury_mts.statement_line_revision USING btree (record_date, line_code, run_id)
 
 r silver_usda_ers.fact_observation
     column attribute text NOT NULL

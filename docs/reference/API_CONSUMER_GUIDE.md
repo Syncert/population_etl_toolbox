@@ -1215,6 +1215,29 @@ the last day of that month.
   marker for months not yet published; it is never served as a value.
 - **Monthly only.** Months are not added or averaged into a year here.
 
+### Reading a Monthly Treasury Statement row: a federal fiscal year as Treasury publishes it
+
+`TREASURY_MTS` serves the lines of the Monthly Treasury Statement's Table 9
+for the nation (`us:1`): federal receipts by source (`receipts_individual_income_taxes`
+to `receipts_total`) and outlays by budget function (`outlays_national_defense`
+to `outlays_total`), in US dollars and cents. One row per line and federal
+fiscal year; `period_start` is October 1 of the prior calendar year and
+`period_end` is September 30.
+
+- **It is the September statement's fiscal-year-to-date column.** The
+  fiscal-year value is read as Treasury published it, never added up from
+  months. A fiscal year with no September statement yet has no row.
+- **Federal government only.** These are the federal government's own
+  receipts and outlays, not state or local spending, and not where the money
+  was spent. Outlays are net of offsetting collections, so a line (such as
+  undistributed offsetting receipts) can be negative.
+- **Recent months change.** Each read re-reads the three months before the
+  newest statement; `/api/v1/observations/releases` returns a restated
+  fiscal-year total beside the one it replaced.
+- **Shares and months live in the warehouse view.** `gold_treasury_mts.outlays_by_function`
+  holds each budget function's share of total outlays for fiscal years, the
+  open fiscal year to date, and each month.
+
 ### Reading a LEHD LODES row: jobs where people live and where they work
 
 `CENSUS_LODES` serves the Census Bureau's LEHD Origin-Destination Employment
@@ -1633,6 +1656,7 @@ prevent:
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
 | NOAA Storm Events | `Storm Events <file name>` | The day NCEI created the year's file, in its name (`StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz`); a restamped year is recounted |
 | NOAA nClimDiv | `nClimDiv <file name>` | NCEI's release day and version in the file name (`climdiv-pcpncy-v1.0.0-20261105`); a month a later release changes is kept as replaced |
+| Monthly Treasury Statement | `MTS <statement month> read <date>` | Treasury's statement month plus the day the warehouse read it; Treasury restates a recent month in place, and a restated line read again is a second release |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
@@ -1948,6 +1972,9 @@ climate normals are declined because a 30-year normal is not the value of any
 one year, so aligning it by year with annual values would mislead. USDA ERS
 is declined because it publishes classifications -- rural-urban codes and
 typology flags -- that an analysis would average or correlate as quantities.
+The Monthly Treasury Statement (`TREASURY_MTS`) is declined because its years
+are federal fiscal years (October to September) for the nation only, which a
+year-aligned analysis would pair with other sources' calendar years.
 Query them through `/observations` with the appropriate stratum, domain, or
 subject filters.
 
@@ -1968,7 +1995,8 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals and USDA ERS.
+restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals, USDA ERS and the
+Monthly Treasury Statement.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -2058,7 +2086,7 @@ each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
 measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
-NOAA climate normals, USDA ERS),
+NOAA climate normals, USDA ERS, the Monthly Treasury Statement),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined
