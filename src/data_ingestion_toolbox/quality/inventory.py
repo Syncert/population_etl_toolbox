@@ -2621,6 +2621,16 @@ _CMS_LTC_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="an area with no facility figure has no row",
     ),
     _obj(
+        "silver_cms_ltc.facility_place",
+        "silver",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report",
+        scope_method="each facility's county from its newest published cost report",
+        cadence="per CMS publication",
+        empty_behavior="empty only before the first published cost report",
+    ),
+    _obj(
         "gold_cms_ltc.area_revision",
         "gold",
         "CMS_LTC",
@@ -2647,6 +2657,16 @@ _CMS_LTC_OBJECTS: tuple[WarehouseObject, ...] = (
         grain="ccn",
         lineage="silver_cms_ltc.facility_report, silver_cms_ltc.facility_count",
         scope_method="newest published CMS-671 quarter and cost report per facility",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.facility_history",
+        "gold",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report, silver_cms_ltc.facility_count",
+        scope_method="every facility in any published file, flagged when in the newest quarter",
         cadence="per publication",
         empty_behavior="empty only before the first published file",
     ),
@@ -7681,7 +7701,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "uniqueness",
         "A CMS file holds one row per report: a CMS-671 facility once per "
         "quarter, a cost report once per year's file; a second read is a "
-        "second run beside the first, never an overwrite.",
+        "second run beside the first, never an overwrite. Each facility has "
+        "one current county placement.",
         (
             "silver_cms_ltc.facility_report",
             "silver_cms_ltc.facility_count",
@@ -7689,6 +7710,8 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_cms_ltc.area_revision",
             "gold_cms_ltc.area_latest",
             "gold_cms_ltc.facility_latest",
+            "gold_cms_ltc.facility_history",
+            "silver_cms_ltc.facility_place",
         ),
         automation="enforced",
         automation_note=(
@@ -7703,6 +7726,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             EnforcedGrain(
                 "silver_cms_ltc.area_total", ("run_id", "measure_id", "geo_id")
             ),
+            EnforcedGrain("silver_cms_ltc.facility_place", ("ccn",)),
         ),
     ),
     _rule(
