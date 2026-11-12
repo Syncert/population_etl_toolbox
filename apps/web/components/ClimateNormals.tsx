@@ -200,7 +200,7 @@ function ClimateTable({ rows, geoId, name }: { rows: Record<string, ObservationR
       </table>
       <p className="subtle" data-testid="place-climate-stations">
         NCEI publishes normals for weather stations. Each figure here is the plain mean of the stations placed in {name} that NCEI flags standard or representative for that measure
-        {stations.length ? `: ${stations.join("; ")}` : ""}. The bar under each mean temperature runs from the month&apos;s mean daily low to its mean daily high, with a mark at the mean, on one scale for the year.
+        {stations.length ? `: ${stations.join("; ")}` : ""}. The bar under each mean temperature runs from the month&apos;s mean daily low to its mean daily high, with a mark at the mean, on one scale for the year. Figures are rounded to the precision NCEI publishes for a station: 0.1°F and 0.01 in.
       </p>
       {table.placementNotes.length ? (
         <p className="subtle" data-testid="place-climate-placement-note">

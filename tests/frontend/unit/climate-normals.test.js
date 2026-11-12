@@ -10,7 +10,7 @@ import {
 } from "../../../apps/web/lib/climateNormals";
 
 // Covers: WEB-175 — place-climate-normals: a county's monthly NOAA normals
-// are laid out by month as stored, a month with no row is missing (never
+// are laid out by month at NCEI's station precision, a month with no row is missing (never
 // zero), station counts and placement notes come from the rows, and no
 // annual figure is made from the months.
 
@@ -35,12 +35,18 @@ describe("climate normals", () => {
     expect(catalogedNormals(new Map([[PRCP, {}]]))).toEqual([PRCP]);
   });
 
-  it("keeps the stored value at the source's precision", () => {
-    expect(formatNormal("18.60", "mean")).toBe("18.6°F");
-    expect(formatNormal("18.63", "mean")).toBe("18.63°F");
-    expect(formatNormal("-3.00", "low")).toBe("-3.0°F");
-    expect(formatNormal("4.40", "precipitation")).toBe("4.40 in");
-    expect(formatNormal("1.5", "precipitation")).toBe("1.50 in");
+  it("shows every value at NCEI's station precision, with a fixed number of decimals", () => {
+    // Live Dane County values (2026-11-12): the mean's second decimal is rounded.
+    expect(formatNormal("18.58", "mean")).toBe("18.6°F");
+    expect(formatNormal("71.46", "mean")).toBe("71.5°F");
+    expect(formatNormal("57.0", "high")).toBe("57.0°F");
+    expect(formatNormal("57", "high")).toBe("57.0°F");
+    expect(formatNormal("56.7", "low")).toBe("56.7°F");
+    expect(formatNormal("18.65", "mean")).toBe("18.7°F");
+    expect(formatNormal("-3.25", "low")).toBe("-3.3°F");
+    expect(formatNormal("-0.04", "low")).toBe("0.0°F");
+    expect(formatNormal("4.4", "precipitation")).toBe("4.40 in");
+    expect(formatNormal("5.49", "precipitation")).toBe("5.49 in");
   });
 
   it("lays out twelve months, leaving a month with no row missing", () => {

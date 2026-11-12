@@ -217,14 +217,15 @@ function childcareCpiRows(geo) {
       period_start: month, period_end: month };
   });
 }
-// Dane County's monthly normals, 1991-2020: January and July as the live
-// warehouse serves them (2026-11-12); the other months are fixture values.
+// Dane County's monthly normals, 1991-2020: January's temperatures and July's
+// mean as the live warehouse stores them (2026-11-12, two decimals, shown at
+// 0.1 F); the other months are fixture values.
 // The precipitation figure includes a station placed by the nearest-county
 // rule, so it carries the placement note.
 const DANE_NORMALS = {
-  monthly_mean_temperature: ["18.60", "22.50", "33.80", "46.10", "57.90", "67.70", "71.50", "69.40", "61.30", "48.90", "36.20", "24.00"],
-  monthly_mean_maximum_temperature: ["27.30", "31.50", "43.30", "57.00", "69.30", "78.80", "82.20", "80.10", "72.60", "59.40", "45.00", "32.20"],
-  monthly_mean_minimum_temperature: ["9.90", "13.50", "24.30", "35.20", "46.50", "56.60", "60.60", "58.70", "50.00", "38.40", "27.40", "15.80"],
+  monthly_mean_temperature: ["18.58", "22.50", "33.80", "46.10", "57.90", "67.70", "71.46", "69.40", "61.30", "48.90", "36.20", "24.00"],
+  monthly_mean_maximum_temperature: ["27.28", "31.50", "43.30", "57.00", "69.30", "78.80", "82.20", "80.10", "72.60", "59.40", "45.00", "32.20"],
+  monthly_mean_minimum_temperature: ["9.86", "13.50", "24.30", "35.20", "46.50", "56.60", "60.60", "58.70", "50.00", "38.40", "27.40", "15.80"],
   monthly_precipitation: ["1.56", "1.43", "2.06", "3.38", "3.92", "4.98", "4.40", "4.18", "3.36", "2.58", "2.19", "1.73"],
 };
 const NORMALS_NOTE = "Includes stations no county boundary covers, placed on this county as the nearest county boundary within 1,000 metres: USC00470000 (212 m).";
