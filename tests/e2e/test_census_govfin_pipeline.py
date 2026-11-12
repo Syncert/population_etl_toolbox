@@ -61,7 +61,13 @@ def test_county_area_and_state_taxes_reach_the_neutral_api(
     state_code = f"{SOURCE_CODE}:asslgf:taxes_total:state_and_local"
     with real_api_client() as api:
         catalog = api.get(
-            "/api/v1/catalog/metrics", params={"source_code": SOURCE_CODE, "limit": 200}
+            "/api/v1/catalog/metrics",
+            # By code: the spending lines put the source's catalog past one
+            # page, and the two metrics this node reads are what it checks.
+            params={
+                "source_code": SOURCE_CODE,
+                "metric_codes": f"{county_code},{state_code}",
+            },
         ).json()
         codes = {item["metric_code"] for item in catalog["items"]}
         assert {county_code, state_code} <= codes
