@@ -301,7 +301,7 @@ def build_domains(relations: dict[str, Relation]) -> list[Domain]:
     ]
     claimed_schemas = {"raw_capture", "silver_ref"}
     for source in WAREHOUSE_SOURCES:
-        if source.code in ("CENSUS_DECENNIAL", "CENSUS_GEO"):
+        if source.code in ("CENSUS_ACS_DECENNIAL", "CENSUS_GEO"):
             continue
         schemas = _schemas_of(source.raw + source.silver + source.gold) - {
             "control",

@@ -223,11 +223,13 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # and conformance rules (DQ-CLIMDIV-001 and -003) fifty-three, and the
     # Storm Events grain and conformance rules (DQ-STORM-001 and -003)
     # fifty-five, and the Monthly Treasury Statement's grain and conformance
-    # rules (DQ-TREASURY-001 and -003) fifty-seven.
+    # rules (DQ-TREASURY-001 and -003) fifty-seven, and the 2020 Census
+    # counts' grain and conformance rules (DQ-DECENNIAL-001 and -002)
+    # fifty-nine.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 57, enforced
+    assert len(enforced) == 59, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -455,6 +457,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_BPS",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CENSUS_DECENNIAL",
         "EIA",
         "FBI_UCR",
         "EPA_AQS",
