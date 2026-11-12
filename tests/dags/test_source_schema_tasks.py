@@ -154,7 +154,7 @@ SOURCES = [
     (
         "treasury_mts_ingest",
         "ensure_treasury_mts_schema",
-        "ingest_statements",
+        "ingest_batch_statements",
         treasury_mts_schema,
         "TREASURY_MTS",
     ),

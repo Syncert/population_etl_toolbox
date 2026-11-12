@@ -74,7 +74,7 @@ def treasury_mts_ingest():
         )
 
     @task(pool="treasury_mts_pages")
-    def ingest_statements() -> dict[str, Any]:
+    def ingest_batch_statements() -> dict[str, Any]:
         connection_factory = _get_postgres_hook().get_conn
         conf = dict(get_current_context()["dag_run"].conf or {})
         # A retry after a failed replay reads again under a new run; finish
@@ -97,7 +97,7 @@ def treasury_mts_ingest():
         task_id="ensure_treasury_mts_schema"
     )()
     geography = require_shared_geography()
-    schema >> geography >> ingest_statements()
+    schema >> geography >> ingest_batch_statements()
 
 
 treasury_mts_ingest()
