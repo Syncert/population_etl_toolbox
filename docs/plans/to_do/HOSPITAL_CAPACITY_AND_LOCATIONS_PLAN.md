@@ -1,13 +1,12 @@
 ---
 id: hospital-capacity-and-locations
-depends_on:
-  - nursing-home-locations
+depends_on: []
 parallel_safe: true
 complexity: medium
 verify:
-  - python -m pytest tests/unit/cms_provider tests/unit/hhs_hospital_capacity tests/unit/api -q
+  - python -m pytest tests/unit/hhs_hospital_capacity tests/unit/api -q
   - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "cms_provider or hospital" -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "hospital" -q
   - python -m pytest tests/dags -m dag -q
 ---
 
@@ -19,13 +18,15 @@ To do. Step 6 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
 
 ## Sources
 
-- **CMS Hospital General Information** (`xubh-q36u`), every
-  Medicare-registered hospital, current list: CMS certification number,
-  name, address, county name, hospital type, ownership, emergency services.
-  A second dataset on the `cms_provider` adapter.
+- **CMS Hospital General Information** (`xubh-q36u`) sits on the Provider
+  Data Catalog path that refused the toolbox's client (HTTP 403,
+  2026-11-12), so it is not used. The HHS file below carries each
+  hospital's CMS certification number, name, address, subtype, county FIPS
+  code and published geocode, and stands in for the hospital list; it
+  ends at 2024-05-03, so a hospital opened later is not listed.
 - **HHS COVID-19 Reported Patient Impact and Hospital Capacity by Facility**
   (healthdata.gov `anag-cw7u`), weekly per facility, 2020 to 2024-05-03,
-  frozen, Public Domain U.S. Government. Kept: inpatient beds, staffed adult
+  frozen, Public Domain U.S. Government, 1,045,406 rows. Kept: inpatient beds, staffed adult
   ICU beds, inpatient beds used, ICU beds used, COVID-19 inpatients, the
   facility's FIPS county code and geocoded address as published. The
   dataset writes small values as suppressed (-999999); that is kept as
@@ -33,10 +34,9 @@ To do. Step 6 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
 
 ## Design
 
-- The general list has no coordinates. Place each hospital by the HHS file's
-  published geocode where the certification number matches; otherwise by its
-  published county name within its state (`geography_status =
-  'county_by_name'`). No address is geocoded by a third party.
+- Each hospital is placed by the HHS file's published county FIPS code; its
+  published geocode is kept as the point. No address is geocoded by a third
+  party.
 - One frozen capture of the HHS file (paged Socrata reads with a per-page
   control table for resume); never re-requested once complete.
 - Gold: hospital list per county; weekly series per hospital; county weekly

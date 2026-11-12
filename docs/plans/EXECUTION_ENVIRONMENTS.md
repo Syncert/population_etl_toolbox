@@ -121,7 +121,7 @@ make test-web-smoke        # the live-stack frontend smoke
 | [`fbi-return-a-bulk-load`](to_do/FBI_RETURN_A_BULK_LOAD_PLAN.md) | high | `postgres` | -- |
 | [`group-quarters-by-type`](to_do/GROUP_QUARTERS_BY_TYPE_PLAN.md) | medium | `postgres` | -- |
 | [`home-heating-fuel-prices`](in_progress/HOME_HEATING_FUEL_PRICES_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
-| [`hospital-capacity-and-locations`](to_do/HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | medium | `postgres` | `nursing-home-locations` |
+| [`hospital-capacity-and-locations`](to_do/HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
 | [`lodes-block-grain-for-dane`](to_do/LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | medium | `postgres` | `block-population-and-age-for-dane` |
 | [`nursing-home-locations`](to_do/NURSING_HOME_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
 | [`outbreak-calibration-sets`](to_do/OUTBREAK_CALIBRATION_SETS_PLAN.md) | high | `postgres` | `nursing-home-locations` |

@@ -46,18 +46,22 @@ response curve), are **outside this repository**. Nothing here builds them.
 | --- | --- |
 | 2020 Census redistricting data `dec/pl` | P5 "Group quarters population by major group quarters type", P5_001N to P5_010N (correctional adult, juvenile, nursing, other institutional, college housing, military, other noninstitutional); H1 occupancy; P1 is race only, so its total P1_001N is the one P1 cell taken. |
 | 2020 Census DHC `dec/dhc` | Block is a published geography (state > county > tract > block). P12 sex by age for selected age categories; P18 GQ population by sex by age by major GQ type; PCO1 to PCO10 GQ population by sex by age for each GQ type (PCO3 adult correctional, PCO5 nursing, PCO8 college housing). PCT18A to PCT18I are race iterations and are not requested. |
-| CMS Provider Information `4pq5-n9py` | One row per nursing home, monthly (released 2026-10-28, next 2026-12-02), CSV distribution, `accessLevel: public`. |
-| CMS Hospital General Information `xubh-q36u` | Every Medicare-registered hospital, CSV, public. |
-| CDC Case Surveillance with Geography `n8mc-b4w4` | 106,219,500 rows, Public Domain U.S. Government, frozen (no updates after 2024-07). |
+| CMS Provider Information `4pq5-n9py` and Hospital General Information `xubh-q36u` | Public, but the Provider Data Catalog path answers **HTTP 403** to the toolbox's client on the internal stack (2026-11-12). Not used; no user agent or header changes are tried. |
+| CMS Long-Term Care Facility Characteristics (CMS-671) and SNF Cost Report | On CMS's main catalog, `data-api/v1` and file paths answer HTTP 200: 14,688 facilities (Q3 2026) with residents; 14,587 cost reports (2024) with beds, address and county. They stand in for Provider Information, without coordinates (see `nursing-home-locations`). |
+| CDC Case Surveillance with Geography `n8mc-b4w4` | 106,219,500 rows, Public Domain U.S. Government, frozen (no updates after 2024-07). Grouped reads by `county_fips_code`, `case_month` and `age_group` answer on the internal stack (Dane 2021-11: 0-17 1,236; 18-49 1,748; 50-64 436; 65+ 215; NA 16). |
 | CDC PLACES tract, 2025 release `cwsq-ngmh` | 3,047,284 rows, 40 measures, Public Domain. |
 | HHS hospital capacity by facility `anag-cw7u` | Weekly per facility, Public Domain U.S. Government, frozen after 2024-05-03. |
-| BTS T-100 Domestic Segment | Monthly 1990 to 2026; bulk-download route to confirm on the internal stack before the plan starts. |
+| BTS T-100 Domestic Segment | Monthly 1990 to 2026. The `transtats.bts.gov/PREZIP/` folder holds On-Time and DB1B files but no T-100 file; a documented download route is still to be found before the plan starts. |
 | CDC FluView ILINet | Weekly by national, HHS region and state, with age groups; download route to confirm. |
 | Google COVID-19 Community Mobility Reports | Frozen 2022-10-15. Use is under the **Google Terms of Service**, not an open licence. Not loaded until Nick decides (see `air-travel-and-mobility`). |
 | New York Times COVID-19 data | Non-commercial licence. **Never loaded.** |
 
 The cloud session cannot reach census.gov, cms.gov or cdc.gov downloads, so
-each plan's first step is a live probe on the internal stack.
+the providers' paths were probed on the internal stack (2026-11-12; scripts
+in the Library under `outbreak_inputs/`). 2020 PL P5 answered at every grain:
+Dane County has 17,465 people in group quarters (1,806 nursing facilities,
+9,925 college housing, 1,541 adult correctional) of 561,504, and its 10,961
+blocks came in one 4-second response.
 
 ## Rules every plan here follows
 

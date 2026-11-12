@@ -5,9 +5,9 @@ depends_on:
 parallel_safe: true
 complexity: high
 verify:
-  - python -m pytest tests/unit/cdc tests/unit/cms_provider tests/unit/api -q
+  - python -m pytest tests/unit/cdc tests/unit/cms_ltc tests/unit/api -q
   - ruff format --check . ; ruff check .
-  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "cdc or cms_provider" -q
+  - RUN_INTEGRATION_TESTS=1 python -m pytest -m "integration and database" tests/integration/database -k "cdc or cms_ltc" -q
   - python -m pytest tests/dags -m dag -q
 ---
 
@@ -26,9 +26,12 @@ real outbreak curves to check a model against.
    month, age group, and hospitalisation and death fields. **Race and
    ethnicity fields are not requested.**
 2. **CMS COVID-19 Nursing Home Data**, weekly resident and staff cases and
-   deaths per facility, 2020 to 2024. The probe confirms its current
-   dataset id, licence and API (the CMS page could not be read from the
-   cloud session).
+   deaths per facility, 2020 to 2024. Its page
+   (`data.cms.gov/covid-19/covid-19-nursing-home-data`) is a script-only
+   page and the `data.json` catalog lists no dataset by that name
+   (2026-11-12). It is loaded only if CMS lists it on a path that answers
+   an ordinary client (the main catalog's `data-api/v1` does); otherwise
+   this part is set aside and said so.
 3. **CDC FluView ILINet**, weekly influenza-like illness by national, HHS
    region and state, with age groups. The probe confirms the download route.
 
@@ -46,7 +49,7 @@ The New York Times county series is **not** used (non-commercial licence).
   records CDC published, not all cases.
 - CMS weekly nursing-home cases join the facilities of
   [`nursing-home-locations`](NURSING_HOME_LOCATIONS_PLAN.md) by
-  certification number.
+  certification number (CCN).
 - ILINet weekly by state, as published, with the reporting-provider count.
 - All three are frozen or seasonal; the DAG requests only weeks or months
   not yet loaded.
