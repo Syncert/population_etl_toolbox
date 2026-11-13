@@ -122,7 +122,7 @@ CHARACTERISTICS = Series(
             "Hospital Based",
         }
     ),
-    parser_contract_version="cms_ltc_form671_csv:v1",
+    parser_contract_version="cms_ltc_form671_csv:v2",
 )
 
 _COST_REPORT_BASIS = "reported on the facility's skilled nursing facility cost report"
@@ -181,7 +181,7 @@ COST_REPORT = Series(
             "Total Days Total",
         }
     ),
-    parser_contract_version="cms_ltc_snf_cost_report_csv:v1",
+    parser_contract_version="cms_ltc_snf_cost_report_csv:v2",
 )
 
 #: Cost reports first: the CMS-671 quarter is placed on a county by the

@@ -45,13 +45,39 @@ airflow dags trigger cms_ltc_ingest
 `--conf '{"history": true}'` reads every release again; identical bytes are
 recorded `unchanged` and write no row.
 
+## Facility list and placement
+
+`gold_cms_ltc.facility_latest` lists only the facilities of the newest
+published CMS-671 quarter, each with its newest published cost report
+(labelled by `cost_report_year`). A facility CMS no longer lists is in
+`gold_cms_ltc.facility_history`, with its last quarter, its last cost-report
+year and `in_newest_quarter` false. A facility's placement is stored in
+`silver_cms_ltc.facility_place` when a cost report is published.
+
+A cost report's county name is matched in three steps, each only when the one
+before found nothing, and each only on a single county: exact (case, periods
+and the County/Parish/Borough/city word aside), spelling (accents folded and
+spaces removed: `DONA ANA`, `BLACKHAWK`), and only county (`DC`). The step is
+recorded in `county_match`. A name that is both a county and an independent
+city (`ST. LOUIS`, `BALTIMORE`, `FAIRFAX`, `RICHMOND`, `ROANOKE`) stays
+`ambiguous`, and no field in the cost report settles which one.
+
+`DQ-CMSLTC-003` (WARN) counts the newest quarter's facilities on no county,
+with `no_cost_report` or `county_name_not_matched` on each. Most have no
+Medicare cost report (Medicaid-only nursing facilities), so a steady count is
+expected (1,017 on 2026-11-12: 793 with no cost report, 224 not matched). They
+are in their state's and the nation's sums and in no county's; each county sum
+says so in `coverage_note`. Placing them by ZIP code would need a new
+ZIP-to-county source and is not done.
+
 ## Text encoding
 
 CMS writes most files in UTF-8, some with a byte-order mark. Older releases
 (Form_671_Q4_2023.csv, for one) carry Windows-1252 bytes such as 0x92, a right
 single quote. A file is read as UTF-8 when every byte is UTF-8 and otherwise
 as Windows-1252, strictly both times: no byte is dropped or replaced. The
-encoding used is recorded in `control.cms_ltc_file.text_encoding`. A file that
+encoding used is recorded in `control.cms_ltc_file.text_encoding` when the file is captured
+(and again at replay). A file that
 reads as neither is refused (`not_text`) and set aside whole.
 
 ## Deployment prerequisites

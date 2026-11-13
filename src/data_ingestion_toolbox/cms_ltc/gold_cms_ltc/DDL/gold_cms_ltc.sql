@@ -36,7 +36,11 @@ SELECT measure.series_id,
        TO_CHAR(capture.retrieved_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS release_key,
        area.source_record_id,
        file.capture_id,
-       area.run_id
+       area.run_id,
+       CASE area.geo_type
+           WHEN 'county' THEN 'Facilities CMS places on no county (no Medicare cost report, or a cost-report county name that matches no county or two) are in no county sum; they are in their state and national sums.'
+           ELSE 'Includes facilities CMS places on no county; unplaced_facility_count says how many.'
+       END AS coverage_note
 FROM silver_cms_ltc.area_total AS area
 JOIN control.cms_ltc_file AS file ON file.run_id = area.run_id
 JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
@@ -53,12 +57,64 @@ FROM gold_cms_ltc.area_revision AS revision
 ORDER BY revision.metric_key, revision.geo_id, revision.period_start,
          revision.retrieved_at DESC, revision.capture_id DESC;
 
--- Every facility CMS lists, by certification number: its newest published
+-- The facilities CMS lists now: every facility of the newest published
+-- CMS-671 quarter (residents on its survey), with its newest published cost
+-- report (beds, street address, county), labelled by that report's year. The
+-- county is the cost report's, placed by name (`county_match` says how); a
+-- facility with no cost report, or whose county name matched no county or
+-- two, has none. A facility missing from the newest quarter is not listed
+-- here; `facility_history` keeps it with its last periods.
+CREATE OR REPLACE VIEW gold_cms_ltc.facility_latest AS
+WITH newest AS (
+    SELECT file.run_id, file.period_start, file.period_end
+    FROM control.cms_ltc_file AS file
+    WHERE file.series_id = 'characteristics' AND file.status = 'published'
+    ORDER BY file.period_start DESC, file.published_at DESC
+    LIMIT 1
+)
+SELECT report.ccn,
+       report.facility_name,
+       cost.street_address,
+       report.city,
+       report.state_code,
+       report.state_fips,
+       report.zip_code,
+       cost.county_name AS cost_report_county_name,
+       place.county_geo_id,
+       COALESCE(place.county_status, 'no_cost_report') AS county_status,
+       report.ownership_type,
+       report.hospital_based,
+       report.certification_date,
+       newest.period_start AS residents_quarter_start,
+       newest.period_end AS residents_quarter_end,
+       residents.value AS total_residents,
+       EXTRACT(YEAR FROM place.period_start)::INTEGER AS cost_report_year,
+       cost.fiscal_year_begin,
+       cost.fiscal_year_end,
+       beds.value AS number_of_beds,
+       cost.county_match
+FROM newest
+JOIN silver_cms_ltc.facility_report AS report ON report.run_id = newest.run_id
+LEFT JOIN silver_cms_ltc.facility_place AS place ON place.ccn = report.ccn
+LEFT JOIN silver_cms_ltc.facility_report AS cost
+  ON cost.run_id = place.run_id AND cost.report_key = place.report_key
+LEFT JOIN silver_cms_ltc.facility_count AS residents
+  ON residents.run_id = report.run_id AND residents.report_key = report.report_key
+ AND residents.measure_id = 'total_residents'
+LEFT JOIN silver_cms_ltc.facility_count AS beds
+  ON beds.run_id = place.run_id AND beds.report_key = place.report_key
+ AND beds.measure_id = 'number_of_beds';
+
+-- Every facility CMS has listed, by certification number, including those
+-- no longer in the newest CMS-671 quarter (`in_newest_quarter` false): its
+-- last published CMS-671 quarter and its last published cost report, each
+-- with its own period, so a facility that stopped reporting reads as such.
+-- By certification number: its newest published
 -- CMS-671 quarter (residents on its survey) and its newest published cost
 -- report (beds, street address, county), each with its own period. The
 -- county is the cost report's, placed by name; a facility with no cost
 -- report, or whose county name matched no county or two, has none.
-CREATE OR REPLACE VIEW gold_cms_ltc.facility_latest AS
+CREATE OR REPLACE VIEW gold_cms_ltc.facility_history AS
 WITH form_671 AS (
     SELECT DISTINCT ON (report.ccn)
            report.ccn, report.run_id, report.report_key, report.facility_name,
@@ -101,7 +157,11 @@ SELECT COALESCE(form_671.ccn, cost.ccn) AS ccn,
        EXTRACT(YEAR FROM cost.period_start)::INTEGER AS cost_report_year,
        cost.fiscal_year_begin,
        cost.fiscal_year_end,
-       beds.value AS number_of_beds
+       beds.value AS number_of_beds,
+       COALESCE(form_671.period_start = (
+           SELECT MAX(newest.period_start) FROM control.cms_ltc_file AS newest
+           WHERE newest.series_id = 'characteristics' AND newest.status = 'published'
+       ), FALSE) AS in_newest_quarter
 FROM form_671
 FULL JOIN cost ON cost.ccn = form_671.ccn
 LEFT JOIN silver_cms_ltc.facility_count AS residents

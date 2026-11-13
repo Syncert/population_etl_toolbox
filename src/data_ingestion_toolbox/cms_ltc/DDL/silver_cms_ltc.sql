@@ -105,6 +105,34 @@ CREATE TABLE IF NOT EXISTS silver_cms_ltc.facility_report (
 CREATE INDEX IF NOT EXISTS cms_ltc_report_ccn_idx ON silver_cms_ltc.facility_report (ccn, run_id);
 CREATE INDEX IF NOT EXISTS cms_ltc_report_county_idx ON silver_cms_ltc.facility_report (county_geo_id, run_id);
 
+-- How a cost report's county name placed it (cms_ltc.silver_cms_ltc.parse.
+-- place_county_with_match): `exact`, `spelling` (accents folded, spaces
+-- removed: DONA ANA, BLACKHAWK) or `only_county` (the District of Columbia).
+-- The published name is kept in county_name either way.
+ALTER TABLE silver_cms_ltc.facility_report
+    ADD COLUMN IF NOT EXISTS county_match TEXT
+        CHECK (county_match IN ('exact', 'spelling', 'only_county'));
+
+-- Each facility's placement: its newest published cost report (newest
+-- period, then the fiscal year that ends last) and the county that report
+-- places it on. Written when a cost report is published, only where the
+-- newest report changes, so the facility list can start from a county.
+CREATE TABLE IF NOT EXISTS silver_cms_ltc.facility_place (
+    ccn TEXT PRIMARY KEY,
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    report_key TEXT NOT NULL,
+    period_start DATE NOT NULL,
+    fiscal_year_end DATE,
+    state_fips TEXT,
+    county_geo_id TEXT,
+    county_geo_sk BIGINT,
+    county_status TEXT NOT NULL CHECK (county_status IN ('resolved', 'unmapped', 'ambiguous', 'not_listed')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (run_id, report_key) REFERENCES silver_cms_ltc.facility_report(run_id, report_key)
+);
+
+CREATE INDEX IF NOT EXISTS cms_ltc_place_county_idx ON silver_cms_ltc.facility_place (county_geo_id);
+
 -- Every registered figure of every facility row, as published. A blank is
 -- `missing`, never zero.
 CREATE TABLE IF NOT EXISTS silver_cms_ltc.facility_count (

@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -190,27 +191,84 @@ def county_base(name: str) -> str:
     return normalised
 
 
+def compact_county_name(name: str) -> str:
+    """The normalised name with accents folded and every space removed
+    (``DONA ANA`` and ``Doña Ana``; ``BLACKHAWK`` and ``Black Hawk``)."""
+    folded = unicodedata.normalize("NFKD", normalise_county_name(name))
+    return "".join(
+        character
+        for character in folded
+        if not unicodedata.combining(character) and not character.isspace()
+    )
+
+
+def place_county_with_match(
+    county_name: str | None,
+    state_fips: str | None,
+    counties: dict[str, list[tuple[str, int, str]]],
+) -> tuple[str, str | None, int | None, str | None]:
+    """(status, geo_id, geo_sk, how it matched) for a cost report's county name.
+
+    ``counties`` maps a state FIPS code to its counties as
+    ``(geo_id, geo_sk, reference name)``. Three deterministic steps, each
+    used only when the one before found no county, and each placing the
+    facility only on a single match:
+
+    1. ``exact``: the name equals a county's own name, or its name without
+       its County/Parish/Borough/city word, once case, periods and
+       apostrophes are set aside.
+    2. ``spelling``: the same, with accents folded and spaces removed.
+    3. ``only_county``: the state has exactly one county (the District of
+       Columbia), whatever name the report gives.
+
+    Two matches at a step leave the facility ``ambiguous`` and stop: a name
+    such as ST. LOUIS that is both a county and an independent city is never
+    decided between them.
+    """
+    if not county_name or not state_fips:
+        return "unmapped", None, None, None
+    candidates = counties.get(state_fips, ())
+    steps = (
+        (
+            "exact",
+            normalise_county_name,
+            lambda name: (normalise_county_name(name), county_base(name)),
+        ),
+        (
+            "spelling",
+            compact_county_name,
+            lambda name: (
+                compact_county_name(name),
+                compact_county_name(county_base(name)),
+            ),
+        ),
+    )
+    for kind, normalise, forms in steps:
+        wanted = normalise(county_name)
+        matches = {
+            (geo_id, geo_sk)
+            for geo_id, geo_sk, name in candidates
+            if wanted in forms(name)
+        }
+        if len(matches) == 1:
+            ((geo_id, geo_sk),) = matches
+            return "resolved", geo_id, geo_sk, kind
+        if matches:
+            return "ambiguous", None, None, None
+    if len(candidates) == 1:
+        geo_id, geo_sk, _name = candidates[0]
+        return "resolved", geo_id, geo_sk, "only_county"
+    return "unmapped", None, None, None
+
+
 def place_county(
     county_name: str | None,
     state_fips: str | None,
     counties: dict[str, list[tuple[str, int, str]]],
 ) -> tuple[str, str | None, int | None]:
-    """(status, geo_id, geo_sk) for a cost report's county name.
-
-    ``counties`` maps a state FIPS code to its counties as
-    ``(geo_id, geo_sk, reference name)``. A name matches a county whose own
-    name, or whose name without its County/Parish/Borough/city word, equals
-    it; only a single match places the facility.
-    """
-    if not county_name or not state_fips:
-        return "unmapped", None, None
-    wanted = normalise_county_name(county_name)
-    matches = {
-        (geo_id, geo_sk)
-        for geo_id, geo_sk, name in counties.get(state_fips, ())
-        if wanted in (normalise_county_name(name), county_base(name))
-    }
-    if len(matches) == 1:
-        ((geo_id, geo_sk),) = matches
-        return "resolved", geo_id, geo_sk
-    return ("ambiguous" if matches else "unmapped"), None, None
+    """(status, geo_id, geo_sk) for a cost report's county name (see
+    :func:`place_county_with_match`)."""
+    status, geo_id, geo_sk, _kind = place_county_with_match(
+        county_name, state_fips, counties
+    )
+    return status, geo_id, geo_sk
