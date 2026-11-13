@@ -45,6 +45,12 @@ airflow dags trigger cms_ltc_ingest
 `--conf '{"history": true}'` reads every release again; identical bytes are
 recorded `unchanged` and write no row.
 
+A plain run skips a release only when it was published from the same URL
+under the series' current parser contract. When a contract changes (v1 to v2
+on 2026-11-13), the next plain run reads every release once more, cost
+reports first, so the facility placements and file encodings the new
+contract derives are rebuilt; the run after that reads nothing.
+
 ## Facility list and placement
 
 `gold_cms_ltc.facility_latest` lists only the facilities of the newest
