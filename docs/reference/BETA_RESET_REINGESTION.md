@@ -508,7 +508,10 @@ once ([operations](../user-guides/HHS_HOSPITAL_CAPACITY_PIPELINE_OPERATIONS.md))
 trigger `cdc_covid_cases_ingest` once after the shared geography loads: it
 has no schedule, and a plain run reads the frozen CDC case surveillance counts
 once, about 2,900 requests
-([operations](../user-guides/CDC_COVID_CASES_PIPELINE_OPERATIONS.md)). Trigger
+([operations](../user-guides/CDC_COVID_CASES_PIPELINE_OPERATIONS.md)). Unpause
+`cdc_ilinet_ingest` after the shared geography loads: unpausing starts one
+run at once, which reads every ILINet season FluView offers
+([operations](../user-guides/CDC_ILINET_PIPELINE_OPERATIONS.md)). Trigger
 `census_govfin_ingest` once after BEA loads: a plain run captures every
 registered annual finance year, QTAX year and Census of Governments edition
 not yet answered, so there is no history run

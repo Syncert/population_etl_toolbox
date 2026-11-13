@@ -658,6 +658,32 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CDC_COVID_CASES",
     ),
     WarehouseSource(
+        code="CDC_ILINET",
+        name="Influenza-like illness by week (CDC ILINet)",
+        publisher="Centers for Disease Control and Prevention",
+        topic="Health",
+        module="cdc_ilinet",
+        dag="cdc_ilinet_ingest",
+        cadence="Weekly (Fridays 20:00 UTC)",
+        release="FluView Interactive, revised weekly",
+        grains={"nation": "d", "state": "d"},
+        years=[(1997, 2026)],
+        years_note="National weekly from 1997 week 40; states from the 2010-11 season",
+        datasets=["FluView Interactive ILINet download (gis.cdc.gov/flu2/)"],
+        measures=(
+            "Per nation and state and MMWR week: weighted and unweighted percentage of "
+            "outpatient visits for influenza-like illness, ILI visits by age group, ILI "
+            "visits, reporting providers and patient visits, as CDC published them; "
+            "CDC's X (not published) kept as such, never zero."
+        ),
+        raw=[],
+        control=["control.cdc_ilinet_release", "control.cdc_ilinet_download"],
+        silver=["silver_cdc_ilinet.region", "silver_cdc_ilinet.week_value"],
+        gold=["gold_cdc_ilinet.area_revision", "gold_cdc_ilinet.area_latest"],
+        credential="none",
+        catalog_source_code="CDC_ILINET",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

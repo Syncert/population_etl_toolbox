@@ -1419,6 +1419,47 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CDC_ILINET",
+            latest_relation="gold_cdc_ilinet.area_latest",
+            released_relation="gold_cdc_ilinet.area_revision",
+            lineage_schema="gold_cdc_ilinet",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `ilinet:<measure>`, the same text
+            # the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("basis", "basis"),
+                ("mmwr_year", "mmwr_year::TEXT"),
+                ("mmwr_week", "mmwr_week::TEXT"),
+                ("source_region", "source_region"),
+                # CDC's own text: X where it does not publish the figure.
+                ("value_source", "value_source"),
+                ("jurisdiction_note", "jurisdiction_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_start >= make_date(:year_from, 1, 1)"),
+                ("year_to", "period_start <= make_date(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="IRS_MIGRATION",
             latest_relation="gold_irs_migration.total_observation_latest",
             released_relation="gold_irs_migration.total_observation_revision",
@@ -2453,6 +2494,10 @@ def _hhs_hospital_capacity_datasets() -> tuple[str, ...]:
     return (DATASET_ID,)
 
 
+def _cdc_ilinet_datasets() -> tuple[str, ...]:
+    return ("fluview_ilinet",)
+
+
 def _cdc_covid_cases_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.cdc_covid_cases.config import DATASET_ID
 
@@ -2594,6 +2639,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_cdc_covid_cases_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CDC_ILINET",
+            display_name="CDC FluView ILINet weekly influenza-like illness",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_cdc_ilinet_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,

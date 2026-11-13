@@ -89,6 +89,7 @@ SOURCES: tuple[str, ...] = (
     "NCES_IPEDS",
     "HHS_HOSPITAL_CAPACITY",
     "CDC_COVID_CASES",
+    "CDC_ILINET",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -3065,6 +3066,112 @@ _CDC_COVID_CASES_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# CDC FluView ILINet (weekly outpatient influenza-like illness).
+# ---------------------------------------------------------------------------
+
+_CDC_ILINET_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cdc_ilinet_release",
+        "control",
+        "CDC_ILINET",
+        grain="release_id (one read of FluView)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the init document and one download per region type",
+        cadence="weekly",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.cdc_ilinet_download",
+        "control",
+        "CDC_ILINET",
+        grain="release_id, region_type",
+        lineage="raw_capture.response_capture",
+        scope_method="national, HHS-region and state downloads of a release",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cdc_ilinet.dim_measure",
+        "silver",
+        "CDC_ILINET",
+        grain="measure_id",
+        scope_method="registered figures in cdc_ilinet/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_ilinet.quarantine",
+        "silver",
+        "CDC_ILINET",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_cdc_ilinet.region",
+        "silver",
+        "CDC_ILINET",
+        grain="region_type, region",
+        lineage="silver_ref.dim_geo_entity",
+        scope_method="every ILINet reporting region read, with its placement or why it is not served",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_ilinet.week_value",
+        "silver",
+        "CDC_ILINET",
+        grain="region_type, region, mmwr_year, mmwr_week, measure_id, release_id",
+        lineage="raw_capture.response_capture",
+        scope_method="each figure as the release that first carried or changed it",
+        cadence="per replay",
+        empty_behavior="a figure CDC marks X is retained as not_published, never zero",
+    ),
+    _obj(
+        "gold_cdc_ilinet.area_revision",
+        "gold",
+        "CDC_ILINET",
+        grain="release_id, measure_id, geo_id, period_start (published releases only)",
+        lineage="silver_cdc_ilinet.week_value, silver_cdc_ilinet.region",
+        scope_method="published revisions of served regions",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_cdc_ilinet.area_latest",
+        "gold",
+        "CDC_ILINET",
+        grain="metric_key, geo_id, period_start (newest published revision)",
+        lineage="gold_cdc_ilinet.area_revision",
+        scope_method="newest-revision projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_cdc_ilinet.measure_export",
+        "publisher",
+        "CDC_ILINET",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cdc_ilinet.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cdc_ilinet.metric_publisher",
+        "publisher",
+        "CDC_ILINET",
+        grain="source_object_key (ilinet:measure)",
+        lineage="silver_cdc_ilinet.week_value, silver_cdc_ilinet.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published release",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # 2020 Census redistricting data (group quarters by type).
 # ---------------------------------------------------------------------------
 
@@ -5852,6 +5959,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _NCES_IPEDS_OBJECTS
     + _HHS_HOSPITAL_CAPACITY_OBJECTS
     + _CDC_COVID_CASES_OBJECTS
+    + _CDC_ILINET_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -6245,6 +6353,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_nces_ipeds.metric_publisher",
             "gold_hhs_hospital_capacity.metric_publisher",
             "gold_cdc_covid_cases.metric_publisher",
+            "gold_cdc_ilinet.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -8396,6 +8505,84 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_cdc_covid_cases.quarantine",
             "control.cdc_covid_cases_snapshot",
+        ),
+    ),
+    # -- CDC FluView ILINet --------------------------------------------------
+    _rule(
+        "DQ-ILINET-001",
+        "BLOCK",
+        "uniqueness",
+        "An ILINet figure has one row per region, MMWR week, measure and the "
+        "release that first carried or changed it; an unchanged figure is "
+        "never written again.",
+        (
+            "control.cdc_ilinet_download",
+            "silver_cdc_ilinet.region",
+            "silver_cdc_ilinet.week_value",
+            "gold_cdc_ilinet.area_revision",
+            "gold_cdc_ilinet.area_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated region week aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                (
+                    "region_type",
+                    "region",
+                    "mmwr_year",
+                    "mmwr_week",
+                    "measure_id",
+                    "release_id",
+                ),
+            ),
+            EnforcedGrain("silver_cdc_ilinet.region", ("region_type", "region")),
+        ),
+    ),
+    _rule(
+        "DQ-ILINET-002",
+        "BLOCK",
+        "conformance",
+        "A valid ILINet figure carries a value; one CDC marks X (not "
+        "published) or leaves empty carries none: neither is stored as zero.",
+        (
+            "silver_cdc_ilinet.week_value",
+            "silver_cdc_ilinet.dim_measure",
+            "gold_cdc_ilinet.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cdc_ilinet_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cdc_ilinet_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ILINET-003",
+        "WARN",
+        "completeness",
+        "Rows of the newest published ILINet release that were set aside (a "
+        "row whose week, region type or a figure could not be read) are "
+        "counted. They are in no served figure.",
+        (
+            "silver_cdc_ilinet.quarantine",
+            "control.cdc_ilinet_release",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

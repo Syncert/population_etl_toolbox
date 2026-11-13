@@ -58,6 +58,7 @@ GUARDED = {
     "nces_ipeds_ingest": "require_shared_geography",
     "hhs_hospital_capacity_ingest": "require_shared_geography",
     "cdc_covid_cases_ingest": "require_shared_geography",
+    "cdc_ilinet_ingest": "require_shared_geography",
     "census_govfin_ingest": "require_shared_geography",
     "eia_retail_gasoline_ingest": "require_shared_geography",
 }

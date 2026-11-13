@@ -183,6 +183,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "NCES_IPEDS": "gold_ddl_nces_ipeds",
     "HHS_HOSPITAL_CAPACITY": "gold_ddl_hhs_hospital_capacity",
     "CDC_COVID_CASES": "gold_ddl_cdc_covid_cases",
+    "CDC_ILINET": "gold_ddl_cdc_ilinet",
     "CENSUS_GOVFIN": "gold_ddl_census_govfin",
     "FBI_UCR": "gold_ddl_fbi",
     "FRED": "gold_ddl_fred",

@@ -75,6 +75,7 @@ ORDERED_PIPELINE_DAGS: tuple[str, ...] = (
     "nces_ipeds_ingest",
     "hhs_hospital_capacity_ingest",
     "cdc_covid_cases_ingest",
+    "cdc_ilinet_ingest",
     "census_govfin_ingest",
     # After every source it derives from: the election lean groups (ADR-0014)
     # read the presidential vote and BEA, QCEW, SAIPE, LAUS, FRED and ERS.

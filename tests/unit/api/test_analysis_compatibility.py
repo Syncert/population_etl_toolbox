@@ -217,6 +217,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "NCES_IPEDS",
         "HHS_HOSPITAL_CAPACITY",
         "CDC_COVID_CASES",
+        "CDC_ILINET",
         "IRS_MIGRATION",
         "IRS_SOI",
         "EIA",

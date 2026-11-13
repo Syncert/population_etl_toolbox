@@ -275,6 +275,13 @@ FACTS = [
         "valid",
         can_withhold=False,
     ),
+    # An ILINet figure CDC marks X is `not_published` with no number.
+    FactContract(
+        "CDC_ILINET",
+        SRC / "cdc_ilinet/DDL/silver_cdc_ilinet.sql",
+        "silver_cdc_ilinet.week_value",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

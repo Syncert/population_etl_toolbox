@@ -126,7 +126,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success'),
     ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success'),
     ('00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'success'),
-    ('00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'success')
+    ('00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'success'),
+    ('00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -202,7 +203,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-00000000044b', '00000000-0000-4000-8000-00000000044b',
      'HHS_HOSPITAL_CAPACITY', 'smoke://seed', '{}'::JSONB, '8b4de6708e7e19ceb03930abb3f71c52b1377f6c229b6b2d0630f90321cf7120', 'captured'),
     ('00000000-0000-4000-9000-000000000c19', '00000000-0000-4000-8000-000000000c19',
-     'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB, '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', 'captured')
+     'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB, '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', 'captured'),
+    ('00000000-0000-4000-9000-00000000f1e7', '00000000-0000-4000-8000-00000000f1e7',
+     'CDC_ILINET', 'smoke://seed', '{}'::JSONB, 'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -341,6 +344,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000c19', '00000000-0000-4000-9000-000000000c19',
      '00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB,
      '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000f1e7', '00000000-0000-4000-9000-00000000f1e7',
+     '00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'smoke://seed', '{}'::JSONB,
+     'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1658,6 +1665,40 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- CDC FluView ILINet -- one state's weekly influenza-like illness percentage.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.cdc_ilinet_release (
+    release_id, run_id, init_capture_id, row_count, kept_row_count,
+    changed_value_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-00000000f1e7', '00000000-0000-4000-8000-00000000f1e7',
+    '00000000-0000-4000-a000-00000000f1e7', 1, 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.dim_measure (
+    measure_id, source_column, measure_label, unit, basis, parser_contract_version
+) VALUES (
+    'unweighted_ili_pct', '%UNWEIGHTED ILI', 'Influenza-like illness, percentage of visits',
+    'percent',
+    'influenza-like illness visits as a percentage of all patient visits reported by the sentinel providers',
+    'cdc_fluview_ilinet_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.region (
+    region_type, region, geo_id, geo_type, geography_status, jurisdiction_note
+) VALUES ('state', 'Wisconsin', 'state:55', 'state', 'resolved', NULL)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.week_value (
+    region_type, region, mmwr_year, mmwr_week, measure_id, release_id, week_start,
+    capture_id, source_row_index, value_source, value, value_status
+) VALUES (
+    'state', 'Wisconsin', 2098, 2, 'unweighted_ili_pct', '00000000-0000-4000-b000-00000000f1e7',
+    DATE '2098-01-05', '00000000-0000-4000-a000-00000000f1e7', 1, '3.04037', 3.04037, 'valid'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1708,7 +1749,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hhs_hospital_capacity.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_covid_cases.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_covid_cases.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_ilinet.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

@@ -50,6 +50,7 @@ EXPECTED_DAG_IDS = {
     "nces_ipeds_ingest",
     "hhs_hospital_capacity_ingest",
     "cdc_covid_cases_ingest",
+    "cdc_ilinet_ingest",
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
@@ -115,6 +116,8 @@ EXPECTED_SCHEDULES = {
     "hhs_hospital_capacity_ingest": None,
     # Operator-triggered: CDC froze the case surveillance file (case months to 2024-07).
     "cdc_covid_cases_ingest": None,
+    # Fridays after CDC's weekly FluView update.
+    "cdc_ilinet_ingest": "0 20 * * 5",
     # Monthly: annual finances publish each autumn, QTAX a quarter after the
     # quarter, the unit files every five years; a run captures its revision
     # window and every registered period never answered.
@@ -210,6 +213,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "nces_ipeds_ingest": 2,
     "hhs_hospital_capacity_ingest": 2,
     "cdc_covid_cases_ingest": 2,
+    "cdc_ilinet_ingest": 2,
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,

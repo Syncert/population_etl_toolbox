@@ -40,6 +40,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [College housing capacity and enrolment](#nces_ipeds) | National Center for Education Statistics | ◐ | ◐ | ◐ |  |  |  |  | 2012–2024 | Monthly | Not loaded yet |
 | [Hospital beds and occupancy by week](#hhs_hospital_capacity) | U.S. Department of Health and Human Services | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
 | [COVID-19 case records by county, month and age](#cdc_covid_cases) | Centers for Disease Control and Prevention | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
+| [Influenza-like illness by state and week (ILINet)](#cdc_ilinet) | Centers for Disease Control and Prevention | ◐ | ◐ |  |  |  |  |  | 1997–present (states 2010–) | Weekly (Fri) | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -308,6 +309,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Capture and control:** `control.cdc_covid_cases_snapshot`, `control.cdc_covid_cases_slice` (the slice index, then one grouped request per state and month; each slice must add up to the index; an interrupted run resumes at the next slice)
 - **Silver:** `silver_cdc_covid_cases.slice_group`, `silver_cdc_covid_cases.area_month`, `silver_cdc_covid_cases.dim_measure`, `silver_cdc_covid_cases.quarantine`
 - **Gold:** `gold_cdc_covid_cases.area_revision`, `gold_cdc_covid_cases.area_latest`
+- **Status:** Not loaded yet (added 2026-11-12, plan `outbreak-calibration-sets`).
+
+<a id="cdc_ilinet"></a>
+### Influenza-like illness by state and week (`CDC_ILINET`)
+
+- **Publisher:** Centers for Disease Control and Prevention
+- **Code:** `src/data_ingestion_toolbox/cdc_ilinet` · DAG `cdc_ilinet_ingest` · Weekly, Fridays 20:00 UTC
+- **Publisher releases:** FluView Interactive's download service (`https://gis.cdc.gov/flu2/`), the page's own ILINet download for the nation, HHS regions and states; U.S. Outpatient Influenza-like Illness Surveillance Network, Public Domain U.S. Government.
+- **Credential:** none
+- **Weeks:** national and HHS regions from 1997 week 40; states from 2010 week 40.
+- **Measures:** Per MMWR week: weighted and unweighted percentage of outpatient visits for influenza-like illness, ILI visits by age group, ILI visits, providers reporting and patient visits. By state CDC publishes the unweighted percentage and the three counts only; the rest it writes `X`, kept as not published, never zero.
+- **Placement:** The nation; a state by the FIPS code FluView's init lists. HHS regions, New York City and Los Angeles are kept but not served (New York and California carry a note).
+- **Capture and control:** `control.cdc_ilinet_release`, `control.cdc_ilinet_download` (one init and three downloads per release; a release repeating the published files is `unchanged`; a changed file writes only the figures that changed)
+- **Silver:** `silver_cdc_ilinet.week_value`, `silver_cdc_ilinet.region`, `silver_cdc_ilinet.dim_measure`, `silver_cdc_ilinet.quarantine`
+- **Gold:** `gold_cdc_ilinet.area_revision`, `gold_cdc_ilinet.area_latest`
 - **Status:** Not loaded yet (added 2026-11-12, plan `outbreak-calibration-sets`).
 
 <a id="census_lodes"></a>

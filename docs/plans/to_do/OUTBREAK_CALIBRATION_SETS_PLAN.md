@@ -27,11 +27,14 @@ real outbreak curves to check a model against.
   dropped. CDC writes `NA` for a withheld county.
 - **CMS COVID-19 nursing-home weekly data: set aside.** The 2026-11-12 scan of
   `data.cms.gov/data.json` lists no dataset by that name on an answering path.
-- **ILINet: route confirmed, to build.** FluView's own download service at
-  `gis.cdc.gov/flu2/` answers the page's Download request. At state level CDC
-  publishes unweighted ILI, ILI total, providers and patients; weighted ILI
-  and the age bands are `X` (not published), so the age split is national
-  and HHS-region only. National weekly back to 1997 week 40.
+- **ILINet: built** (`cdc_ilinet`, ETL-136). FluView's own download service
+  at `gis.cdc.gov/flu2/` answers the page's init and Download requests
+  (probe 12, 2026-11-12: national 0.7 s, HHS regions 1.1 s, states 2.7 s).
+  At state level CDC publishes unweighted ILI, ILI total, providers and
+  patients; weighted ILI and the age bands are `X` (not published), so the
+  age split is national and HHS-region only. National weekly back to 1997
+  week 40, states from 2010. Weekly run Fridays 20:00 UTC; a changed file
+  writes only the figures that changed.
 
 ## Sources
 
