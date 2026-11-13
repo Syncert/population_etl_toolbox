@@ -1568,8 +1568,9 @@ layer's own `total`:
   thousands of US dollars, and the shares add to 100.
 - `federal_awards_by_type` and `federal_awards_by_agency` (a state and a
   county): `gold_usaspending.awards_by_award_type` and `awards_by_agency`,
-  for the newest federal fiscal year that has ended, in US dollars.
-  Obligations USAspending lists with no agency count in the total but in no
+  for the newest federal fiscal year that ended more than a year ago, in US
+  dollars. Agencies keep reporting a year for months after it ends, so a
+  newer ended year is named in the layer's `notes`, not served. Obligations USAspending lists with no agency count in the total but in no
   agency.
 
 A layer with nothing to serve has empty `lines`, a null `total` and an
