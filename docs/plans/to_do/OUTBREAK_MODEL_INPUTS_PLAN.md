@@ -108,7 +108,7 @@ loads land.
 | 6 | [`hospital-capacity-and-locations`](HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | facility, weekly 2020 to 2024 | about 12 GB |
 | 7 | [`places-tract-release`](PLACES_TRACT_RELEASE_PLAN.md) | tract | about 4 GB a release |
 | 8 | [`outbreak-calibration-sets`](OUTBREAK_CALIBRATION_SETS_PLAN.md) | county by month by age; facility weekly; state weekly | about 23 GB (about 130 GB if the full case file were captured) |
-| 9 | [`air-travel-and-mobility`](AIR_TRAVEL_AND_MOBILITY_PLAN.md) | airport, monthly | about 12 GB |
+| 9 | [`air-travel-and-mobility`](AIR_TRAVEL_AND_MOBILITY_PLAN.md) | set aside 2026-11-13 (no plain T-100 download; mobility blocked) | 0 |
 | | Total | | about 60 GB, 150 GB at most (was 12 GB, 30 GB at most) |
 
 The volumes that would matter: block grain beyond Dane (LODES jobs by block
