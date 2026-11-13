@@ -102,8 +102,8 @@ loads land.
 | --- | --- | --- | --- |
 | 1 | [`group-quarters-by-type`](GROUP_QUARTERS_BY_TYPE_PLAN.md) | nation, state, county, tract | **1.6 GB measured** (Dane blocks would add about 0.2 GB) |
 | 2 | [`nursing-home-locations`](NURSING_HOME_LOCATIONS_PLAN.md) | facility, quarterly and yearly | about 0.1 GB a year |
-| 3 | [`lodes-block-grain-for-dane`](LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | block, Dane, 2002 to 2023 | about 5 GB (no new download) |
-| 4 | [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | block, Dane, 2020 | about 1 GB |
+| 3 | [`lodes-block-grain-for-dane`](LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | out of scope 2026-11-13 (block data belongs to the game project) | 0 |
+| 4 | [`block-population-and-age-for-dane`](BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | out of scope 2026-11-13 (block data belongs to the game project) | 0 |
 | 5 | [`college-housing-capacity`](COLLEGE_HOUSING_CAPACITY_PLAN.md) | campus point | about 0.5 GB for every published year |
 | 6 | [`hospital-capacity-and-locations`](HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | facility, weekly 2020 to 2024 | about 12 GB |
 | 7 | [`places-tract-release`](PLACES_TRACT_RELEASE_PLAN.md) | tract | about 4 GB a release |
@@ -118,13 +118,15 @@ county about 660 GB), and capturing the whole 106-million-row case file.
 Steps 1 to 4 are what the Dane County slice needs first; 5 to 9 can follow
 the first playable.
 
-## Block data at the same scope as the other sources (Nick to decide)
+## Block data at the same scope as the other sources (decided: out of scope)
 
 Nick asked on 2026-11-12 (18:25Z) what block data would cost at national
 scope, and what it is for, to decide whether it is built here or in the game
-project. **Until he decides, `lodes-block-grain-for-dane` and
-`block-population-and-age-for-dane` stay at plan stage**; the county, tract
-and facility plans go ahead.
+project. **Decided 2026-11-13** (Nick: "Block data is for the game project.
+Not in scope for this."): `lodes-block-grain-for-dane` and
+`block-population-and-age-for-dane` are not built in this repository. The
+LODES raw captures keep their block rows as captured; silver and gold stay at
+county. The cost figures below are kept as the record of what was weighed.
 
 The 2020 Census has about 8.1 million blocks. Figures below are estimates
 from row counts at the measured 1,300 bytes per fact (corrected 2026-11-12

@@ -1135,6 +1135,51 @@ def stub_nces_ipeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ipeds_capture, "pause_between_files", lambda _config: None)
 
 
+def stub_cdc_ilinet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the FluView init and the three ILINet downloads."""
+    from data_ingestion_toolbox.cdc_ilinet import capture as ilinet_capture
+    from data_ingestion_toolbox.cdc_ilinet.client import fetch_download, fetch_init
+    from tests.support.cdc_ilinet import FixtureClient
+
+    def init(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_init(**kwargs)
+
+    def download(body: Any, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_download(body, **kwargs)
+
+    monkeypatch.setattr(ilinet_capture, "fetch_init", init)
+    monkeypatch.setattr(ilinet_capture, "fetch_download", download)
+
+
+def stub_cdc_covid_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the two fixture state-months, their index and the view document."""
+    from data_ingestion_toolbox.cdc_covid_cases import capture as covid_capture
+    from data_ingestion_toolbox.cdc_covid_cases.client import (
+        fetch_index,
+        fetch_metadata,
+        fetch_slice,
+    )
+    from tests.support.cdc_covid_cases import FixtureClient
+
+    def index(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_index(**kwargs)
+
+    def one_slice(state: str | None, month: str | None, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_slice(state, month, **kwargs)
+
+    def metadata(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_metadata(**kwargs)
+
+    monkeypatch.setattr(covid_capture, "fetch_index", index)
+    monkeypatch.setattr(covid_capture, "fetch_slice", one_slice)
+    monkeypatch.setattr(covid_capture, "fetch_metadata", metadata)
+
+
 def stub_hhs_hospital_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the Dane County hospital weeks and the view document, unpaced."""
     from data_ingestion_toolbox.hhs_hospital_capacity import capture as hhs_capture
@@ -2115,6 +2160,8 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("cms_ltc", stub_cms_ltc),
         ("nces_ipeds", stub_nces_ipeds),
         ("hhs_hospital_capacity", stub_hhs_hospital_capacity),
+        ("cdc_covid_cases", stub_cdc_covid_cases),
+        ("cdc_ilinet", stub_cdc_ilinet),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

@@ -15,8 +15,26 @@ verify:
 
 ## Status
 
-To do. Step 8 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md):
+In progress. Step 8 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md):
 real outbreak curves to check a model against.
+
+- **Case surveillance: built** (`cdc_covid_cases`, ETL-135). Probes on
+  2026-11-12: one whole state does not answer in one request (California
+  timed out at 600 s), so the loader asks per state and month (about 2,900
+  requests; California 2022-01 answered in 138 s). Each request groups by
+  county, age group, `hosp_yn` and `death_yn`, so cases, hospitalised and
+  deaths come from one capture, with `Unknown`/`Missing`/`NA` counted, not
+  dropped. CDC writes `NA` for a withheld county.
+- **CMS COVID-19 nursing-home weekly data: set aside.** The 2026-11-12 scan of
+  `data.cms.gov/data.json` lists no dataset by that name on an answering path.
+- **ILINet: built** (`cdc_ilinet`, ETL-136). FluView's own download service
+  at `gis.cdc.gov/flu2/` answers the page's init and Download requests
+  (probe 12, 2026-11-12: national 0.7 s, HHS regions 1.1 s, states 2.7 s).
+  At state level CDC publishes unweighted ILI, ILI total, providers and
+  patients; weighted ILI and the age bands are `X` (not published), so the
+  age split is national and HHS-region only. National weekly back to 1997
+  week 40, states from 2010. Weekly run Fridays 20:00 UTC; a changed file
+  writes only the figures that changed.
 
 ## Sources
 
@@ -66,5 +84,7 @@ planned.
 
 1. Dane County shows monthly case-record counts by age group 2020 to 2024
    with the suppression note; Dane nursing homes show weekly resident cases.
-2. Wisconsin shows weekly ILINet by age group.
+2. Wisconsin shows weekly ILINet as CDC publishes it for states (unweighted
+   ILI, providers, patients); age groups at national and HHS-region level,
+   since CDC marks state age bands `X`.
 3. Speed gate under 500 ms.

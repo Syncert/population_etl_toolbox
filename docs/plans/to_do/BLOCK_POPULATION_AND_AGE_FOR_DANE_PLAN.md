@@ -15,6 +15,13 @@ verify:
 
 ## Status
 
+**Out of scope** (Nick, 2026-11-13: "Block data is for the game project. Not
+in scope for this."). This plan is not built in this repository; it stays
+here as the record of what was proposed. See
+[the outbreak inputs plan](OUTBREAK_MODEL_INPUTS_PLAN.md).
+
+## Status
+
 To do. Step 4 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
 Places people inside a district smaller than a tract.
 

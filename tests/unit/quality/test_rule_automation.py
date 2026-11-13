@@ -229,12 +229,14 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # rules (DQ-CMSLTC-001 and -002) sixty-one, the IPEDS files' grain and
     # conformance rules (DQ-IPEDS-001 and -002) sixty-three, USAspending's
     # grain and conformance rules (DQ-USASPENDING-001 and -003) sixty-five,
-    # and the HHS hospital weeks' grain and conformance rules (DQ-HHS-001 and
-    # -002) sixty-seven.
+    # the HHS hospital weeks' grain and conformance rules (DQ-HHS-001 and
+    # -002) sixty-seven, and the CDC case counts' grain and conformance rules
+    # (DQ-COVID-001 and -002) sixty-nine, and ILINet's grain and conformance
+    # rules (DQ-ILINET-001 and -002) seventy-one.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 67, enforced
+    assert len(enforced) == 71, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -466,6 +468,8 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CMS_LTC",
         "NCES_IPEDS",
         "HHS_HOSPITAL_CAPACITY",
+        "CDC_COVID_CASES",
+        "CDC_ILINET",
         "EIA",
         "FBI_UCR",
         "EPA_AQS",

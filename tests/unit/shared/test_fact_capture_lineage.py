@@ -266,6 +266,22 @@ FACTS = [
         "silver_hhs_hospital_capacity.facility_week_value",
         "valid",
     ),
+    # A CDC group is a count of published case records; a combination with no
+    # record is a group the API does not return, so nothing is withheld here.
+    FactContract(
+        "CDC_COVID_CASES",
+        SRC / "cdc_covid_cases/DDL/silver_cdc_covid_cases.sql",
+        "silver_cdc_covid_cases.slice_group",
+        "valid",
+        can_withhold=False,
+    ),
+    # An ILINet figure CDC marks X is `not_published` with no number.
+    FactContract(
+        "CDC_ILINET",
+        SRC / "cdc_ilinet/DDL/silver_cdc_ilinet.sql",
+        "silver_cdc_ilinet.week_value",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

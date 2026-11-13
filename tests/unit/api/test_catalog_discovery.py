@@ -412,7 +412,7 @@ def test_capabilities_cover_every_completed_source_in_stable_order() -> None:
     payload = response.json()
     codes = [item["source_code"] for item in payload["items"]]
     assert codes == sorted(SOURCE_DISCOVERY)
-    assert payload["total"] == len(codes) == 35
+    assert payload["total"] == len(codes) == 37
 
     by_code = {item["source_code"]: item for item in payload["items"]}
     neutral = {

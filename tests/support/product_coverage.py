@@ -618,6 +618,70 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="cdc_covid_cases.area_month",
+        source="CDC_COVID_CASES",
+        publisher_schema="gold_cdc_covid_cases",
+        datasets=("n8mc-b4w4",),
+        fixtures=(
+            "tests/fixtures/cdc_covid_cases/n8mc_view.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_index.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_wi_2021-11.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_ca_2022-01.json",
+        ),
+        serving_relations=(
+            "gold_cdc_covid_cases.area_revision",
+            "gold_cdc_covid_cases.area_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cdc_covid_cases_pipeline.py::"
+            "test_dane_monthly_case_records_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The CDC case counts publish no source-specific HTTP route: each "
+            "count is the neutral observation shape with its age group, case "
+            "records and unplaced records as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="cdc_ilinet.week_value",
+        source="CDC_ILINET",
+        publisher_schema="gold_cdc_ilinet",
+        datasets=("fluview_ilinet",),
+        fixtures=(
+            "tests/fixtures/cdc_ilinet/fluview_init.json",
+            "tests/fixtures/cdc_ilinet/ilinet_national.zip",
+            "tests/fixtures/cdc_ilinet/ilinet_hhs_region.zip",
+            "tests/fixtures/cdc_ilinet/ilinet_state.zip",
+        ),
+        serving_relations=(
+            "gold_cdc_ilinet.area_revision",
+            "gold_cdc_ilinet.area_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cdc_ilinet_pipeline.py::"
+            "test_wisconsin_weekly_ili_reaches_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FluView ILINet publishes no source-specific HTTP route: each "
+            "weekly figure is the neutral observation shape with its MMWR "
+            "week and CDC's own text as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

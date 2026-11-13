@@ -123,6 +123,8 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
     "CMS_LTC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "NCES_IPEDS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "HHS_HOSPITAL_CAPACITY": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC_COVID_CASES": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC_ILINET": frozenset({"NATIONAL", "STATE"}),
     "DOL_CHILDCARE": frozenset({"COUNTY"}),
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),

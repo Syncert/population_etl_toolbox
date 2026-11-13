@@ -147,6 +147,16 @@
       "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql"
     },
     {
+      "id": "silver-cdc-covid-cases",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/DDL/silver_cdc_covid_cases.sql"
+    },
+    {
+      "id": "silver-cdc-ilinet",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/DDL/silver_cdc_ilinet.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -382,6 +392,16 @@
       "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/gold_hhs_hospital_capacity.sql"
     },
     {
+      "id": "gold-cdc-covid-cases",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/gold_cdc_covid_cases.sql"
+    },
+    {
+      "id": "gold-cdc-ilinet",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/gold_cdc_ilinet.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -570,6 +590,16 @@
       "id": "publisher-hhs-hospital-capacity",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cdc-covid-cases",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cdc-ilinet",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",

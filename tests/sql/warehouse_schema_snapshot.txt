@@ -138,6 +138,68 @@ r control.capture_quarantine
     index capture_quarantine_pkey CREATE UNIQUE INDEX capture_quarantine_pkey ON control.capture_quarantine USING btree (quarantine_id)
     index capture_quarantine_status_idx CREATE INDEX capture_quarantine_status_idx ON control.capture_quarantine USING btree (source_code, status, created_at)
 
+r control.cdc_covid_cases_slice
+    column snapshot_id uuid NOT NULL
+    column slice_index integer NOT NULL
+    column res_state text
+    column case_month text
+    column index_record_count bigint NOT NULL
+    column run_id uuid
+    column capture_id uuid
+    column payload_checksum text
+    column group_count integer
+    column record_count bigint
+    column captured_at timestamp with time zone
+    constraint cdc_covid_cases_slice_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_covid_cases_slice_group_count_check CHECK ((group_count >= 0))
+    constraint cdc_covid_cases_slice_index_record_count_check CHECK ((index_record_count >= 0))
+    constraint cdc_covid_cases_slice_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint cdc_covid_cases_slice_pkey PRIMARY KEY (snapshot_id, slice_index)
+    constraint cdc_covid_cases_slice_record_count_check CHECK ((record_count >= 0))
+    constraint cdc_covid_cases_slice_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cdc_covid_cases_slice_slice_index_check CHECK ((slice_index >= 0))
+    constraint cdc_covid_cases_slice_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.cdc_covid_cases_snapshot(snapshot_id)
+    constraint cdc_covid_slice_captured_together CHECK ((((run_id IS NULL) = (capture_id IS NULL)) AND ((run_id IS NULL) = (payload_checksum IS NULL)) AND ((run_id IS NULL) = (group_count IS NULL))))
+    index cdc_covid_cases_slice_pkey CREATE UNIQUE INDEX cdc_covid_cases_slice_pkey ON control.cdc_covid_cases_slice USING btree (snapshot_id, slice_index)
+    index cdc_covid_slice_capture_idx CREATE INDEX cdc_covid_slice_capture_idx ON control.cdc_covid_cases_slice USING btree (capture_id)
+    index cdc_covid_slice_pending_idx CREATE INDEX cdc_covid_slice_pending_idx ON control.cdc_covid_cases_slice USING btree (snapshot_id, slice_index) WHERE (run_id IS NULL)
+
+r control.cdc_covid_cases_snapshot
+    column snapshot_id uuid NOT NULL
+    column metadata_run_id uuid NOT NULL
+    column metadata_capture_id uuid NOT NULL
+    column index_run_id uuid NOT NULL
+    column index_capture_id uuid NOT NULL
+    column index_payload_checksum text NOT NULL
+    column rows_updated_at bigint
+    column group_limit integer NOT NULL
+    column slice_count integer NOT NULL
+    column index_record_count bigint NOT NULL
+    column group_count bigint NOT NULL DEFAULT 0
+    column captured_record_count bigint NOT NULL DEFAULT 0
+    column kept_record_count bigint NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cdc_covid_cases_snapshot_captured_record_count_check CHECK ((captured_record_count >= 0))
+    constraint cdc_covid_cases_snapshot_group_count_check CHECK ((group_count >= 0))
+    constraint cdc_covid_cases_snapshot_group_limit_check CHECK ((group_limit > 0))
+    constraint cdc_covid_cases_snapshot_index_capture_id_fkey FOREIGN KEY (index_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_covid_cases_snapshot_index_payload_checksum_check CHECK ((index_payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint cdc_covid_cases_snapshot_index_record_count_check CHECK ((index_record_count >= 0))
+    constraint cdc_covid_cases_snapshot_index_run_id_fkey FOREIGN KEY (index_run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cdc_covid_cases_snapshot_kept_record_count_check CHECK ((kept_record_count >= 0))
+    constraint cdc_covid_cases_snapshot_metadata_capture_id_fkey FOREIGN KEY (metadata_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_covid_cases_snapshot_metadata_run_id_fkey FOREIGN KEY (metadata_run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cdc_covid_cases_snapshot_pkey PRIMARY KEY (snapshot_id)
+    constraint cdc_covid_cases_snapshot_slice_count_check CHECK ((slice_count >= 0))
+    constraint cdc_covid_cases_snapshot_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    constraint cdc_covid_snapshot_kept_within_captured CHECK ((kept_record_count <= captured_record_count))
+    constraint cdc_covid_snapshot_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    index cdc_covid_cases_snapshot_pkey CREATE UNIQUE INDEX cdc_covid_cases_snapshot_pkey ON control.cdc_covid_cases_snapshot USING btree (snapshot_id)
+    index cdc_covid_snapshot_status_idx CREATE INDEX cdc_covid_snapshot_status_idx ON control.cdc_covid_cases_snapshot USING btree (status, created_at)
+
 r control.cdc_dataset_release
     column run_id uuid NOT NULL
     column asset_id text NOT NULL
@@ -176,6 +238,48 @@ r control.cdc_dataset_release
     index cdc_dataset_release_asset_id_release_watermark_run_id_key CREATE UNIQUE INDEX cdc_dataset_release_asset_id_release_watermark_run_id_key ON control.cdc_dataset_release USING btree (asset_id, release_watermark, run_id)
     index cdc_dataset_release_latest_idx CREATE INDEX cdc_dataset_release_latest_idx ON control.cdc_dataset_release USING btree (asset_id, release_watermark DESC, created_at DESC)
     index cdc_dataset_release_pkey CREATE UNIQUE INDEX cdc_dataset_release_pkey ON control.cdc_dataset_release USING btree (run_id)
+
+r control.cdc_ilinet_download
+    column release_id uuid NOT NULL
+    column region_type text NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column csv_checksum text NOT NULL
+    column season_count integer NOT NULL
+    column text_encoding text
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cdc_ilinet_download_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_ilinet_download_csv_checksum_check CHECK ((csv_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint cdc_ilinet_download_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint cdc_ilinet_download_pkey PRIMARY KEY (release_id, region_type)
+    constraint cdc_ilinet_download_region_type_check CHECK ((region_type = ANY (ARRAY['national'::text, 'hhs_region'::text, 'state'::text])))
+    constraint cdc_ilinet_download_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.cdc_ilinet_release(release_id)
+    constraint cdc_ilinet_download_season_count_check CHECK ((season_count > 0))
+    index cdc_ilinet_download_capture_idx CREATE INDEX cdc_ilinet_download_capture_idx ON control.cdc_ilinet_download USING btree (capture_id)
+    index cdc_ilinet_download_pkey CREATE UNIQUE INDEX cdc_ilinet_download_pkey ON control.cdc_ilinet_download USING btree (release_id, region_type)
+
+r control.cdc_ilinet_release
+    column release_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column init_capture_id uuid NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column changed_value_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cdc_ilinet_release_changed_value_count_check CHECK ((changed_value_count >= 0))
+    constraint cdc_ilinet_release_init_capture_id_fkey FOREIGN KEY (init_capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint cdc_ilinet_release_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint cdc_ilinet_release_kept_within_rows CHECK ((kept_row_count <= row_count))
+    constraint cdc_ilinet_release_pkey PRIMARY KEY (release_id)
+    constraint cdc_ilinet_release_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint cdc_ilinet_release_row_count_check CHECK ((row_count >= 0))
+    constraint cdc_ilinet_release_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint cdc_ilinet_release_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'failed'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'quarantined'::text, 'published'::text])))
+    index cdc_ilinet_release_pkey CREATE UNIQUE INDEX cdc_ilinet_release_pkey ON control.cdc_ilinet_release USING btree (release_id)
+    index cdc_ilinet_release_status_idx CREATE INDEX cdc_ilinet_release_status_idx ON control.cdc_ilinet_release USING btree (status, created_at)
 
 r control.cdc_release_page
     column run_id uuid NOT NULL
@@ -3547,6 +3651,358 @@ v gold_cdc.metric_publisher
     body           WHERE candidate.asset_id = measure.asset_id AND candidate.status = 'published'::text
     body           ORDER BY (candidate.release_watermark::bigint) DESC
     body          LIMIT 1) release ON true;
+
+v gold_cdc_covid_cases.area_latest
+    column measure_id text
+    column age_key text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column case_record_count bigint
+    column unplaced_record_count bigint
+    column derivation text
+    column coverage_note text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column snapshot_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) measure_id,
+    body     age_key,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     period_start,
+    body     period_end,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     value,
+    body     value_status,
+    body     case_record_count,
+    body     unplaced_record_count,
+    body     derivation,
+    body     coverage_note,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id,
+    body     snapshot_id,
+    body     published_at
+    body    FROM gold_cdc_covid_cases.area_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, published_at DESC, snapshot_id DESC;
+
+v gold_cdc_covid_cases.area_revision
+    column measure_id text
+    column age_key text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column value bigint
+    column value_status text
+    column case_record_count bigint
+    column unplaced_record_count bigint
+    column derivation text
+    column coverage_note text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column snapshot_id uuid
+    column published_at timestamp with time zone
+    body SELECT area.measure_id,
+    body     area.age_key,
+    body     (('covid:'::text || area.measure_id) || ':'::text) || area.age_key AS metric_key,
+    body     measure.measure_label,
+    body     'records'::text AS unit,
+    body     measure.basis,
+    body     area.case_month AS period_start,
+    body     (area.case_month + '1 mon'::interval - '1 day'::interval)::date AS period_end,
+    body     area.geo_id,
+    body     area.geo_sk,
+    body     area.geo_type,
+    body     gold_glossary.geo_grain(area.geo_type) AS geo_level,
+    body     area.geography_status,
+    body     area.value,
+    body     area.value_status,
+    body     area.case_record_count,
+    body     area.unplaced_record_count,
+    body     'count_of_published_case_records'::text AS derivation,
+    body     'Counts of the case records CDC published; CDC withholds the county where few people live, and states reported with different completeness.'::text AS coverage_note,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     area.source_record_id,
+    body     snapshot.index_capture_id AS capture_id,
+    body     snapshot.index_run_id AS run_id,
+    body     snapshot.snapshot_id,
+    body     snapshot.published_at
+    body    FROM silver_cdc_covid_cases.area_month area
+    body      JOIN control.cdc_covid_cases_snapshot snapshot ON snapshot.snapshot_id = area.snapshot_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = snapshot.index_capture_id
+    body      JOIN silver_cdc_covid_cases.dim_measure measure ON measure.measure_id = area.measure_id
+    body   WHERE snapshot.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_cdc_covid_cases.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column schema_version text
+    body SELECT 'n8mc-b4w4'::text AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     'records'::text AS unit,
+    body     basis,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_cdc_covid_cases.dim_measure measure;
+
+v gold_cdc_covid_cases.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CDC_COVID_CASES'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     (('covid:'::text || measure.measure_id) || ':'::text) || ages.age_key AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     (measure.measure_label || ', '::text) || lower(ages.age_label) AS metric_display_name,
+    body     'records'::text AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['MONTHLY'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_cdc_covid_cases', 'relation', 'area_revision', 'key', (('covid:'::text || measure.measure_id) || ':'::text) || ages.age_key) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'CDC COVID-19 Case Surveillance Public Use Data with Geography'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     'https://data.cdc.gov/Case-Surveillance/COVID-19-Case-Surveillance-Public-Use-Data-with-Ge/n8mc-b4w4'::text AS reference_url
+    body    FROM silver_cdc_covid_cases.dim_measure measure
+    body      CROSS JOIN ( VALUES ('all_ages'::text,'All ages'::text), ('age_0_17'::text,'Ages 0 to 17'::text), ('age_18_49'::text,'Ages 18 to 49'::text), ('age_50_64'::text,'Ages 50 to 64'::text), ('age_65_plus'::text,'Ages 65 and over'::text), ('age_unknown'::text,'Age not published'::text)) ages(age_key, age_label)
+    body      JOIN LATERAL ( SELECT to_char(max(area.case_month)::timestamp with time zone, 'YYYY-MM'::text) AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(area.geo_type) ORDER BY (gold_glossary.geo_grain(area.geo_type))) FILTER (WHERE area.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(snapshot.index_run_id ORDER BY snapshot.published_at DESC))[1] AS source_run_id,
+    body             max(snapshot.published_at) AS publication_time
+    body            FROM silver_cdc_covid_cases.area_month area
+    body              JOIN control.cdc_covid_cases_snapshot snapshot ON snapshot.snapshot_id = area.snapshot_id
+    body           WHERE area.measure_id = measure.measure_id AND area.age_key = ages.age_key AND snapshot.status = 'published'::text AND (area.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]))) served ON served.publication_time IS NOT NULL;
+
+v gold_cdc_ilinet.area_latest
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column mmwr_year smallint
+    column mmwr_week smallint
+    column source_region text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column jurisdiction_note text
+    column value numeric
+    column value_status text
+    column value_source text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     period_start,
+    body     period_end,
+    body     mmwr_year,
+    body     mmwr_week,
+    body     source_region,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     geo_level,
+    body     geography_status,
+    body     jurisdiction_note,
+    body     value,
+    body     value_status,
+    body     value_source,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id,
+    body     release_id,
+    body     published_at
+    body    FROM gold_cdc_ilinet.area_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, published_at DESC, release_id DESC;
+
+v gold_cdc_ilinet.area_revision
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column period_start date
+    column period_end date
+    column mmwr_year smallint
+    column mmwr_week smallint
+    column source_region text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column geo_level text
+    column geography_status text
+    column jurisdiction_note text
+    column value numeric
+    column value_status text
+    column value_source text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body SELECT value.measure_id,
+    body     'ilinet:'::text || value.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.basis,
+    body     value.week_start AS period_start,
+    body     value.week_start + 6 AS period_end,
+    body     value.mmwr_year,
+    body     value.mmwr_week,
+    body     region.region AS source_region,
+    body     region.geo_id,
+    body     entity.geo_sk,
+    body     region.geo_type,
+    body     gold_glossary.geo_grain(region.geo_type) AS geo_level,
+    body     region.geography_status,
+    body     region.jurisdiction_note,
+    body     value.value,
+    body     value.value_status,
+    body     value.value_source,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     md5((((((((value.region_type || '|'::text) || value.region) || '|'::text) || value.mmwr_year::text) || '|'::text) || value.mmwr_week::text) || '|'::text) || value.measure_id) AS source_record_id,
+    body     value.capture_id,
+    body     release.run_id,
+    body     release.release_id,
+    body     release.published_at
+    body    FROM silver_cdc_ilinet.week_value value
+    body      JOIN control.cdc_ilinet_release release ON release.release_id = value.release_id
+    body      JOIN silver_cdc_ilinet.region region ON region.region_type = value.region_type AND region.region = value.region
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = value.capture_id
+    body      JOIN silver_cdc_ilinet.dim_measure measure ON measure.measure_id = value.measure_id
+    body      LEFT JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = region.geo_id
+    body   WHERE release.status = 'published'::text AND (region.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text]));
+
+v gold_cdc_ilinet.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column source_column text
+    column schema_version text
+    body SELECT 'fluview_ilinet'::text AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     basis,
+    body     source_column,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_cdc_ilinet.dim_measure measure;
+
+v gold_cdc_ilinet.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'CDC_ILINET'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     'ilinet:'::text || measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['WEEKLY'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_cdc_ilinet', 'relation', 'area_revision', 'key', 'ilinet:'::text || measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body     'CDC FluView ILINet (U.S. Outpatient Influenza-like Illness Surveillance Network)'::text AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body     'https://www.cdc.gov/fluview/overview/fluview-interactive.html'::text AS reference_url
+    body    FROM silver_cdc_ilinet.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(served_row.period_start)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(served_row.geo_type) ORDER BY (gold_glossary.geo_grain(served_row.geo_type))) FILTER (WHERE served_row.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(served_row.run_id ORDER BY served_row.published_at DESC))[1] AS source_run_id,
+    body             max(served_row.published_at) AS publication_time
+    body            FROM gold_cdc_ilinet.area_revision served_row
+    body           WHERE served_row.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
 
 v gold_census.acs_tract_comparable
     column geo_id text
@@ -15431,6 +15887,162 @@ r silver_cdc.observation_revision
     constraint observation_revision_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'missing'::text, 'suppressed'::text])))
     index cdc_observation_revision_run_idx CREATE INDEX cdc_observation_revision_run_idx ON silver_cdc.observation_revision USING btree (run_id, asset_id, release_watermark)
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_cdc.observation_revision USING btree (capture_id, source_row_index)
+
+r silver_cdc_covid_cases.area_month
+    column snapshot_id uuid NOT NULL
+    column measure_id text NOT NULL
+    column age_key text NOT NULL
+    column case_month date NOT NULL
+    column geo_id text NOT NULL
+    column geo_sk bigint
+    column geo_type text NOT NULL
+    column geography_status text NOT NULL
+    column value bigint NOT NULL
+    column value_status text NOT NULL
+    column case_record_count bigint NOT NULL
+    column unplaced_record_count bigint NOT NULL
+    column source_record_id text NOT NULL
+    constraint area_month_case_record_count_check CHECK ((case_record_count > 0))
+    constraint area_month_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text, 'county'::text])))
+    constraint area_month_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text])))
+    constraint area_month_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_cdc_covid_cases.dim_measure(measure_id)
+    constraint area_month_pkey PRIMARY KEY (snapshot_id, measure_id, age_key, geo_id, case_month)
+    constraint area_month_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.cdc_covid_cases_snapshot(snapshot_id)
+    constraint area_month_unplaced_record_count_check CHECK ((unplaced_record_count >= 0))
+    constraint area_month_value_check CHECK ((value >= 0))
+    constraint area_month_value_status_check CHECK ((value_status = 'valid'::text))
+    constraint cdc_covid_area_within_records CHECK ((value <= case_record_count))
+    index area_month_pkey CREATE UNIQUE INDEX area_month_pkey ON silver_cdc_covid_cases.area_month USING btree (snapshot_id, measure_id, age_key, geo_id, case_month)
+    index cdc_covid_area_month_geo_idx CREATE INDEX cdc_covid_area_month_geo_idx ON silver_cdc_covid_cases.area_month USING btree (geo_id, measure_id, age_key, case_month)
+
+r silver_cdc_covid_cases.dim_measure
+    column measure_id text NOT NULL
+    column measure_label text NOT NULL
+    column basis text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_cdc_covid_cases.dim_measure USING btree (measure_id)
+
+r silver_cdc_covid_cases.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_cdc_covid_cases.quarantine_quarantine_sk_seq'::regclass)
+    column snapshot_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column record_count bigint
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_record_count_check CHECK ((record_count >= 0))
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.cdc_covid_cases_snapshot(snapshot_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_cdc_covid_cases.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_cdc_covid_cases.quarantine USING btree (quarantine_sk)
+
+r silver_cdc_covid_cases.slice_group
+    column snapshot_id uuid NOT NULL
+    column slice_index integer NOT NULL
+    column source_row_index integer NOT NULL
+    column capture_id uuid NOT NULL
+    column res_state text
+    column state_fips text
+    column case_month date NOT NULL
+    column county_fips_code text
+    column age_group text
+    column age_key text NOT NULL
+    column hosp_yn text
+    column death_yn text
+    column record_count bigint NOT NULL
+    column value_status text NOT NULL DEFAULT 'valid'::text
+    constraint cdc_covid_group_month_first CHECK ((EXTRACT(day FROM case_month) = (1)::numeric))
+    constraint slice_group_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint slice_group_pkey PRIMARY KEY (snapshot_id, slice_index, source_row_index)
+    constraint slice_group_record_count_check CHECK ((record_count > 0))
+    constraint slice_group_slice_index_check CHECK ((slice_index >= 0))
+    constraint slice_group_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES control.cdc_covid_cases_snapshot(snapshot_id)
+    constraint slice_group_source_row_index_check CHECK ((source_row_index > 0))
+    constraint slice_group_state_fips_check CHECK ((state_fips ~ '^[0-9]{2}$'::text))
+    constraint slice_group_value_status_check CHECK ((value_status = 'valid'::text))
+    index cdc_covid_slice_group_capture_idx CREATE INDEX cdc_covid_slice_group_capture_idx ON silver_cdc_covid_cases.slice_group USING btree (capture_id)
+    index slice_group_pkey CREATE UNIQUE INDEX slice_group_pkey ON silver_cdc_covid_cases.slice_group USING btree (snapshot_id, slice_index, source_row_index)
+
+r silver_cdc_ilinet.dim_measure
+    column measure_id text NOT NULL
+    column source_column text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column basis text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_cdc_ilinet.dim_measure USING btree (measure_id)
+
+r silver_cdc_ilinet.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_cdc_ilinet.quarantine_quarantine_sk_seq'::regclass)
+    column release_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.cdc_ilinet_release(release_id)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_cdc_ilinet.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_cdc_ilinet.quarantine USING btree (quarantine_sk)
+
+r silver_cdc_ilinet.region
+    column region_type text NOT NULL
+    column region text NOT NULL
+    column geo_id text
+    column geo_type text
+    column geography_status text NOT NULL
+    column jurisdiction_note text
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint cdc_ilinet_region_served_has_geo CHECK (((geography_status = 'unsupported'::text) = (geo_id IS NULL)))
+    constraint region_geo_type_check CHECK ((geo_type = ANY (ARRAY['nation'::text, 'state'::text])))
+    constraint region_geography_status_check CHECK ((geography_status = ANY (ARRAY['resolved'::text, 'unmapped'::text, 'unsupported'::text])))
+    constraint region_pkey PRIMARY KEY (region_type, region)
+    constraint region_region_type_check CHECK ((region_type = ANY (ARRAY['national'::text, 'hhs_region'::text, 'state'::text])))
+    index region_pkey CREATE UNIQUE INDEX region_pkey ON silver_cdc_ilinet.region USING btree (region_type, region)
+
+r silver_cdc_ilinet.week_value
+    column region_type text NOT NULL
+    column region text NOT NULL
+    column mmwr_year smallint NOT NULL
+    column mmwr_week smallint NOT NULL
+    column measure_id text NOT NULL
+    column release_id uuid NOT NULL
+    column week_start date NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column value_source text
+    column value numeric
+    column value_status text NOT NULL
+    constraint cdc_ilinet_value_other_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint cdc_ilinet_value_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint week_value_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint week_value_measure_id_fkey FOREIGN KEY (measure_id) REFERENCES silver_cdc_ilinet.dim_measure(measure_id)
+    constraint week_value_mmwr_week_check CHECK (((mmwr_week >= 1) AND (mmwr_week <= 53)))
+    constraint week_value_pkey PRIMARY KEY (region_type, region, mmwr_year, mmwr_week, measure_id, release_id)
+    constraint week_value_region_type_region_fkey FOREIGN KEY (region_type, region) REFERENCES silver_cdc_ilinet.region(region_type, region)
+    constraint week_value_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.cdc_ilinet_release(release_id)
+    constraint week_value_source_row_index_check CHECK ((source_row_index > 0))
+    constraint week_value_value_check CHECK ((value >= (0)::numeric))
+    constraint week_value_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'not_published'::text, 'missing'::text])))
+    constraint week_value_week_start_check CHECK ((EXTRACT(dow FROM week_start) = (0)::numeric))
+    index cdc_ilinet_week_value_capture_idx CREATE INDEX cdc_ilinet_week_value_capture_idx ON silver_cdc_ilinet.week_value USING btree (capture_id)
+    index cdc_ilinet_week_value_region_idx CREATE INDEX cdc_ilinet_week_value_region_idx ON silver_cdc_ilinet.week_value USING btree (region, measure_id, week_start)
+    index week_value_pkey CREATE UNIQUE INDEX week_value_pkey ON silver_cdc_ilinet.week_value USING btree (region_type, region, mmwr_year, mmwr_week, measure_id, release_id)
 
 r silver_census.fact_demographics
     column demographic_sk bigint NOT NULL DEFAULT nextval('silver_census.fact_demographics_demographic_sk_seq'::regclass)
