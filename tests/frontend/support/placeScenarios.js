@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { servedParameters } from "./servedContract.js";
 import { PUBLIC_MONEY_GEO_IDS, governorTermsAnswer, publicMoneyAnswer } from "./publicMoneyScenarios.js";
+import { WHERE_MONEY_GEO_IDS, whereMoneyAnswer } from "./whereMoneyScenarios.js";
 
 // The plain labels the API serves beside each provider label (A-2), read from
 // the same registry the API reads, so the fixture answers as the API does.
@@ -757,6 +758,14 @@ export async function installPlaceFixtures(page, { nationLagsMedianAge = true, w
       const empty = publicMoneyAnswer("us:1");
       const levels = [{ geo_id: geoId, role: "this place" }, { geo_id: `state:${geoId.slice(6, 8)}`, role: "state" }, { geo_id: "us:1", role: "nation" }];
       return route.fulfill({ json: { ...empty, geo_id: geoId, levels, payments: [], income_sources: [], federal_tax_rate: { ...empty.federal_tax_rate, series: [] }, tax_burden: { ...empty.tax_burden, series: [] }, property_tax: { ...empty.property_tax, period: null, values: [] } } });
+    }
+    if (path === "/api/v1/where-money-goes") {
+      // Dane County, Wisconsin and the nation have fixtures; any other place
+      // is served the empty layers an unloaded warehouse gives.
+      const geoId = params.get("geo_id");
+      if (WHERE_MONEY_GEO_IDS.includes(geoId)) return route.fulfill({ json: whereMoneyAnswer(geoId) });
+      const empty = whereMoneyAnswer(geoId.includes("|county:") ? geoId : "state:55");
+      return route.fulfill({ json: { ...empty, geo_id: geoId, layers: empty.layers.map((layer) => ({ ...layer, geo_id: geoId, fiscal_year: null, period_label: null, total: null, lines: [], unavailable_reason: "not loaded into this site yet" })) } });
     }
     if (path === "/api/v1/governor-terms") {
       const geoId = params.get("geo_id");

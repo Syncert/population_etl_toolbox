@@ -14,8 +14,23 @@ verify:
 
 ## Status
 
-To do, and only if long-range seeding or behaviour change make it into the
-model's design (step 9 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md)).
+**Air travel: set aside** (Nick, 2026-11-13: "Let's set it aside then. It's
+not necessary"). Probes 1 and 13 (2026-11-12/13, read-only, toolbox client
+identity) found no plain download of the T-100 segment routes:
+
+- BTS's PREZIP folder carries on-time and DB1B files but no T-100 files.
+- TranStats offers T-100 only through its download form
+  (`DL_SelectFields.aspx?gnoyr_VQ=FIM`), an ASP.NET postback that would
+  replay the form's hidden state; that is not proposed.
+- `www.bts.gov` (the Data Bank 28DS page and the download index) answered
+  403 and was not retried.
+- data.gov lists no record for the dataset (404) and data.bts.gov has none.
+- The only plain route is the USDOT_BTS NTAD ArcGIS layer, a 2024
+  summary per origin airport (1,279 rows) with no destinations or routes;
+  it is not loaded.
+
+Nothing is built for air travel. Behaviour change (Google mobility) stays
+blocked as below.
 
 ## Air travel
 

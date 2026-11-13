@@ -57,6 +57,11 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # derived reading across five sources, owned by the platform.
     "/api/v1/public-money",
     "/api/v1/governor-terms",
+    # Where public money goes (where-public-money-goes slice 5): each
+    # government level's spending lines for one place, read from the Treasury,
+    # Census government finance and USAspending gold views side by side and
+    # never added; a reading across three sources, owned by the platform.
+    "/api/v1/where-money-goes",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:

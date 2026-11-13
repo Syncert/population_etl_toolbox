@@ -1473,3 +1473,98 @@
   margin: 2px 0 0;
   font-weight: 700;
 }
+/* Where the money goes (where-public-money-goes slice 5): one ranked bar
+   list per government level, bars scaled to that level's largest share. */
+.where-money-bars {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.where-money-col-label {
+  width: 36%;
+}
+.where-money-col-share {
+  width: 3.5rem;
+}
+.where-money-col-amount {
+  width: 7.5rem;
+}
+.where-money-bars th {
+  padding: 3px 12px 3px 0;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.where-money-bars td {
+  padding: 3px 0;
+}
+.where-money-bars .public-money-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.where-money-amount {
+  padding-left: 10px !important;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.where-money-track {
+  display: block;
+  height: 12px;
+  margin-right: 10px;
+}
+.where-money-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.where-money-rest .where-money-fill {
+  background: var(--line);
+}
+.where-money-rest th {
+  color: var(--muted);
+}
+.where-money-all {
+  margin: 6px 0;
+  font-size: 0.85rem;
+}
+.where-money-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.where-money-table th,
+.where-money-table td {
+  padding: 2px 8px 2px 0;
+  text-align: left;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: inherit;
+}
+.where-money-table td {
+  text-align: right;
+}
+.where-money-separate {
+  font-weight: 600;
+}
+@media (max-width: 560px) {
+  .where-money-col-label {
+    width: 42%;
+  }
+  .where-money-col-amount {
+    width: 0;
+  }
+  .where-money-amount {
+    display: none;
+  }
+}

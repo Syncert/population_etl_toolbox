@@ -230,6 +230,12 @@ Consolidated Federal Funds Report (ended FY2010).
   line on county pages. Local revenue split (own taxes, state aid, federal
   aid) linked from the existing "Taxes and public money" chapter.
 - Speed gate: every read under 500 ms (BEGIN / EXPLAIN ANALYZE / ROLLBACK).
+- Built (2026-11-13): API-196 `/where-money-goes` and WEB-176 "Where the
+  money goes" in the Work and Money chapter (nation, state, county), one card
+  per layer: the six largest lines as bars of the layer's own total, then the
+  rest of that total as one bar, and the full table. The county's revenue
+  split (own taxes, state aid, federal aid) is not in this slice. Speed gates
+  are run on OFFICE_LAB after deploy.
 
 ## Order and size
 
