@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date, datetime, timezone
 from uuid import uuid4
 
@@ -15,6 +17,15 @@ pytestmark = pytest.mark.unit
 
 class _Cursor:
     rowcount = 1
+
+    def __init__(self) -> None:
+        #: Each COPY's rows, as the CSV text the upsert sent.
+        self.copied: list[list[list[str]]] = []
+
+    def copy_expert(self, sql: str, buffer) -> None:
+        assert "FORMAT csv" in sql and r"NULL '\N'" in sql
+        text = buffer.read().decode("utf-8")
+        self.copied.append(list(csv.reader(io.StringIO(text))))
 
     def __enter__(self):
         return self
@@ -78,13 +89,6 @@ def test_silver_upsert_serializes_uuid_for_psycopg2(
     )
     connection = _Connection()
     hook = type("Hook", (), {"get_conn": lambda _self: connection})()
-    captured_records: list[tuple] = []
-
-    def capture_values(_cursor, _sql, records, *, page_size: int) -> None:
-        assert page_size == 10000
-        captured_records.extend(records)
-
-    monkeypatch.setattr(transform, "execute_values", capture_values)
     batch_id = uuid4()
 
     assert (
@@ -97,8 +101,13 @@ def test_silver_upsert_serializes_uuid_for_psycopg2(
         == 1
     )
     assert connection.commits == 1
-    assert captured_records[0][-2] == str(batch_id)
-    assert isinstance(captured_records[0][-2], str)
+    [[row]] = connection.cursor_instance.copied
+    # The batch id crosses as its text; a missing value is COPY's NULL marker,
+    # never an empty string.
+    assert row[-2] == str(batch_id)
+    assert row[-3] == "CENSUS_ACS"
+    assert row[11] == r"\N" and row[17] == r"\N"
+    assert row[-1].startswith("2098-01-01T00:00:00")
 
 
 def test_silver_upsert_commits_bounded_sub_batches(
@@ -135,13 +144,6 @@ def test_silver_upsert_commits_bounded_sub_batches(
     )
     connection = _Connection()
     hook = type("Hook", (), {"get_conn": lambda _self: connection})()
-    batch_sizes: list[int] = []
-
-    def capture_values(_cursor, _sql, records, *, page_size: int) -> None:
-        assert page_size == 10000
-        batch_sizes.append(len(records))
-
-    monkeypatch.setattr(transform, "execute_values", capture_values)
     monkeypatch.setattr(transform, "_UPSERT_SUB_BATCH_SIZE", 1)
 
     changed = transform._upsert_silver_rows(
@@ -152,7 +154,7 @@ def test_silver_upsert_commits_bounded_sub_batches(
     )
 
     assert changed == 2
-    assert batch_sizes == [1, 1]
+    assert [len(rows) for rows in connection.cursor_instance.copied] == [1, 1]
     assert connection.commits == 2
 
 
@@ -166,8 +168,11 @@ def test_transform_preflight_rejects_missing_historical_geographies() -> None:
         def __exit__(self, *_args):
             return None
 
-        def execute(self, sql: str) -> None:
+        def execute(self, sql: str, params: dict | None = None) -> None:
             assert "silver_ref.dim_geo_entity" in sql
+            # Unscoped, the check reads every row; a scoped run names its
+            # datasets and years so the slice index serves it.
+            assert params == {"datasets": None, "years": None}
 
         def fetchall(self) -> list[tuple[str, str, int]]:
             return [

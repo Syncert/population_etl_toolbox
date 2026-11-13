@@ -1,5 +1,5 @@
 -- Control and silver relations for NOAA U.S. Climate Normals 1991-2020
--- (annual/seasonal by-station archive, noaa-normals).
+-- (annual/seasonal and monthly by-station archives, noaa-normals).
 
 CREATE SCHEMA IF NOT EXISTS silver_noaa_normals;
 
@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS control.noaa_normals_file (
 );
 
 CREATE INDEX IF NOT EXISTS noaa_normals_file_capture_idx ON control.noaa_normals_file (capture_id);
+
+-- Which registered archive a run read. Runs from before the monthly archive
+-- was added read the annual/seasonal one, which is the default.
+ALTER TABLE control.noaa_normals_file
+    ADD COLUMN IF NOT EXISTS product TEXT NOT NULL DEFAULT 'annualseasonal'
+    CONSTRAINT noaa_normals_file_product_check CHECK (product IN ('annualseasonal', 'monthly'));
 
 CREATE TABLE IF NOT EXISTS silver_noaa_normals.quarantine (
     quarantine_sk BIGSERIAL PRIMARY KEY,
@@ -69,6 +75,30 @@ CREATE TABLE IF NOT EXISTS silver_noaa_normals.station (
 );
 
 CREATE INDEX IF NOT EXISTS noaa_normals_station_county_idx ON silver_noaa_normals.station (geo_id);
+
+-- How a resolved station was placed: inside a county shape, or on the nearest
+-- county because no shape covers its point and the nearest shape is within
+-- the loader's cap (NEAREST_COUNTY_CAP_METRES, 1,000 m), with that distance.
+-- A station placed before this rule has no method until it is placed again.
+ALTER TABLE silver_noaa_normals.station
+    ADD COLUMN IF NOT EXISTS placement_method TEXT
+        CHECK (placement_method IN ('inside_county', 'nearest_county'));
+ALTER TABLE silver_noaa_normals.station
+    ADD COLUMN IF NOT EXISTS placement_distance_m NUMERIC CHECK (placement_distance_m >= 0);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_noaa_normals.station'::regclass
+          AND conname = 'noaa_normals_station_placement'
+    ) THEN
+        ALTER TABLE silver_noaa_normals.station ADD CONSTRAINT noaa_normals_station_placement CHECK (
+            (placement_method IS NULL OR geography_status = 'resolved')
+            AND COALESCE(placement_method = 'nearest_county', FALSE) = (placement_distance_m IS NOT NULL)
+        );
+    END IF;
+END
+$$;
 
 -- Every published annual normal of every station, with NCEI's measurement
 -- and completeness flags. A withheld value (M, V, Y) has no number.
@@ -120,3 +150,40 @@ CREATE TABLE IF NOT EXISTS silver_noaa_normals.station_normal (
 
 CREATE INDEX IF NOT EXISTS noaa_normals_station_normal_measure_idx
     ON silver_noaa_normals.station_normal (run_id, measure);
+
+-- Every published monthly normal of every station (monthly by-station
+-- archive), one row per station, element and calendar month, with NCEI's
+-- flags. A withheld value (M, V, Y) has no number.
+CREATE TABLE IF NOT EXISTS silver_noaa_normals.station_monthly_normal (
+    run_id UUID NOT NULL,
+    station_id TEXT NOT NULL,
+    variable TEXT NOT NULL,
+    month SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+    measure TEXT NOT NULL CHECK (
+        measure IN (
+            'monthly_mean_temperature', 'monthly_mean_maximum_temperature',
+            'monthly_mean_minimum_temperature', 'monthly_precipitation', 'monthly_snowfall',
+            'monthly_heating_degree_days', 'monthly_cooling_degree_days'
+        )
+    ),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    value_source TEXT NOT NULL,
+    value NUMERIC,
+    value_status TEXT NOT NULL CHECK (value_status IN ('valid', 'missing', 'not_applicable')),
+    missing_reason TEXT CHECK (
+        missing_reason IS NULL OR missing_reason IN ('missing', 'too_cold_to_compute', 'insufficient_values', 'blank')
+    ),
+    measurement_flag TEXT CHECK (measurement_flag IS NULL OR measurement_flag IN ('M', 'V', 'X', 'Y', 'Z')),
+    completeness_flag TEXT CHECK (completeness_flag IS NULL OR completeness_flag IN ('S', 'R', 'P', 'E')),
+    years INTEGER CHECK (years IS NULL OR years BETWEEN 0 AND 30),
+    source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{32}$'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_id, station_id, variable, month),
+    FOREIGN KEY (run_id, station_id) REFERENCES silver_noaa_normals.station(run_id, station_id),
+    CONSTRAINT noaa_normals_monthly_valid_value_present CHECK (value_status <> 'valid' OR value IS NOT NULL),
+    CONSTRAINT noaa_normals_monthly_withheld_value_absent CHECK (value_status = 'valid' OR value IS NULL),
+    CONSTRAINT noaa_normals_monthly_withheld_has_reason CHECK ((value_status = 'valid') = (missing_reason IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS noaa_normals_station_monthly_normal_measure_idx
+    ON silver_noaa_normals.station_monthly_normal (run_id, measure, month);

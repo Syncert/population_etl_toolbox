@@ -65,3 +65,93 @@ def test_every_registered_offense_has_its_own_chain(dagbag) -> None:
         assert sorted(
             task.task_id for task in dag.tasks if task.task_id.startswith(f"{stage}_")
         ) == sorted(f"{stage}_{product_id}" for product_id in product_ids)
+
+
+def test_return_a_source_rows_are_backfilled_by_the_scheduled_run(dagbag) -> None:
+    """Covers: ETL-121 — the weekly run rebuilds missing Return A lineage.
+
+    It needs only the schema, and only the Return A load waits on it -- for
+    its outcome, not its success -- so a failure there never holds a
+    publication back.
+    """
+    dag = dagbag.dags["fbi_ucr_ingest"]
+    task = dag.get_task("backfill_return_a_source_rows")
+    assert {item.task_id for item in task.upstream_list} == {"ensure_fbi_schema"}
+    assert {item.task_id for item in task.downstream_list} == {
+        "load_return_a_master_files"
+    }
+
+
+def test_the_return_a_master_files_load_on_the_weekly_run(dagbag) -> None:
+    """Covers: ETL-122 — every registered Return A year is asked each week.
+
+    After the geography guard and the lineage backfill (whatever the
+    backfill's outcome, so the two never contend for the Return A lock),
+    through the CDE pool, and ahead of the roll-ups its facts feed.
+    """
+    from airflow.utils.trigger_rule import TriggerRule
+
+    dag = dagbag.dags["fbi_ucr_ingest"]
+    assert dag.schedule_interval == "0 10 * * 1"
+    task = dag.get_task("load_return_a_master_files")
+    assert {item.task_id for item in task.upstream_list} == {
+        "require_shared_geography",
+        "backfill_return_a_source_rows",
+    }
+    assert task.trigger_rule == TriggerRule.ALL_DONE
+    assert task.pool == "fbi_cde_api"
+    assert "refresh_time_rollups" in {item.task_id for item in task.downstream_list}
+    # No CDE product chain waits on it.
+    for product in enabled_products():
+        assert task.task_id not in {
+            item.task_id
+            for item in dag.get_task(
+                f"publish_{product.product_id}"
+            ).get_flat_relatives(upstream=True)
+        }
+
+
+def test_the_return_a_task_loads_the_registered_years_and_fails_on_a_lost_one(
+    dagbag, monkeypatch
+) -> None:
+    """Covers: ETL-122 — the task asks the registry's years, the newest may wait."""
+    from data_ingestion_toolbox.fbi_ucr.return_a import load as return_a_load
+    from data_ingestion_toolbox.fbi_ucr.return_a import registry
+
+    task = dagbag.dags["fbi_ucr_ingest"].get_task("load_return_a_master_files")
+    calls: list[tuple] = []
+    outcome: dict = {"failed_years": []}
+    connection_factory = object()
+
+    class _Hook:
+        get_conn = connection_factory
+
+    def fake_load(factory, years, **keywords):  # noqa: ANN001, ANN202
+        calls.append((factory, list(years), keywords))
+        return {
+            "run_id": "r",
+            "release_key": "2026-08-20",
+            "published": False,
+            **outcome,
+        }
+
+    # The callable's own globals (see DAG-020): the DagBag's module object.
+    scope = task.python_callable.__globals__
+    guard: list[bool] = []
+    monkeypatch.setitem(scope, "_require_shared_geography", lambda: guard.append(True))
+    monkeypatch.setitem(scope, "_get_postgres_hook", lambda: _Hook())
+    monkeypatch.setattr(return_a_load, "load", fake_load)
+    monkeypatch.setattr(registry, "registered_years", lambda: [2025, 2024, 2015])
+
+    assert task.python_callable() == {
+        "run_id": "r",
+        "release_key": "2026-08-20",
+        "published": False,
+    }
+    assert guard == [True]
+    assert calls == [
+        (connection_factory, [2025, 2024, 2015], {"may_be_unpublished": 2025})
+    ]
+    outcome["failed_years"] = [2019]
+    with pytest.raises(RuntimeError, match="2019"):
+        task.python_callable()

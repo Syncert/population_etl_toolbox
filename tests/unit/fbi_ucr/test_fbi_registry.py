@@ -30,11 +30,11 @@ def test_registered_product_freezes_the_documented_request_shape() -> None:
 
     assert product.offense_code in SUMMARIZED_OFFENSES
     assert product.offense_label == "Violent Crime"
-    assert product.period_parameters == {"from": "01-1990", "to": "06-2023"}
+    assert product.period_parameters == {"from": "01-1990", "to": "12-2025"}
     assert product.expected_periods[0] == "01-1990"
-    assert product.expected_periods[-1] == "06-2023"
-    # 33 full years (1990-2022) plus January-June 2023, every month exactly once.
-    assert len(product.expected_periods) == 33 * 12 + 6
+    assert product.expected_periods[-1] == "12-2025"
+    # 36 full years (1990-2025), every month exactly once.
+    assert len(product.expected_periods) == 36 * 12
     assert len(set(product.expected_periods)) == len(product.expected_periods)
     assert product.observation_endpoint(FbiSubject("national", "US")) == (
         "/summarized/national/V"
@@ -198,7 +198,7 @@ VIOLENT_CRIME_CONTRACT = {
     "ucr_program": "SRS_AND_SUMMARIZED_NIBRS",
     "offense_code": "V",
     "period_start": "01-1990",
-    "period_end": "06-2023",
+    "period_end": "12-2025",
     "state_scope": tuple(STATE_CODE_CONTRACT),
     "agency_scope": (
         "WI0130000",

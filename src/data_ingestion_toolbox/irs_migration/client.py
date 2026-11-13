@@ -2,12 +2,15 @@
 
 Any client error fails without retrying; ``429`` and server errors retry
 with backoff. Error text names the file and status only. A response is
-checked to carry the registered header before it is kept.
+checked before it is kept: a CSV carries the registered header, a zip
+opens and holds at least one member of its layout.
 """
 
 from __future__ import annotations
 
+import io
 import time
+import zipfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -17,7 +20,7 @@ import httpx
 from data_ingestion_toolbox.capture import allowlisted_response_headers
 
 from .config import IRS_SOI_BASE_URL, IrsMigrationConfig
-from .registry import MigrationFile
+from .registry import CSV, TEXT, MigrationFile
 
 
 class IrsMigrationFetchError(RuntimeError):
@@ -65,10 +68,28 @@ def read_header(raw_bytes: bytes) -> tuple[str, ...]:
     return tuple(cell.strip().strip('"').lower() for cell in first.split(","))
 
 
+def member_suffix(item: MigrationFile) -> str:
+    """The extension of the per-state members a zip layout holds."""
+    return ".txt" if item.layout == TEXT else ".xls"
+
+
+def media_type(item: MigrationFile) -> str:
+    return "text/csv" if item.layout == CSV else "application/zip"
+
+
 def check_header(raw_bytes: bytes, endpoint: str, item: MigrationFile) -> None:
-    """Refuse bytes whose first line is not the registered header."""
-    if read_header(raw_bytes) != expected_header(item):
-        raise IrsMigrationPayloadError(endpoint, code="unexpected_header")
+    """Refuse bytes that are not the registered layout."""
+    if item.layout == CSV:
+        if read_header(raw_bytes) != expected_header(item):
+            raise IrsMigrationPayloadError(endpoint, code="unexpected_header")
+        return
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+            names = archive.namelist()
+    except zipfile.BadZipFile as exc:
+        raise IrsMigrationPayloadError(endpoint, code="not_a_zip") from exc
+    if not any(name.lower().endswith(member_suffix(item)) for name in names):
+        raise IrsMigrationPayloadError(endpoint, code="no_registered_member")
 
 
 def fetch_file(

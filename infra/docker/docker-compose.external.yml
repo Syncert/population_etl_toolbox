@@ -79,6 +79,9 @@ services:
       # whole internet.
       API_RATE_LIMIT_IDENTITY_PER_MINUTE: ${API_RATE_LIMIT_IDENTITY_PER_MINUTE:-30}
       API_ACCOUNT_CREATION_PER_HOUR: ${API_ACCOUNT_CREATION_PER_HOUR:-60}
+      # Show only reviewed plain metric labels (API-170); empty shows drafts.
+      METRIC_LABELS_REVIEWED_ONLY: ${METRIC_LABELS_REVIEWED_ONLY:-}
+      DERIVED_RATIOS_SERVE_DRAFTS: ${DERIVED_RATIOS_SERVE_DRAFTS:-}
       # How recently an account must have signed in to delete itself.
       API_DELETION_FRESHNESS_SECONDS: ${API_DELETION_FRESHNESS_SECONDS:-600}
       # Per-account storage quotas (ADR-0005 s4).
@@ -88,6 +91,8 @@ services:
       # declare rather than leave to accident. 0 means undeclared, and the API
       # reports it absent rather than inventing one.
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-0}
+      # Admin warehouse page allowlist (operator labels or emails); empty = off.
+      API_ADMIN_ACCOUNTS: ${API_ADMIN_ACCOUNTS:-}
     depends_on:
       - redis
     ports:
@@ -135,6 +140,23 @@ services:
       - /tmp
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # The image is the standalone production server (`node server.js`, see
+      # Dockerfile.web), not `next dev`. A hung Node process shows here as
+      # `unhealthy` in `docker compose ps` instead of as 30 s page timeouts
+      # nobody can attribute. `/robots.txt` is rendered by this process alone
+      # and asks the API nothing, so a slow API does not mark the web unhealthy.
+      # `node` is the only client in the image: there is no curl or wget.
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://127.0.0.1:3100/robots.txt',
+          (r) => process.exit(r.statusCode === 200 ? 0 : 1))
+          .on('error', () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   airflow-common: &airflow-common
     build:
@@ -164,7 +186,14 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_METADATA_DB_USER}:${AIRFLOW_METADATA_DB_PASSWORD}@${AIRFLOW_METADATA_DB_HOST}:${AIRFLOW_METADATA_DB_PORT}/${AIRFLOW_METADATA_DB_NAME}
       CENSUS_API_KEY: ${CENSUS_API_KEY:-}
       BLS_API_KEY: ${BLS_API_KEY:-}
+      # DOL data portal key for the childcare prices (dol_childcare_ingest).
+      DOL_API_KEY: ${DOL_API_KEY:-}
       EIA_API_KEY: ${EIA_API_KEY:-}
+      ELECTIONS_GUESTBOOK_NAME: ${ELECTIONS_GUESTBOOK_NAME:-}
+      ELECTIONS_GUESTBOOK_EMAIL: ${ELECTIONS_GUESTBOOK_EMAIL:-}
+      ELECTIONS_GUESTBOOK_INSTITUTION: ${ELECTIONS_GUESTBOOK_INSTITUTION:-}
+      ELECTIONS_GUESTBOOK_POSITION: ${ELECTIONS_GUESTBOOK_POSITION:-}
+      DATAVERSE_API_TOKEN: ${DATAVERSE_API_TOKEN:-}
       FRED_API_KEY: ${FRED_API_KEY:-}
       CDC_SOCRATA_APP_TOKEN: ${CDC_SOCRATA_APP_TOKEN:-}
       FBI_CDE_API_KEY: ${FBI_CDE_API_KEY:-}
@@ -172,8 +201,12 @@ services:
       FCC_BDC_USERNAME: ${FCC_BDC_USERNAME:-}
       FCC_BDC_API_TOKEN: ${FCC_BDC_API_TOKEN:-}
       HUD_USER_API_TOKEN: ${HUD_USER_API_TOKEN:-}
+      # Where `raw_capture_export` writes (DAG-019); no default.
+      CAPTURE_EXPORT_ROOT: ${CAPTURE_EXPORT_ROOT:-}
     volumes:
       - ../../:/opt/data_ingestion_toolbox
+      # A drive outside the warehouse's volume for the capture export.
+      - ${BACKUP_HOST_DIR:-./backups-not-configured}:/opt/backups
       # Shared so the webserver reads task logs directly from disk and
       # history survives container recreates.
       - airflow_logs:/opt/airflow/logs
@@ -194,9 +227,8 @@ services:
       --lastname Admin
       --role Admin
       --email admin@example.com || true;
-      airflow connections delete public_data >/dev/null 2>&1 || true;
-      airflow connections add public_data --conn-type postgres --conn-host ${PUBLIC_DATA_DB_HOST:-${ANALYTICS_DB_HOST}} --conn-port ${PUBLIC_DATA_DB_PORT:-${ANALYTICS_DB_PORT}} --conn-login ${PUBLIC_DATA_DB_USER:-${ANALYTICS_DB_USER}} --conn-password ${PUBLIC_DATA_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}} --conn-schema ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}};
-      airflow pools set census_api 4 'Census Bureau API limit';
+      python /opt/data_ingestion_toolbox/scripts/airflow_upsert_connection.py public_data --conn-type postgres --host ${PUBLIC_DATA_DB_HOST:-${ANALYTICS_DB_HOST}} --port ${PUBLIC_DATA_DB_PORT:-${ANALYTICS_DB_PORT}} --login ${PUBLIC_DATA_DB_USER:-${ANALYTICS_DB_USER}} --password ${PUBLIC_DATA_DB_PASSWORD:-${ANALYTICS_DB_PASSWORD}} --schema ${PUBLIC_DATA_DB_NAME:-${ANALYTICS_DB_NAME}};
+      airflow pools set census_api 6 'Census Bureau API limit';
       airflow pools set bls_api 4 'BLS API limit';
       airflow pools set fred_api 4 'FRED API limit';
       airflow pools set cdc_api 2 'CDC Open Data API limit';
@@ -206,9 +238,14 @@ services:
       airflow pools set fhfa_hpi_files 1 'FHFA HPI workbooks (serialized)';
       airflow pools set hud_fmr_il_files 1 'HUD FMR and income-limit workbooks (serialized)';
       airflow pools set fema_files 1 'FEMA NRI and OpenFEMA pages (serialized)';
+      airflow pools set elections_files 1 'Election files: congress-legislators, Wikidata, Dataverse (serialized)';
       airflow pools set fcc_bdc_api 1 'FCC broadband map API (10 calls a minute)';
       airflow pools set epa_aqs_files 1 'EPA AirData files (serialized)';
       airflow pools set noaa_normals_files 1 'NOAA climate normals archive (serialized)';
+      airflow pools set noaa_climdiv_files 1 'NOAA nClimDiv county files (serialized)';
+      airflow pools set treasury_mts_pages 1 'Treasury Monthly Statement pages (serialized)';
+      airflow pools set usaspending_api 1 'USAspending search API (serialized)';
+      airflow pools set noaa_storm_events_files 1 'NOAA Storm Events files (serialized)';
       airflow pools set census_lodes_files 1 'Census LEHD LODES files (serialized)';
       airflow pools set census_cbp_files 1 'Census County Business Patterns files (serialized)';
       airflow pools set irs_soi_files 1 'IRS SOI migration files (serialized)';
@@ -216,6 +253,7 @@ services:
       airflow pools set bls_qcew_api 1 'BLS QCEW open data (serialized: data.bls.gov throttles bursts)';
       airflow pools set bea_files 1 'BEA regional bulk files (serialized)';
       airflow pools set eia_api 1 'EIA API v2 (serialized)';
+      airflow pools set dol_childcare_files 1 'DOL childcare price workbooks (serialized)';
       airflow pools set usda_nass_api 1 'USDA NASS QuickStats API limit (serialized: QuickStats 403-throttles above ~1 req/s sustained)'
       "
 

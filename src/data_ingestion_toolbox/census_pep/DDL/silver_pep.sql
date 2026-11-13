@@ -128,3 +128,14 @@ CREATE INDEX IF NOT EXISTS pep_fact_natural_key_idx
     ON silver_pep.fact_population_estimate (
         dataset_code, release_vintage, metric_code, geo_id, observation_year
     );
+
+-- One measure for named geographies, across every dataset and vintage. The
+-- gold latest view ranks by (metric_code, geo_id, observation_year), and the
+-- revision view under it by those plus dataset and vintage, so a filter on
+-- metric and geography reaches this table. The natural-key index above leads
+-- with dataset_code and cannot serve it: each such read was a sequential
+-- scan of the whole table, four of them per /place/distinctive request (9.9 s
+-- for a Wisconsin county on the internal stack, October 2026). On a live
+-- warehouse build it with CREATE INDEX CONCURRENTLY.
+CREATE INDEX IF NOT EXISTS pep_fact_metric_geo_year_idx
+    ON silver_pep.fact_population_estimate (metric_code, geo_id, observation_year);

@@ -1,0 +1,120 @@
+/* The admin warehouse page. Imported by its route alone. */
+
+.admin-warehouse {
+  --L-capture: #2a78d6;
+  --L-silver: #1baf7a;
+  --L-gold: #d0632f;
+  --L-serving: #6250d6;
+  --L-app: #7a8292;
+  --edge: #8b93a3;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  color: var(--ink);
+}
+.admin-warehouse code { font-family: var(--mono); font-size: 0.88em; }
+.aw-head h1 { margin: 2px 0 8px; }
+.aw-eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0; }
+.aw-lede { color: var(--muted); max-width: 72ch; margin: 0 0 18px; }
+.aw-note { color: var(--muted); }
+.aw-warn { color: var(--danger); }
+.aw-meta { color: var(--muted); font-size: 13px; }
+.aw-panel { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+.aw-panel h2, .aw-panel h3 { margin-top: 0; }
+.aw-refused { border-color: var(--danger); }
+
+.aw-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.aw-tabs button { font: inherit; border: 1px solid transparent; border-bottom: none; background: none; padding: 8px 14px; cursor: pointer; color: var(--muted); border-radius: 6px 6px 0 0; }
+.aw-tabs button[aria-selected="true"] { background: var(--card); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
+
+.aw-facts { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.aw-facts b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.aw-filters { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 0 0 10px; font-size: 14px; }
+.aw-filters select, .aw-filters input, .aw-search input { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.aw-legend { font-size: 13px; color: var(--muted); max-width: 100ch; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+.aw-key { display: inline-flex; align-items: center; gap: 6px; }
+.aw-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.aw-swatch.L-capture { background: var(--L-capture); }
+.aw-swatch.L-silver { background: var(--L-silver); }
+.aw-swatch.L-gold { background: var(--L-gold); }
+.aw-swatch.L-serving { background: var(--L-serving); }
+.aw-swatch.L-app { background: var(--L-app); }
+
+.aw-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.aw-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.aw-table th, .aw-table td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.aw-table thead th { position: sticky; top: 0; background: var(--card); font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.aw-grain-head { text-align: center !important; }
+.aw-name { font: inherit; background: none; border: none; padding: 0; text-align: left; cursor: pointer; color: inherit; display: flex; flex-direction: column; min-width: 220px; }
+.aw-source-name { font-weight: 600; color: var(--accent-strong); }
+.aw-name[aria-expanded="true"] .aw-source-name { text-decoration: underline; }
+.aw-publisher { color: var(--muted); font-size: 12px; }
+.aw-cell { text-align: center; white-space: nowrap; min-width: 72px; }
+.aw-cell .aw-mark { display: block; font-weight: 700; font-size: 11px; }
+.aw-cell .aw-years { font-variant-numeric: tabular-nums; font-size: 12px; }
+.aw-mark-n { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.aw-mark-d { background: color-mix(in srgb, var(--blue) 14%, transparent); }
+.aw-mark-p { background: color-mix(in srgb, var(--gold) 16%, transparent); }
+.aw-mark-x { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.aw-empty { background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--line) 70%, transparent) 4px 6px); color: var(--muted); }
+.aw-none { background: none; }
+.aw-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.aw-newest, .aw-cadence { font-size: 12px; color: var(--muted); }
+.aw-open > * { background-color: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.aw-detail > td { background: color-mix(in srgb, var(--accent-soft) 30%, transparent); }
+.aw-detail-body { white-space: normal; overflow-wrap: anywhere; max-width: calc(100vw - 80px); position: sticky; left: 8px; }
+.aw-detail-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px 28px; }
+.aw-detail-cols > div { min-width: 0; }
+.aw-legend-text { font-size: 13px; color: var(--muted); max-width: 100ch; }
+.aw-detail h3 { font-size: 14px; margin: 6px 0; display: flex; align-items: center; gap: 10px; }
+.aw-list { margin: 0 0 8px; padding-left: 18px; }
+.aw-dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 8px 0 0; }
+.aw-dl dt { color: var(--muted); }
+.aw-dl dd { margin: 0; }
+.aw-lineage { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 4px; }
+.aw-lineage li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.aw-stage { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); width: 84px; flex: none; }
+.aw-refresh { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); padding: 2px 8px; cursor: pointer; color: var(--ink); }
+.aw-mini { border-collapse: collapse; font-size: 12.5px; margin: 4px 0; }
+.aw-mini th, .aw-mini td { border-bottom: 1px solid var(--line); padding: 3px 10px 3px 0; text-align: left; }
+.aw-mini thead th { color: var(--muted); font-weight: 600; }
+
+.aw-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.aw-picker button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+.aw-picker button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.aw-figure { margin: 0; }
+.aw-figure figcaption { font-size: 13.5px; color: var(--muted); max-width: 100ch; margin-bottom: 6px; }
+.aw-figure figcaption b { color: var(--ink); }
+.aw-well { overflow: auto; max-height: 78vh; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.aw-erd { display: block; }
+.aw-erd text { font-family: var(--mono); }
+.aw-bx { fill: var(--card); stroke: var(--line); }
+.aw-hd { stroke: none; }
+.aw-box.L-capture .aw-hd { fill: var(--L-capture); }
+.aw-box.L-silver .aw-hd { fill: var(--L-silver); }
+.aw-box.L-gold .aw-hd { fill: var(--L-gold); }
+.aw-box.L-serving .aw-hd { fill: var(--L-serving); }
+.aw-box.L-app .aw-hd { fill: var(--L-app); }
+.aw-shared .aw-bx { stroke-dasharray: 4 3; }
+.aw-box { cursor: pointer; }
+.aw-box:focus { outline: none; }
+.aw-box:focus .aw-bx, .aw-box-on .aw-bx { stroke: var(--ink); stroke-width: 2; }
+.aw-tn { font-size: 11.5px; font-weight: 600; fill: #fff; }
+.aw-ts { font-size: 10px; fill: rgba(255, 255, 255, 0.85); }
+.aw-cn { font-size: 11px; fill: var(--ink); }
+.aw-ct { font-size: 10px; fill: var(--muted); }
+.aw-bd { font-size: 9px; font-weight: 700; }
+.aw-b-pk { fill: var(--gold); }
+.aw-b-fk { fill: var(--blue); }
+.aw-more { font-size: 10px; fill: var(--muted); font-style: italic; }
+.aw-edge { fill: none; stroke: var(--edge); stroke-width: 1.2; opacity: 0.75; }
+.aw-edge-reads { stroke-dasharray: 5 4; }
+.aw-edge-on { stroke: var(--ink); stroke-width: 2; opacity: 1; }
+.aw-arrowhead { fill: var(--edge); }
+.aw-relation h3 { margin: 0 0 4px; }
+.aw-link { font: inherit; background: none; border: none; padding: 0; color: var(--accent-strong); text-decoration: underline; cursor: pointer; font-family: var(--mono); font-size: 0.9em; }
+.aw-search { margin-top: 16px; font-size: 14px; }
+.aw-matches { list-style: none; padding: 0; margin: 8px 0 0; columns: 2 360px; }
+.aw-matches li { break-inside: avoid; margin-bottom: 4px; }
+.aw-matches button { font: inherit; background: none; border: none; padding: 0; cursor: pointer; color: var(--accent-strong); }

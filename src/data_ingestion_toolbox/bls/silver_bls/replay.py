@@ -101,6 +101,57 @@ def parse_captured_observations(payload: bytes) -> list[dict[str, object]]:
     return parsed
 
 
+_REVISION_COLUMNS = (
+    "capture_id, observation_index, program, series_id, "
+    "year_source, period_source, period_name_source, "
+    "value_source, latest_source, footnotes_source, "
+    "year, period, period_name, value, value_status, is_latest"
+)
+
+_INCOMING_TABLE_SQL = """
+    CREATE TEMP TABLE bls_incoming_revision
+        (LIKE silver_bls.observation_revision INCLUDING DEFAULTS)
+        ON COMMIT DROP
+"""
+
+#: BLS answers carry a response time, so every read is new bytes, yet most of
+#: an answer repeats what an earlier read already stored: 5.68M of 7.87M
+#: revision rows on OFFICE_LAB (2026-11-05) equalled another revision of the
+#: same observation. An observation is stored again only when it differs
+#: from the newest stored revision of that observation (by any source token,
+#: the `latest` flag included); the transform serves the newest revision, so
+#: a skipped identical row changes nothing served. The comparison uses
+#: `bls_observation_revision_current_idx` and one capture probe per row.
+_STORE_NEW_REVISIONS_SQL = f"""
+    INSERT INTO silver_bls.observation_revision ({_REVISION_COLUMNS})
+    SELECT {_REVISION_COLUMNS}
+    FROM bls_incoming_revision AS incoming
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM (
+            SELECT stored.period_name_source, stored.value_source,
+                   stored.latest_source, stored.footnotes_source
+            FROM silver_bls.observation_revision AS stored
+            JOIN raw_capture.response_capture AS capture USING (capture_id)
+            WHERE stored.program = incoming.program
+              AND stored.series_id = incoming.series_id
+              AND stored.year = incoming.year
+              AND stored.period = incoming.period
+              AND stored.capture_id <> incoming.capture_id
+            ORDER BY capture.retrieved_at DESC, stored.capture_id DESC
+            LIMIT 1
+        ) AS newest
+        WHERE newest.period_name_source
+                  IS NOT DISTINCT FROM incoming.period_name_source
+          AND newest.value_source IS NOT DISTINCT FROM incoming.value_source
+          AND newest.latest_source IS NOT DISTINCT FROM incoming.latest_source
+          AND newest.footnotes_source
+                  IS NOT DISTINCT FROM incoming.footnotes_source
+    )
+    ON CONFLICT (capture_id, observation_index) DO NOTHING
+"""
+
+
 def replay_bls_capture(
     connection_factory: Callable[[], Any],
     *,
@@ -137,20 +188,14 @@ def replay_bls_capture(
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
+            cursor.execute(_INCOMING_TABLE_SQL)
             execute_values(
                 cursor,
-                """
-                INSERT INTO silver_bls.observation_revision (
-                    capture_id, observation_index, program, series_id,
-                    year_source, period_source, period_name_source,
-                    value_source, latest_source, footnotes_source,
-                    year, period, period_name, value, value_status, is_latest
-                ) VALUES %s
-                ON CONFLICT (capture_id, observation_index) DO NOTHING
-                """,
+                f"INSERT INTO bls_incoming_revision ({_REVISION_COLUMNS}) VALUES %s",
                 records,
                 page_size=5000,
             )
+            cursor.execute(_STORE_NEW_REVISIONS_SQL)
         database_connection.commit()
     except BaseException:
         database_connection.rollback()

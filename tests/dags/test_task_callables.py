@@ -310,6 +310,97 @@ def test_silver_task_callable_forwards_declared_source_scope(
 
 
 @pytest.mark.parametrize(
+    ("message", "fails_outright"),
+    [
+        ("canceling statement due to user request", True),
+        ("canceling statement due to statement timeout", False),
+    ],
+)
+def test_an_operator_stop_fails_the_acs_transform_without_a_retry(
+    dagbag, monkeypatch: pytest.MonkeyPatch, message: str, fails_outright: bool
+) -> None:
+    """Covers: DAG-008 — a cancelled transform is not restarted; a timeout may retry."""
+    import psycopg2.errors
+    from airflow.exceptions import AirflowFailException
+
+    def stopped(*_args: Any, **_kwargs: Any) -> int:
+        raise psycopg2.errors.QueryCanceled(message)
+
+    callable_ = _callable(dagbag, "acs_ingest", "transform_to_silver")
+    _patch_callable_global(
+        monkeypatch, callable_, "transform_census_to_silver", stopped
+    )
+    expected = AirflowFailException if fails_outright else psycopg2.errors.QueryCanceled
+    with pytest.raises(expected) as raised:
+        callable_(run_id="scheduled__2026-11-01")
+    if fails_outright:
+        assert "Clear this task to resume run scheduled__2026-11-01" in str(
+            raised.value
+        )
+
+
+@pytest.mark.parametrize(
+    ("dag_id", "task_id", "hook_global"),
+    [
+        ("acs_ingest", "refresh_gold_census_serving_layer", "_get_postgres_hook"),
+        ("bls_ingest", "refresh_gold_bls_serving_layer", "_get_postgres_hook"),
+        ("fred_ingest", "refresh_gold_fred_serving_layer", "_get_postgres_hook"),
+        ("serving_full_reserve", "reserve_source", "PostgresHook"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("error", "fails_outright"),
+    [
+        ("canceling statement due to user request", True),
+        ("terminating connection due to administrator command", True),
+        ("canceling statement due to statement timeout", False),
+    ],
+)
+def test_an_operator_stop_fails_a_serving_refresh_without_a_retry(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+    dag_id: str,
+    task_id: str,
+    hook_global: str,
+    error: str,
+    fails_outright: bool,
+) -> None:
+    """Covers: DAG-008 — a cancelled serving refresh is not restarted; a timeout may retry."""
+    import psycopg2.errors
+    from airflow.exceptions import AirflowFailException
+
+    kind = (
+        psycopg2.errors.AdminShutdown
+        if "administrator" in error
+        else psycopg2.errors.QueryCanceled
+    )
+
+    def stopped(**_kwargs: Any) -> dict[str, int]:
+        raise kind(error)
+
+    callable_ = _callable(dagbag, dag_id, task_id)
+    _patch_callable_global(
+        monkeypatch, callable_, hook_global, lambda *_a, **_k: RecordingDatabase()
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "refresh_serving_layer_in_year_chunks", stopped
+    )
+    kwargs: dict[str, Any] = {}
+    if dag_id == "serving_full_reserve":
+
+        class _Run:
+            conf = {"source_code": "BLS"}
+
+        kwargs["dag_run"] = _Run()
+    expected = AirflowFailException if fails_outright else kind
+    with pytest.raises(expected) as raised:
+        callable_(**kwargs)
+    if fails_outright:
+        assert "not retrying" in str(raised.value)
+        assert isinstance(raised.value.__cause__, kind)
+
+
+@pytest.mark.parametrize(
     (
         "dag_id",
         "module_name",
@@ -414,7 +505,7 @@ def test_reference_dimension_task_callables_forward_declared_windows(
         (
             "bls_ingest",
             "dags.bls_ingest_dag",
-            ["la", "ln", "ce", "cu", "jt", "ap"],
+            ["la", "ln", "ce", "cu", "jt", "ap", "cx"],
             "_series_fingerprint",
         ),
         ("fred_ingest", "dags.fred_ingest_dag", ["macro"], "_series_fingerprint"),
@@ -431,6 +522,22 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
     """Covers: DAG-010 — production planners build source-specific work scopes."""
     database = RecordingDatabase(fetches=[[], []])
     callable_ = _callable(dagbag, dag_id, "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
     )
@@ -473,10 +580,11 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "county",
             "place",
             "tract",
+            "metro",
         }
         # us + state + 52 county parents + 52 place parents (ETL-055) + 52
-        # tract parents (ETL-061).
-        assert len(work_units) == 158
+        # tract parents (ETL-061) + one metro slice of every CBSA (ETL-091).
+        assert len(work_units) == 159
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
@@ -518,6 +626,72 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             for work_unit in work_units
         }
         assert len(starts) == 2
+
+
+def test_bls_history_captured_under_an_older_request_is_planned_again(
+    dagbag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-113 — a scheduled run re-plans history answered for another request."""
+    callable_ = _callable(dagbag, "bls_ingest", "build_ingestion_plan")
+
+    # The DAG's fingerprint is the request fingerprint, options included.
+    fingerprint = callable_.__globals__["_series_fingerprint"]
+    curated = callable_.__globals__["CONFIG"].curated_by_program["ln"]
+    assert fingerprint("ln") == (
+        callable_.__globals__["slice_fingerprint"](curated),
+        len(curated),
+    )
+
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_series_fingerprint",
+        lambda *args: ("current-request", 3),
+    )
+    programs = ["la", "ln", "ce", "cu", "jt", "ap", "cx"]
+
+    def plan(completed: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
+        database = RecordingDatabase(fetches=[completed, []])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return [unit for batch in callable_(programs) for unit in batch]
+
+    def ledger(units: list[dict[str, Any]], digest: str) -> list[tuple[Any, ...]]:
+        return [
+            (
+                u["program"],
+                u["start_year"],
+                u["end_year"],
+                u["geo_level"],
+                u["state_fips"],
+                digest,
+            )
+            for u in units
+        ]
+
+    history = [u for u in plan([]) if u["start_year"] == 1990]
+    history_slices = {(u["program"], u["geo_level"], u["state_fips"]) for u in history}
+    # Every LAUS state, metro and county-parent slice has a history band.
+    assert {("la", "state", None), ("la", "metro", None)} <= history_slices
+    assert ("la", "county", "55") in history_slices
+
+    # Answered under the request made before annual averages were asked for:
+    # the whole history is asked for again, under the current fingerprint.
+    stale = [
+        u
+        for u in plan(ledger(history, "pre-annual-average-request"))
+        if u["start_year"] == 1990
+    ]
+    assert {(u["program"], u["geo_level"], u["state_fips"]) for u in stale} == (
+        history_slices
+    )
+    assert {u["series_hash"] for u in stale} == {"current-request"}
+
+    # Answered under today's request: only the rolling window is planned.
+    current = plan(ledger(history, "current-request"))
+    assert current
+    assert not [u for u in current if u["start_year"] == 1990]
 
 
 def test_acs_target_selection_rejects_empty_metadata(
@@ -568,6 +742,22 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
     """Covers: ETL-083 — a backfill conf plans that year's slices at that grain only."""
     database = RecordingDatabase(fetches=[[]])
     callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    if "CONFIG" in callable_.__globals__ and hasattr(
+        callable_.__globals__["CONFIG"], "place_year_scope"
+    ):
+        # The planning mechanism under test is "the newest year"; the
+        # shipped declaration (every year) is asserted in tests/unit/census.
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            callable_.__globals__["CONFIG"].model_copy(
+                update={
+                    "place_year_scope": "newest",
+                    "place_full_table_year_scope": "newest",
+                }
+            ),
+        )
     fingerprints: list[tuple[Any, ...]] = []
     _patch_callable_global(
         monkeypatch, callable_, "_get_postgres_hook", lambda: database
@@ -615,3 +805,229 @@ def test_an_acs_backfill_run_plans_one_year_at_one_grain(
             conf = {"acs_backfill": {"year": 2031, "geo_level": geo_level}}
 
         callable_(targets, dag_run=Missing())
+
+
+def test_an_acs_backfill_area_run_plans_the_nation_states_and_counties(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a census year names `area` to load its nation, states and counties."""
+    database = RecordingDatabase(fetches=[[]])
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch, callable_, "_get_postgres_hook", lambda: database
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_variables_fingerprint",
+        lambda *args: ("stable-hash", 3),
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2000, "geo_level": "area"}}
+
+    targets = [
+        {"dataset": "dec2000sf1", "year": 2000},
+        {"dataset": "acs5", "year": 2019},
+    ]
+    work_units = [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+    assert {unit["geo_level"] for unit in work_units} == {"us", "state", "county"}
+    assert {(unit["dataset"], unit["year"]) for unit in work_units} == {
+        ("dec2000sf1", 2000)
+    }
+    assert sum(unit["geo_level"] == "county" for unit in work_units) == 52
+
+
+def test_an_acs_backfill_year_refuses_when_the_disk_cannot_hold_it(
+    dagbag, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Covers: ETL-086 -- a backfill year projected past the reserve is refused up front."""
+    from data_ingestion_toolbox.census_acs.disk_guard import DiskGuardError
+
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "_get_postgres_hook",
+        lambda: RecordingDatabase(fetches=[[]]),
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", lambda *a: ("h", 3)
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "sync_variable_metadata_for_year", lambda y, d: None
+    )
+    config = callable_.__globals__["CONFIG"]
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}, {"dataset": "acs5", "year": 2024}]
+    for per_variable, refused in ((1.0, False), (1e18, True)):
+        _patch_callable_global(
+            monkeypatch,
+            callable_,
+            "CONFIG",
+            config.model_copy(
+                update={
+                    "backfill_bytes_per_variable": {"acs5/tract": per_variable},
+                    "backfill_disk_path": str(tmp_path),
+                }
+            ),
+        )
+        if refused:
+            with pytest.raises(DiskGuardError, match="must stay free"):
+                callable_(targets, dag_run=Run())
+        else:
+            assert [
+                unit for batch in callable_(targets, dag_run=Run()) for unit in batch
+            ]
+
+
+def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-083 — a tract slice is done only for the tract tables it was loaded with.
+
+    The tract list was widened from five tables to twenty-two (W-4), but a
+    tract slice carried the fingerprint of the whole curated list, which did
+    not change, so every tract year loaded on five tables was skipped as done.
+    """
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    config = callable_.__globals__["CONFIG"]
+
+    def fingerprint(year, dataset, tables=None):
+        if tables is None:
+            return ("whole-list", 30)
+        if list(tables) != list(config.tract_tables):
+            # The planner's added-tables check (ETL-114) digests the tract
+            # list as it stood before each addition; nothing was loaded so.
+            assert set(tables) < set(config.tract_tables)
+            return ("earlier-tract-list", 21)
+        return ("tract-list", 22)
+
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", fingerprint
+    )
+    # The disk guard has its own test; a small CI runner's disk is not this one's subject.
+    _patch_callable_global(
+        monkeypatch, callable_, "assert_room_for", lambda *_a, **_k: None
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}]
+
+    def plan(loaded_with: str) -> list[dict]:
+        completed = [
+            ("acs5", 2019, "tract", fips, loaded_with)
+            for fips in callable_.__globals__["tract_parent_fips"]("acs5")
+        ]
+        database = RecordingDatabase(fetches=[completed])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return [unit for batch in callable_(targets, dag_run=Run()) for unit in batch]
+
+    replanned = plan("whole-list")
+    assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
+    assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
+    assert plan("tract-list") == []
+
+
+def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_loaded(
+    dagbag,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-114 — a slice finished before a table was added asks for that table only.
+
+    Asking such a slice for its whole list again would store every cell it
+    holds a second time (revisions are append-only); B25103 at tract grain
+    is three variables beside some 560.
+    """
+    callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
+    config = callable_.__globals__["CONFIG"]
+    assert "B25103" in config.added_tables
+    assert "B25103" in config.curated_tables and "B25103" in config.tract_tables
+
+    def fingerprint(year, dataset, tables=None):
+        tables = list(config.curated_tables if tables is None else tables)
+        if tables == ["B25103"]:
+            return ("b25103-only", 6)
+        added = "B25103" in tables
+        if tables == [t for t in config.tract_tables if added or t != "B25103"]:
+            return ("tract-now" if added else "tract-before", 9)
+        return ("whole-now" if added else "whole-before", 99)
+
+    _patch_callable_global(
+        monkeypatch, callable_, "_variables_fingerprint", fingerprint
+    )
+    _patch_callable_global(
+        monkeypatch, callable_, "assert_room_for", lambda *_a, **_k: None
+    )
+    _patch_callable_global(
+        monkeypatch,
+        callable_,
+        "sync_variable_metadata_for_year",
+        lambda year, dataset: None,
+    )
+
+    class Run:
+        conf = {"acs_backfill": {"year": 2019, "geo_level": "tract"}}
+
+    targets = [{"dataset": "acs5", "year": 2019}]
+    tract_fips = list(callable_.__globals__["tract_parent_fips"]("acs5"))
+
+    def plan(rows: list[tuple]) -> dict[str, dict]:
+        database = RecordingDatabase(fetches=[rows])
+        _patch_callable_global(
+            monkeypatch, callable_, "_get_postgres_hook", lambda: database
+        )
+        return {
+            unit["state_fips"]: unit
+            for batch in callable_(targets, dag_run=Run())
+            for unit in batch
+        }
+
+    def ledger(stored: str, status: str) -> list[tuple]:
+        return [("acs5", 2019, "tract", fips, stored, status) for fips in tract_fips]
+
+    # Finished before B25103 was added: asked for B25103 alone, stamped with
+    # today's fingerprint only on success.
+    units = plan(ledger("tract-before", "success"))
+    assert set(units) == set(tract_fips)
+    for unit in units.values():
+        assert unit["tables"] == ["B25103"]
+        assert unit["variables_hash"] == "tract-now"
+        assert unit["ledger_hash"] == "added-tables-pending:tract-before"
+        assert unit["requested_count"] == 6
+
+    # The request failed part way: the pending mark asks for B25103 again.
+    units = plan(ledger("added-tables-pending:tract-before", "failed"))
+    assert {tuple(unit["tables"]) for unit in units.values()} == {("B25103",)}
+
+    # A slice that failed under the earlier list may hold partial cells, and
+    # one never loaded holds none: both are asked for the whole tract list.
+    for rows in (ledger("tract-before", "failed"), []):
+        units = plan(rows)
+        assert set(units) == set(tract_fips)
+        assert all(unit.get("tables") is None for unit in units.values())
+        assert all("ledger_hash" not in unit for unit in units.values())
+
+    # Finished under today's list: nothing to do.
+    assert plan(ledger("tract-now", "success")) == {}

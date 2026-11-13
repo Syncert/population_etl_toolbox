@@ -50,6 +50,11 @@ def test_the_expected_gold_products_exist() -> None:
         "agency_observation_area_filter",
         "county_rollup",
         "latest_county_rollup",
+        # The county rate the FBI's way (ADR-0012), the second declared-
+        # derived product, pinned in test_fbi_county_agency_rate.py.
+        "county_agency_rate",
+        "latest_county_agency_rate",
+        "latest_release_fact",
         "latest_release_observation",
         "measure_export",
         "metric_publisher",
@@ -62,9 +67,10 @@ def test_the_expected_gold_products_exist() -> None:
 def test_no_provider_faithful_view_aggregates_observation_values() -> None:
     """Covers: ETL-042 — agency values are never summed into an area total.
 
-    ``county_rollup`` is the one declared-derived aggregate the county
-    roll-up plan carved out of this rule; it is checked separately in
-    ``test_fbi_county_rollup.py`` and excluded here so every other view
+    ``county_rollup`` and ``county_agency_rate`` are the declared-derived
+    aggregates the county roll-up plan and ADR-0012 carved out of this rule;
+    they are checked separately in ``test_fbi_county_rollup.py`` and
+    ``test_fbi_county_agency_rate.py`` and excluded here so every other view
     stays provider-faithful.
     """
     aggregate = re.compile(
@@ -76,7 +82,8 @@ def test_no_provider_faithful_view_aggregates_observation_values() -> None:
     offenders = {
         name: aggregate.findall(body)
         for name, body in _gold_view_bodies().items()
-        if name != "county_rollup" and aggregate.search(body)
+        if name not in {"county_rollup", "county_agency_rate"}
+        and aggregate.search(body)
     }
 
     assert offenders == {}

@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from apps.api.dependencies import db_service_unavailable, get_db_session_dep
 from apps.api.failures import NOT_FOUND
+from apps.api.query_lists import code_list
+from apps.api.schemas.derived import DerivedRatioCatalogResponse
+from apps.api.services.derived_ratio_service import list_pairings
 from apps.api.services.catalog_service import (
     get_geography_related,
     get_metric_capability,
@@ -15,14 +18,35 @@ from apps.api.services.catalog_service import (
     list_source_freshness,
     list_sources,
 )
+from apps.api.services.tile_layers import list_tile_layers
+from apps.api.services.metro_pages import (
+    DEFAULT_LIMIT as METRO_DEFAULT_LIMIT,
+    MAX_LIMIT as METRO_MAX_LIMIT,
+    MetroRefusal,
+    list_metros,
+    resolve_metro,
+)
+from apps.api.services.place_search import (
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    MAX_QUERY_CHARACTERS,
+    PlaceSearchRefusal,
+    locate_place,
+    search_places,
+)
 from apps.api.schemas import (
     CapabilityListResponse,
     FreshnessListResponse,
     GeographyListResponse,
+    GeographyLocateResponse,
+    GeographySearchResponse,
     GeographyRelatedResponse,
     MetricCapability,
+    MetroListResponse,
+    MetroPageResponse,
     MetricListResponse,
     SourceSystem,
+    TileLayerCatalogResponse,
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -41,10 +65,17 @@ def get_metrics(
     source_code: Optional[str] = Query(None, max_length=50),
     active_only: Optional[bool] = None,
     q: Optional[str] = Query(None, max_length=200),
+    metric_codes: Optional[str] = Query(
+        None,
+        max_length=8000,
+        description="Comma-separated metric codes: only these rows, in one read. "
+        "At most 200 codes; a code the catalog does not hold is simply absent.",
+    ),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0, le=100000),
     db: Session = Depends(get_db_session_dep),
 ) -> MetricListResponse:
+    codes = code_list(metric_codes, "metric_codes", 200)
     try:
         return list_metrics(
             db,
@@ -53,6 +84,7 @@ def get_metrics(
             q=q,
             limit=limit,
             offset=offset,
+            metric_codes=codes,
         )
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc
@@ -84,6 +116,127 @@ def get_geographies(
         raise db_service_unavailable(exc) from exc
 
 
+@router.get("/geographies/search", response_model=GeographySearchResponse)
+def search_geographies(
+    q: str = Query(..., min_length=1, max_length=MAX_QUERY_CHARACTERS),
+    grain: Optional[list[str]] = Query(None, max_length=10),
+    state_fips: Optional[str] = Query(None, max_length=2),
+    limit: int = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    db: Session = Depends(get_db_session_dep),
+) -> GeographySearchResponse:
+    """Places a typed name may mean, best match first, ranked by population.
+
+    Matches a state, county, metro, city or town, or ZCTA by its name without
+    the Census description, by name prefix, by a later word's prefix, or by a
+    close spelling. The county and metro of each of the three best city
+    matches follow it, so "Austin" offers Austin city, Travis County and the
+    Austin metro. ``grain`` narrows the grains (repeat it, or separate words
+    with commas).
+    """
+    grains = [word for value in grain or [] for word in value.split(",")]
+    try:
+        return search_places(db, q, grains=grains, state_fips=state_fips, limit=limit)
+    except PlaceSearchRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/geographies/locate",
+    response_model=GeographyLocateResponse,
+    responses=NOT_FOUND,
+)
+def locate_geographies(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    db: Session = Depends(get_db_session_dep),
+) -> GeographyLocateResponse:
+    """The city or town, county, tract, ZCTA, state and metro a point lies in.
+
+    ``landing`` is the city or town, or the county when the point is in none,
+    so "use my location" opens the page a resident calls home. The response
+    does not echo the coordinates. A point no state boundary covers (outside
+    the United States, or offshore) is ``404 {"detail": "no geography contains
+    this point"}``.
+    """
+    try:
+        located = locate_place(db, lat, lon)
+    except PlaceSearchRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if located is None:
+        raise HTTPException(status_code=404, detail="no geography contains this point")
+    return located
+
+
+@router.get("/geographies/metros", response_model=MetroListResponse)
+def get_metros(
+    state_fips: Optional[str] = Query(None, max_length=2),
+    limit: int = Query(METRO_DEFAULT_LIMIT, ge=1, le=METRO_MAX_LIMIT),
+    offset: int = Query(0, ge=0, le=100000),
+    db: Session = Depends(get_db_session_dep),
+) -> MetroListResponse:
+    """Metro and micro areas (CBSAs), by name, each with its page path.
+
+    With ``state_fips``, only those with a member county in that state, so a
+    metro spanning two states is listed in both.
+    """
+    try:
+        return list_metros(db, state_fips=state_fips, limit=limit, offset=offset)
+    except MetroRefusal as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
+@router.get(
+    "/geographies/metros/{segment}",
+    response_model=MetroPageResponse,
+    responses=NOT_FOUND,
+)
+def get_metro_page(
+    segment: str = Path(
+        ..., min_length=1, max_length=200, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    ),
+    db: Session = Depends(get_db_session_dep),
+) -> MetroPageResponse:
+    """The metro a page address names, by its segment or its CBSA code.
+
+    Answers the metro, its member counties under the newest delineation the
+    reference holds, every state they lie in (the principal state first: the
+    state of its most populous member county), and the areas that state lies
+    in. A segment no metro answers to is ``404 {"detail": "metro not found"}``.
+    """
+    try:
+        page = resolve_metro(db, segment)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail="metro not found")
+    return page
+
+
+@router.get("/tile-layers", response_model=TileLayerCatalogResponse)
+def get_tile_layers(
+    db: Session = Depends(get_db_session_dep),
+) -> TileLayerCatalogResponse:
+    """Every vector tile layer a map can draw, and the boundary vintages it holds.
+
+    ``counties`` (states and counties) and ``tracts`` draw current
+    boundaries. ``places`` (cities and towns) and ``metros`` are versioned:
+    each listed vintage has its own ``tile_template`` (``?vintage=YYYY``), the
+    default is the newest, and a vintage not listed draws nothing rather than
+    another vintage's boundaries. Tiles carry no values; ``uncoloured_rule``
+    is the rule a map joining values on ``join_key`` follows.
+    """
+    try:
+        return list_tile_layers(db)
+    except SQLAlchemyError as exc:
+        raise db_service_unavailable(exc) from exc
+
+
 @router.get("/capabilities", response_model=CapabilityListResponse)
 def get_capabilities(request: Request) -> CapabilityListResponse:
     """Machine-readable capability metadata for every completed source.
@@ -102,6 +255,31 @@ def get_freshness(db: Session = Depends(get_db_session_dep)) -> FreshnessListRes
         return list_source_freshness(db)
     except SQLAlchemyError as exc:
         raise db_service_unavailable(exc) from exc
+
+
+@router.get("/derived-ratios", response_model=DerivedRatioCatalogResponse)
+def get_derived_ratios(
+    numerator: Optional[str] = Query(
+        None,
+        max_length=200,
+        description=(
+            "A metric code: only the pairings that divide this metric. A place "
+            "page card asks this to learn which per-capita or share views its "
+            "count offers."
+        ),
+    ),
+    served_only: bool = Query(
+        False,
+        description="Only the pairings /observations/derived will answer.",
+    ),
+) -> DerivedRatioCatalogResponse:
+    """The reviewed per-capita and share pairings (ADR-0009).
+
+    Each names its numerator, its denominator (or the provider's own rate),
+    the universe the result describes, its status and whether it is served.
+    Read from the versioned semantic registry; no database read.
+    """
+    return list_pairings(numerator=numerator or None, served_only=served_only)
 
 
 @router.get(

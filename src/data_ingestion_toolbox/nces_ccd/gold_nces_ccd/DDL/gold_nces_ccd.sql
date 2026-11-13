@@ -25,6 +25,10 @@ FROM (VALUES
      'Membership is the school''s reported enrollment count on or about October 1.'),
     ('teacher_fte', 'staff', 'Teachers (full-time equivalent)', 'full-time-equivalent teachers',
      'Classroom teachers in full-time equivalents.'),
+    ('student_membership_matched', 'matched', 'Students enrolled in schools that also reported teachers', 'students',
+     'Membership summed over only the schools that reported both a Reported membership and a Reported teacher count in the newest membership and staff files of the year, so that it can be divided by teacher_fte_matched over the same schools. schools_with_value counts those schools; schools_without_value counts placed schools in either file missing one of the two.'),
+    ('teacher_fte_matched', 'matched', 'Teachers (full-time equivalent) in schools that also reported membership', 'full-time-equivalent teachers',
+     'Classroom teachers in full-time equivalents, summed over the same schools as student_membership_matched: those that reported both counts that year.'),
     ('frpl_eligible', 'lunch', 'Students eligible for free or reduced-price lunch', 'students',
      'Free lunch is family income below 130 percent of poverty or direct certification; reduced-price is 130 to 185 percent. Since 2016-17 states may report this, direct certification, or both, and Community Eligibility Provision schools may report every student as free-eligible.'),
     ('free_lunch_eligible', 'lunch', 'Students eligible for free lunch', 'students',
@@ -90,8 +94,86 @@ LEFT JOIN gold_nces_ccd.school_placement AS placement
 -- schools' Reported values, with how many placed schools had a value and how
 -- many had none. A grain where no placed school reported has a row with no
 -- value and status `missing`, never a zero.
+--
+-- The two `_matched` measures sum membership and teachers over the same
+-- schools: those with a Reported value in both the year's newest membership
+-- file and its newest staff file. Two partial sums over different schools
+-- are never divided; these two, over one set of schools, can be, and their
+-- counts say how many placed schools that set is out of (students per
+-- teacher, starting-a-family-collection).
 CREATE OR REPLACE VIEW gold_nces_ccd.observation_revision AS
-WITH grains AS (
+WITH newest_file AS (
+    SELECT DISTINCT ON (file.component, file.school_year)
+           file.component, file.school_year, file.run_id, file.file_stem, file.release_version,
+           file.version_rank, file.published_at, file.capture_id
+    FROM control.nces_ccd_file AS file
+    WHERE file.status = 'published' AND file.component IN ('membership', 'staff')
+    ORDER BY file.component, file.school_year, file.version_rank DESC, file.published_at DESC, file.run_id DESC
+),
+matched_pair AS (
+    SELECT membership.school_year,
+           membership.run_id AS membership_run_id,
+           staff.run_id AS staff_run_id,
+           CASE WHEN membership.published_at >= staff.published_at THEN membership.run_id ELSE staff.run_id END AS run_id,
+           CASE WHEN membership.published_at >= staff.published_at THEN membership.capture_id ELSE staff.capture_id END
+               AS capture_id,
+           membership.file_stem || ' + ' || staff.file_stem AS file_stem,
+           membership.release_version || ' membership, v' || staff.release_version || ' staff' AS release_version,
+           GREATEST(membership.version_rank, staff.version_rank) AS version_rank,
+           GREATEST(membership.published_at, staff.published_at) AS published_at
+    FROM newest_file AS membership
+    JOIN newest_file AS staff
+      ON staff.school_year = membership.school_year AND staff.component = 'staff'
+    WHERE membership.component = 'membership'
+),
+-- One row per placed school in either file. Read from the placement first,
+-- so a read of one county or state filters schools by the geocode file's
+-- indexed place columns, then each count by its primary key (run, school,
+-- measure): never a join of every school count against every placement.
+-- Referenced by the county and the state grain: NOT MATERIALIZED so the
+-- place filter reaches the placement (the #339 rule).
+matched_school AS NOT MATERIALIZED (
+    SELECT pair.run_id, pair.school_year, pair.file_stem, pair.release_version, pair.version_rank,
+           pair.capture_id, pair.published_at,
+           placement.ncessch, placement.state_fips, placement.county_geo_id, placement.county_geo_sk,
+           placement.county_status, placement.geocode_file,
+           CASE WHEN membership.value_status = 'valid' THEN membership.value END AS membership,
+           CASE WHEN teacher.value_status = 'valid' THEN teacher.value END AS teachers,
+           membership.value_status = 'valid' AND teacher.value_status = 'valid' AS reported_both
+    FROM matched_pair AS pair
+    JOIN gold_nces_ccd.school_placement AS placement ON placement.school_year = pair.school_year
+    LEFT JOIN silver_nces_ccd.school_count AS membership
+      ON membership.run_id = pair.membership_run_id AND membership.ncessch = placement.ncessch
+     AND membership.measure = 'student_membership'
+    LEFT JOIN silver_nces_ccd.school_count AS teacher
+      ON teacher.run_id = pair.staff_run_id AND teacher.ncessch = placement.ncessch
+     AND teacher.measure = 'teacher_fte'
+    WHERE membership.ncessch IS NOT NULL OR teacher.ncessch IS NOT NULL
+),
+matched_value AS NOT MATERIALIZED (
+    SELECT matched.*, measure.measure,
+           CASE WHEN matched.reported_both THEN measure.value END AS value,
+           CASE WHEN matched.reported_both THEN 'valid' ELSE 'missing' END AS value_status
+    FROM matched_school AS matched
+    CROSS JOIN LATERAL (VALUES
+        ('student_membership_matched', matched.membership),
+        ('teacher_fte_matched', matched.teachers)
+    ) AS measure(measure, value)
+),
+-- The state is matched on its code as well as its id, so a state read
+-- reaches the placement's indexed state column.
+matched_grains AS (
+    SELECT matched.*, 'county'::TEXT AS geo_type, matched.county_geo_id AS geo_id, matched.county_geo_sk AS geo_sk
+    FROM matched_value AS matched
+    WHERE matched.county_status = 'resolved'
+    UNION ALL
+    SELECT matched.*, 'state'::TEXT, entity.geo_id, entity.geo_sk
+    FROM matched_value AS matched
+    JOIN silver_ref.dim_geo_entity AS entity
+      ON entity.state_fips = matched.state_fips AND entity.geo_id = 'state:' || matched.state_fips
+     AND entity.geo_type = 'state'
+),
+grains AS (
     SELECT school.*, 'county'::TEXT AS geo_type, school.county_geo_id AS geo_id, school.county_geo_sk AS geo_sk
     FROM gold_nces_ccd.school_observation AS school
     WHERE school.county_status = 'resolved'
@@ -116,6 +198,21 @@ rolled AS (
            MIN(grains.published_at) AS published_at
     FROM grains
     GROUP BY grains.run_id, grains.measure, grains.geo_type, grains.geo_id
+    UNION ALL
+    SELECT matched.run_id, matched.measure, matched.geo_type, matched.geo_id,
+           MIN(matched.geo_sk) AS geo_sk,
+           SUM(matched.value) FILTER (WHERE matched.value_status = 'valid') AS value,
+           COUNT(*) FILTER (WHERE matched.value_status = 'valid') AS schools_with_value,
+           COUNT(*) FILTER (WHERE matched.value_status <> 'valid') AS schools_without_value,
+           MIN(matched.school_year) AS school_year,
+           MIN(matched.file_stem) AS file_stem,
+           MIN(matched.release_version) AS release_version,
+           MIN(matched.version_rank) AS version_rank,
+           MIN(matched.geocode_file) AS geocode_file,
+           MIN(matched.capture_id::TEXT)::UUID AS capture_id,
+           MIN(matched.published_at) AS published_at
+    FROM matched_grains AS matched
+    GROUP BY matched.run_id, matched.measure, matched.geo_type, matched.geo_id
 )
 SELECT rolled.measure AS metric_key,
        definition.measure_label,

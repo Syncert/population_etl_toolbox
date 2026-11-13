@@ -224,3 +224,13 @@ def test_an_unavailable_warehouse_is_a_sanitized_503(client) -> None:
     )
     assert response.status_code == 503
     assert "secret" not in response.text and "refused" not in response.text
+
+
+def test_an_exemption_era_pair_says_what_its_individuals_count() -> None:
+    """Covers: API-166 — before 2018-2019 the caveats say individuals are exemptions claimed."""
+    from apps.api.services.migration_service import FLOW_CAVEATS, flow_caveats
+
+    older = flow_caveats("2015-2016")
+    assert "exemptions claimed" in older[0] and "10 returns" in older[1]
+    assert any("no net figure" in caveat for caveat in older)
+    assert flow_caveats("2018-2019") == FLOW_CAVEATS

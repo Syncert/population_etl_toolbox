@@ -417,6 +417,7 @@ def metric_matrix(
         summaries.append(
             MatrixMetricSummary(
                 metric_code=code,
+                metric_display_name=metric.get("metric_display_name"),
                 source_code=metric.get("source_code"),
                 units=metric.get("units"),
                 valid_time_grains=[

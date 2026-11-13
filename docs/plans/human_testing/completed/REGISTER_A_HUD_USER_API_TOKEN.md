@@ -50,7 +50,7 @@ Nothing is committed: `stack.env` holds secrets and is not checked in.
    prefix (the adapter adds that). Leave the example files empty; only your
    local, uncommitted files get the real value. Do not paste the token into
    the project thread, a commit, or an issue.
-5. Restart the stack (`make up`) so the Airflow containers pick up the new
+5. Restart the stack (`make deploy-up`) so the Airflow containers pick up the new
    value. To check it arrived without printing it, run
    `docker exec docker-airflow-scheduler-1 sh -c 'test -n "$HUD_USER_API_TOKEN" && echo set'`;
    it should print `set`.

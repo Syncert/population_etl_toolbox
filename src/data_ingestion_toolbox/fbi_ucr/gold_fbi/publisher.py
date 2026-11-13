@@ -7,6 +7,12 @@ from typing import Any
 from uuid import UUID
 
 
+def refresh_county_agency_rate(cursor: Any, product_id: str) -> int:
+    """Recompute one product's served county rate rows; returns their count."""
+    cursor.execute("SELECT gold_fbi.refresh_county_agency_rate(%s)", (product_id,))
+    return int(cursor.fetchone()[0])
+
+
 class FbiPublicationError(RuntimeError):
     """An FBI UCR release has not satisfied the silver publication gate."""
 
@@ -57,6 +63,9 @@ def publish_release(
                 (product_id, release_key),
             )
             count = int(cursor.fetchone()[0])
+            # The county rate is served from rows computed at publication
+            # (ADR-0012), in this transaction, so it never trails the release.
+            refresh_county_agency_rate(cursor, product_id)
         database_connection.commit()
     except BaseException:
         database_connection.rollback()

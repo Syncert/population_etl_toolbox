@@ -108,6 +108,11 @@ def seed_reference_contracts(cursor: Any) -> None:
             state_fips = EXCLUDED.state_fips,
             is_supported = EXCLUDED.is_supported,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_fbi.dim_state_code.state_label, silver_fbi.dim_state_code.state_fips, silver_fbi.dim_state_code.is_supported)
+                      IS DISTINCT FROM
+                      (EXCLUDED.state_label, EXCLUDED.state_fips, EXCLUDED.is_supported)
         """,
         states,
     )
@@ -143,6 +148,11 @@ def seed_reference_contracts(cursor: Any) -> None:
                 evidence_url = EXCLUDED.evidence_url,
                 review_note = EXCLUDED.review_note,
                 updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_fbi.reviewed_place_crosswalk.place_name, silver_fbi.reviewed_place_crosswalk.effective_end, silver_fbi.reviewed_place_crosswalk.crosswalk_version, silver_fbi.reviewed_place_crosswalk.evidence_url, silver_fbi.reviewed_place_crosswalk.review_note)
+                      IS DISTINCT FROM
+                      (EXCLUDED.place_name, EXCLUDED.effective_end, EXCLUDED.crosswalk_version, EXCLUDED.evidence_url, EXCLUDED.review_note)
             """,
             mappings,
         )
@@ -266,6 +276,11 @@ def _load_measures(cursor: Any, *, scope: dict) -> None:
             unit = EXCLUDED.unit,
             reported_status = EXCLUDED.reported_status,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_fbi.dim_offense_measure.offense_label, silver_fbi.dim_offense_measure.unit, silver_fbi.dim_offense_measure.reported_status)
+                      IS DISTINCT FROM
+                      (EXCLUDED.offense_label, EXCLUDED.unit, EXCLUDED.reported_status)
         """,
         scope,
     )
@@ -291,6 +306,17 @@ def _load_agencies(cursor: Any, *, scope: dict) -> None:
                 EXCLUDED.first_seen_release
             ),
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_fbi.dim_agency.last_seen_release, silver_fbi.dim_agency.first_seen_release)
+                      IS DISTINCT FROM
+                      (GREATEST(
+                silver_fbi.dim_agency.last_seen_release,
+                EXCLUDED.last_seen_release
+            ), LEAST(
+                silver_fbi.dim_agency.first_seen_release,
+                EXCLUDED.first_seen_release
+            ))
         """,
         scope,
     )
@@ -342,6 +368,14 @@ def _load_agency_entities(cursor: Any, *, scope: dict) -> None:
                 EXCLUDED.last_seen_version
             ),
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.dim_geo_entity.last_seen_version)
+                      IS DISTINCT FROM
+                      (GREATEST(
+                silver_ref.dim_geo_entity.last_seen_version,
+                EXCLUDED.last_seen_version
+            ))
         """,
         scope,
     )
@@ -672,6 +706,11 @@ def _load_geography_resolution(cursor: Any, *, scope: dict) -> None:
             status = EXCLUDED.status,
             reason_code = EXCLUDED.reason_code,
             resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
         """,
         scope,
     )

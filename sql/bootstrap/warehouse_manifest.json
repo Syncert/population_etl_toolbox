@@ -127,6 +127,36 @@
       "path": "src/data_ingestion_toolbox/census_saipe_sahie/DDL/silver_census_sae.sql"
     },
     {
+      "id": "silver-census-decennial",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_decennial/DDL/silver_census_decennial.sql"
+    },
+    {
+      "id": "silver-cms-ltc",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cms_ltc/DDL/silver_cms_ltc.sql"
+    },
+    {
+      "id": "silver-nces-ipeds",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/DDL/silver_nces_ipeds.sql"
+    },
+    {
+      "id": "silver-hhs-hospital-capacity",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql"
+    },
+    {
+      "id": "silver-cdc-covid-cases",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/DDL/silver_cdc_covid_cases.sql"
+    },
+    {
+      "id": "silver-cdc-ilinet",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/DDL/silver_cdc_ilinet.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -152,6 +182,11 @@
       "path": "src/data_ingestion_toolbox/irs_migration/DDL/silver_irs_migration.sql"
     },
     {
+      "id": "silver-irs-soi",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/irs_soi/DDL/silver_irs_soi.sql"
+    },
+    {
       "id": "silver-census-cbp",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/census_cbp/DDL/silver_census_cbp.sql"
@@ -160,6 +195,11 @@
       "id": "silver-eia",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/eia/DDL/silver_eia.sql"
+    },
+    {
+      "id": "silver-dol-childcare",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/dol_childcare/DDL/silver_dol_childcare.sql"
     },
     {
       "id": "silver-census-lodes",
@@ -192,6 +232,16 @@
       "path": "src/data_ingestion_toolbox/fema_nri/DDL/silver_fema_nri.sql"
     },
     {
+      "id": "silver-elections",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/elections/DDL/silver_elections.sql"
+    },
+    {
+      "id": "silver-census-govfin",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/census_govfin/DDL/silver_census_govfin.sql"
+    },
+    {
       "id": "migration-030",
       "phase": "source-fix",
       "path": "sql/migrations/030_fbi_relationship_product_scope.sql"
@@ -202,6 +252,11 @@
       "path": "sql/migrations/035_fbi_relationship_equal_window.sql"
     },
     {
+      "id": "migration-040",
+      "phase": "source-fix",
+      "path": "sql/migrations/040_fbi_return_a_county_code.sql"
+    },
+    {
       "id": "silver-epa-aqs",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/epa_aqs/DDL/silver_epa_aqs.sql"
@@ -210,6 +265,26 @@
       "id": "silver-noaa-normals",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/noaa_normals/DDL/silver_noaa_normals.sql"
+    },
+    {
+      "id": "silver-noaa-climdiv",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/DDL/silver_noaa_climdiv.sql"
+    },
+    {
+      "id": "silver-treasury-mts",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/treasury_mts/DDL/silver_treasury_mts.sql"
+    },
+    {
+      "id": "silver-usaspending",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/usaspending/DDL/silver_usaspending.sql"
+    },
+    {
+      "id": "silver-noaa-storm-events",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/DDL/silver_noaa_storm_events.sql"
     },
     {
       "id": "silver-nces-ccd",
@@ -235,6 +310,26 @@
       "id": "migration-032",
       "phase": "source-fix",
       "path": "sql/migrations/032_acs_tract_grain.sql"
+    },
+    {
+      "id": "migration-036",
+      "phase": "source-fix",
+      "path": "sql/migrations/036_acs_metro_grain.sql"
+    },
+    {
+      "id": "migration-037",
+      "phase": "source-fix",
+      "path": "sql/migrations/037_census_decennial_datasets.sql"
+    },
+    {
+      "id": "migration-038",
+      "phase": "source-fix",
+      "path": "sql/migrations/038_drop_duplicate_acs_silver_index.sql"
+    },
+    {
+      "id": "migration-039",
+      "phase": "source-fix",
+      "path": "sql/migrations/039_census_1990_datasets.sql"
     },
     {
       "id": "gold-census",
@@ -277,6 +372,36 @@
       "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/gold_census_sae.sql"
     },
     {
+      "id": "gold-census-decennial",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_decennial/gold_census_decennial/DDL/gold_census_decennial.sql"
+    },
+    {
+      "id": "gold-cms-ltc",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/gold_cms_ltc.sql"
+    },
+    {
+      "id": "gold-nces-ipeds",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/gold_nces_ipeds.sql"
+    },
+    {
+      "id": "gold-hhs-hospital-capacity",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/gold_hhs_hospital_capacity.sql"
+    },
+    {
+      "id": "gold-cdc-covid-cases",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/gold_cdc_covid_cases.sql"
+    },
+    {
+      "id": "gold-cdc-ilinet",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/gold_cdc_ilinet.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -292,14 +417,29 @@
       "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql"
     },
     {
+      "id": "gold-dol-childcare",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/gold_dol_childcare.sql"
+    },
+    {
       "id": "gold-bea",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea.sql"
     },
     {
+      "id": "gold-bea-real-income",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/gold_bea_real_income.sql"
+    },
+    {
       "id": "gold-irs-migration",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/gold_irs_migration.sql"
+    },
+    {
+      "id": "gold-irs-soi",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/gold_irs_soi.sql"
     },
     {
       "id": "publisher-census",
@@ -342,6 +482,31 @@
       "path": "src/data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/gold_fema_nri.sql"
     },
     {
+      "id": "gold-elections",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/gold_elections.sql"
+    },
+    {
+      "id": "gold-elections-lean-groups",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/lean_groups.sql"
+    },
+    {
+      "id": "gold-census-govfin",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_census_govfin.sql"
+    },
+    {
+      "id": "gold-census-govfin-tax-burden",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/gold_tax_burden.sql"
+    },
+    {
+      "id": "gold-elections-governor-fiscal",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/governor_fiscal.sql"
+    },
+    {
       "id": "gold-epa-aqs",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/gold_epa_aqs.sql"
@@ -350,6 +515,26 @@
       "id": "gold-noaa-normals",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/gold_noaa_normals.sql"
+    },
+    {
+      "id": "gold-noaa-climdiv",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/gold_noaa_climdiv.sql"
+    },
+    {
+      "id": "gold-treasury-mts",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/gold_treasury_mts.sql"
+    },
+    {
+      "id": "gold-usaspending",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/usaspending/gold_usaspending/DDL/gold_usaspending.sql"
+    },
+    {
+      "id": "gold-noaa-storm-events",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/gold_noaa_storm_events.sql"
     },
     {
       "id": "gold-nces-ccd",
@@ -387,6 +572,36 @@
       "path": "src/data_ingestion_toolbox/census_saipe_sahie/gold_census_sae/DDL/publisher.sql"
     },
     {
+      "id": "publisher-census-decennial",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_decennial/gold_census_decennial/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cms-ltc",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cms_ltc/gold_cms_ltc/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-nces-ipeds",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-hhs-hospital-capacity",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cdc-covid-cases",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-cdc-ilinet",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql"
+    },
+    {
       "id": "publisher-bls-qcew",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"
@@ -402,6 +617,11 @@
       "path": "src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql"
     },
     {
+      "id": "publisher-dol-childcare",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/dol_childcare/gold_dol_childcare/DDL/publisher.sql"
+    },
+    {
       "id": "publisher-bea",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/bea/gold_bea/DDL/publisher.sql"
@@ -415,6 +635,11 @@
       "id": "publisher-irs-migration",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/irs_migration/gold_irs_migration/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-irs-soi",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/irs_soi/gold_irs_soi/DDL/publisher.sql"
     },
     {
       "id": "publisher-census-cbp",
@@ -462,6 +687,16 @@
       "path": "src/data_ingestion_toolbox/fema_nri/gold_fema_nri/DDL/publisher.sql"
     },
     {
+      "id": "publisher-elections",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/elections/gold_elections/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-census-govfin",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/census_govfin/gold_census_govfin/DDL/publisher.sql"
+    },
+    {
       "id": "publisher-epa-aqs",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/epa_aqs/gold_epa_aqs/DDL/publisher.sql"
@@ -470,6 +705,26 @@
       "id": "publisher-noaa-normals",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/noaa_normals/gold_noaa_normals/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-climdiv",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_climdiv/gold_noaa_climdiv/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-treasury-mts",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/treasury_mts/gold_treasury_mts/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-usaspending",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/usaspending/gold_usaspending/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-noaa-storm-events",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/noaa_storm_events/gold_noaa_storm_events/DDL/publisher.sql"
     },
     {
       "id": "publisher-nces-ccd",
@@ -507,6 +762,16 @@
       "path": "sql/migrations/026_released_date_is_not_the_refresh_clock.sql"
     },
     {
+      "id": "migration-041",
+      "phase": "glossary",
+      "path": "sql/migrations/041_bls_serves_its_newest_published_value.sql"
+    },
+    {
+      "id": "migration-042",
+      "phase": "glossary",
+      "path": "sql/migrations/042_metric_catalog_ended_state.sql"
+    },
+    {
       "id": "migration-003",
       "phase": "semantic-cutover",
       "path": "sql/migrations/003_semantic_policy_extraction.sql"
@@ -515,6 +780,12 @@
       "id": "contract-views",
       "phase": "contract",
       "path": "sql/gold_contract/001_gold_contract_views.sql"
+    },
+    {
+      "id": "api-readonly-grants",
+      "phase": "grants",
+      "path": "sql/bootstrap/001_api_readonly.sql",
+      "reapply": true
     }
   ]
 }

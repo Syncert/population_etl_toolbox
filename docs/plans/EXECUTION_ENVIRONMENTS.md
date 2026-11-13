@@ -46,12 +46,21 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**2 plans.**
+**11 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
+| [`acs-family-tables`](to_do/ACS_FAMILY_TABLES_PLAN.md) | medium | `browser` | `starting-a-family-collection` |
+| [`childcare-national-trend`](to_do/CHILDCARE_NATIONAL_PRICE_TREND_PLAN.md) | low | `browser` | `county-childcare-prices` |
+| [`everyday-prices-people-recognise`](to_do/EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md) | medium | `browser` | `groceries-and-gas-cards` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
+| [`outbreak-model-inputs`](to_do/OUTBREAK_MODEL_INPUTS_PLAN.md) | low | none | `group-quarters-by-type`, `nursing-home-locations`, `lodes-block-grain-for-dane`, `block-population-and-age-for-dane`, `college-housing-capacity`, `hospital-capacity-and-locations`, `places-tract-release`, `outbreak-calibration-sets`, `air-travel-and-mobility` |
+| [`place-climate-normals`](to_do/PLACE_CLIMATE_NORMALS_CARD_PLAN.md) | low | `browser` | `weather-and-disaster-history` |
+| [`starting-a-family-collection`](to_do/STARTING_A_FAMILY_COLLECTION_PLAN.md) | medium | `browser` | `county-childcare-prices` |
 | [`unit-suite-time-budget`](in_progress/THE_UNIT_SUITE_STAYS_UNDER_ITS_TIME_BUDGET_PLAN.md) | medium | none | -- |
+| [`w8-zcta-towns-and-geography-gaps`](to_do/W8_ZCTA_TOWNS_AND_GEOGRAPHY_GAPS_PLAN.md) | medium | none | `acs-place-tract-history-backfill` |
+| [`web-tract-pages`](in_progress/WEB_TRACT_PAGES_PLAN.md) | high | `browser` | `acs-place-tract-history-backfill`, `place-pages`, `web-age-and-sex-structure` |
+| [`website-reads-a-serving-layer`](to_do/THE_WEBSITE_READS_A_SERVING_LAYER_NOT_THE_WAREHOUSE_PLAN.md) | high | none | -- |
 
 
 ## 2. Buildable in a cloud session, finished on a machine
@@ -75,12 +84,14 @@ claiming it, so it stays in `to_do/` until an operator can answer those three
 questions. The classification derives from the `verify` block and cannot see
 that distinction; this paragraph is where it is recorded.
 
-**2 plans.**
+**4 plans.**
 
 | Plan | Complexity | The criterion that needs a machine |
 | --- | --- | --- |
 | [`deployment-smoke-target`](to_do/POINT_THE_DEPLOYMENT_OBSERVER_AT_A_DEPLOYMENT_PLAN.md) | low | `DEPLOYMENT_SMOKE_BASE_URL` is set to a reachable deployment origin -- which is a running deployment, not merely a Docker daemon. |
 | [`full-map-sweep-scheduled`](in_progress/EVERY_METRIC_MAP_IS_SWEPT_ON_A_SCHEDULE_PLAN.md) | low | Every published metric's map is graded at least once a week against a reachable deployment or populated internal stack. |
+| [`hosting-cost-per-user`](to_do/THE_HOSTING_COST_PER_USER_IS_MEASURED_NOT_GUESSED_PLAN.md) | medium | With the `metering` profile up, one sample per container per minute is written, and the replay script runs against the stack. |
+| [`warehouse-backups`](in_progress/WAREHOUSE_BACKUPS_PLAN.md) | medium | One full dump of the internal warehouse exists on a drive outside H:, and one restore drill of it passed. |
 
 
 ## 3. Needs a machine with the warehouse up
@@ -94,14 +105,35 @@ make test-compose-smoke    # the Compose stack
 make test-web-smoke        # the live-stack frontend smoke
 ```
 
-**4 plans.**
+**25 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
-| [`acs-place-tract-history-backfill`](in_progress/ACS_PLACE_AND_TRACT_HISTORY_BACKFILL_PLAN.md) | high | `postgres` | `acs-place-grain`, `sub-county-geography` |
+| [`age-and-sex-structure-views`](to_do/AGE_AND_SEX_STRUCTURE_VIEWS_PLAN.md) | high | `browser`, `postgres` | `place-pages`, `api-per-capita-and-shares`, `web-cross-level-compare` |
+| [`air-travel-and-mobility`](to_do/AIR_TRAVEL_AND_MOBILITY_PLAN.md) | medium | `postgres` | -- |
+| [`block-population-and-age-for-dane`](to_do/BLOCK_POPULATION_AND_AGE_FOR_DANE_PLAN.md) | medium | `postgres` | `group-quarters-by-type` |
+| [`college-housing-capacity`](to_do/COLLEGE_HOUSING_CAPACITY_PLAN.md) | medium | `postgres` | -- |
+| [`cost-of-living-section`](in_progress/COST_OF_LIVING_SECTION_PLAN.md) | high | `browser`, `postgres` | `groceries-and-gas-cards` |
+| [`county-childcare-prices`](to_do/COUNTY_CHILDCARE_PRICES_PLAN.md) | high | `browser`, `postgres` | `cost-of-living-section` |
+| [`decennial-2000-and-1990-history`](in_progress/DECENNIAL_2000_AND_1990_HISTORY_PLAN.md) | high | `postgres` | `acs-place-tract-history-backfill` |
+| [`election-results-back-to-1990`](in_progress/ELECTION_RESULTS_BACK_TO_1990_PLAN.md) | medium | `postgres` | -- |
+| [`elections-and-economic-performance`](in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md) | high | `browser`, `postgres` | -- |
+| [`fbi-return-a-bulk-load`](to_do/FBI_RETURN_A_BULK_LOAD_PLAN.md) | high | `postgres` | -- |
+| [`group-quarters-by-type`](to_do/GROUP_QUARTERS_BY_TYPE_PLAN.md) | medium | `postgres` | -- |
+| [`home-heating-fuel-prices`](in_progress/HOME_HEATING_FUEL_PRICES_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
+| [`hospital-capacity-and-locations`](to_do/HOSPITAL_CAPACITY_AND_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
+| [`lodes-block-grain-for-dane`](to_do/LODES_BLOCK_GRAIN_FOR_DANE_PLAN.md) | medium | `postgres` | `block-population-and-age-for-dane` |
+| [`nursing-home-locations`](to_do/NURSING_HOME_LOCATIONS_PLAN.md) | medium | `postgres` | -- |
+| [`outbreak-calibration-sets`](to_do/OUTBREAK_CALIBRATION_SETS_PLAN.md) | high | `postgres` | `nursing-home-locations` |
+| [`places-tract-release`](to_do/PLACES_TRACT_RELEASE_PLAN.md) | low | `postgres` | -- |
 | [`publishing-approval-path`](to_do/THE_PUBLISHING_APPROVAL_PATH_PLAN.md) | high | `browser`, `postgres` | `self-service-accounts` |
 | [`remote-warehouse-catches-up`](to_do/THE_REMOTE_WAREHOUSE_CATCHES_UP_WITH_THE_INTERNAL_STACK_PLAN.md) | high | `postgres` | -- |
 | [`self-service-accounts`](in_progress/SELF_SERVICE_ACCOUNTS_PLAN.md) | high | `browser`, `postgres` | `self-service-identity` |
+| [`taxes-and-public-money`](to_do/TAXES_AND_PUBLIC_MONEY_PLAN.md) | high | `browser`, `postgres` | `elections-and-economic-performance` |
+| [`thrifty-food-plan-grocery-cost`](to_do/THRIFTY_FOOD_PLAN_GROCERY_COST_PLAN.md) | medium | `browser`, `postgres` | `cost-of-living-section` |
+| [`tiles-places-and-metros`](in_progress/PLACE_AND_METRO_MAP_TILES_PLAN.md) | medium | `postgres` | `sub-county-geography`, `grocery-and-gasoline-prices`, `api-place-search` |
+| [`weather-and-disaster-history`](to_do/WEATHER_AND_DISASTER_HISTORY_PLAN.md) | high | `browser`, `postgres` | -- |
+| [`where-public-money-goes`](to_do/WHERE_PUBLIC_MONEY_GOES_PLAN.md) | high | `browser`, `postgres` | -- |
 
 
 ## Notes on the cloud container

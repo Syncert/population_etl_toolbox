@@ -37,6 +37,12 @@ export interface MeasureMapView {
   ranked: RankedCounty[];
   withValue: number;
   withoutValue: number;
+  /**
+   * Rows whose geography is not among those listed (a city that has since
+   * disincorporated, a tract retired at a redraw). Counted and stated, never
+   * dropped silently and never drawn.
+   */
+  offBoundary: number;
   bins: MeasureBin[];
   /** The bins in the shape the explorer's choropleth reads. */
   distribution: DistributionResponse | null;
@@ -123,6 +129,8 @@ export function buildMeasureMapView(
     if (row.geo_id) byGeo.set(String(row.geo_id), row);
   }
   const periods = [...new Set([...byGeo.values()].map((row) => observationPeriodLabel(row)))];
+  const listed = new Set(counties.map((county) => county.geo_id));
+  const offBoundary = [...byGeo.keys()].filter((geoId) => !listed.has(geoId)).length;
   const ranked: RankedCounty[] = counties.map((county) => {
     const row = byGeo.get(county.geo_id) || null;
     const value = row ? publishedNumber(row.value) : null;
@@ -147,6 +155,7 @@ export function buildMeasureMapView(
     ranked,
     withValue: values.length,
     withoutValue: ranked.length - values.length,
+    offBoundary,
     bins,
     distribution: bins.length
       ? {
@@ -187,16 +196,35 @@ export const RELEASE_CHOICE_PREFIX = "release:";
  *
  * The latest publication holds each county's newest value only, so a period
  * every county has since been re-estimated for (ACS 2018–2022 once 2020–2024
- * is out) is in no county's latest row and `/observations/periods` cannot list
- * it. Those periods are still published, in the release that published them,
+ * is out) is in almost no county's latest row (see `currentLatestPeriods`).
+ * Those periods are still published, in the release that published them,
  * so each release but the newest (whose periods the latest publication
  * already offers) is a choice, labelled by the newest period it published.
  * The API lists releases newest first; that order is kept.
+ *
+ * Where a release identity is a load's capture time rather than a vintage
+ * (Census SAIPE), several releases publish the same newest period: one load
+ * per run, eleven of them for two years (OFFICE_LAB, 2026-11-03). Only the
+ * newest release for a period is offered, so the selector lists the periods
+ * a reader can choose between rather than every load of them (WEB-158). A
+ * release that names no period is always offered.
  */
 export function earlierReleaseChoices(
   releases: readonly MapRelease[],
 ): { value: string; label: string }[] {
-  return releases.slice(1).map((item) => {
+  const periodKey = (item: MapRelease) =>
+    item.newest_period_start ? `${item.newest_period_start}|${item.newest_period_end || ""}` : "";
+  const seen = new Set<string>();
+  const newestKey = releases[0] ? periodKey(releases[0]) : "";
+  if (newestKey) seen.add(newestKey);
+  const distinct = releases.slice(1).filter((item) => {
+    const key = periodKey(item);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return distinct.map((item) => {
     const start = item.newest_period_start || "";
     const end = item.newest_period_end || "";
     const span = start ? (end && end !== start ? `${start} – ${end}` : start) : "";
@@ -208,6 +236,52 @@ export function earlierReleaseChoices(
       label: span ? `${span} (${release})` : release,
     };
   });
+}
+
+/** A period of the latest publication, as `/observations/periods` lists it. */
+export interface LatestPeriod {
+  period_start: string;
+  period_end?: string | null;
+  observation_count?: number | null;
+}
+
+/**
+ * The latest publication's periods worth offering, and the earlier release
+ * each left-over period is read from instead.
+ *
+ * A period every geography has been re-estimated for is still listed when a
+ * few geographies were never re-estimated: a city or county that dissolved,
+ * or Connecticut's old counties, keep their last value as their newest. Read
+ * from the latest publication, ACS 2018–2022 then answers a handful of rows
+ * and a Texas city map of it is empty (OFFICE_LAB, 2026-10-31). Such a
+ * period -- under half the rows of the newest period, and the newest period
+ * of an earlier release -- is read from that release, as published, where
+ * every geography's value for it is. A period the latest publication holds
+ * in full (each year a population-estimates vintage re-estimates) stays a
+ * latest period.
+ */
+export function currentLatestPeriods<T extends LatestPeriod>(
+  periods: readonly T[],
+  releases: readonly MapRelease[],
+): { periods: T[]; readAsReleased: Map<string, string> } {
+  const newestCount = Number(periods[0]?.observation_count) || 0;
+  const earlier = new Map<string, string>();
+  for (const item of releases.slice(1)) {
+    const start = item.newest_period_start || "";
+    if (start && !earlier.has(start)) earlier.set(start, `${RELEASE_CHOICE_PREFIX}${item.release}`);
+  }
+  const readAsReleased = new Map<string, string>();
+  const kept = periods.filter((item, index) => {
+    const choice = earlier.get(item.period_start);
+    const count = Number(item.observation_count);
+    const partial = index > 0 && newestCount > 0 && Number.isFinite(count) && count * 2 < newestCount;
+    if (choice && partial) {
+      readAsReleased.set(item.period_start, choice);
+      return false;
+    }
+    return true;
+  });
+  return { periods: kept, readAsReleased };
 }
 
 /** The release a choice names, or null for a period of the latest publication. */

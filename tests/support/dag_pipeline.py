@@ -13,6 +13,8 @@ orchestration defect rather than a mocking artifact.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -45,12 +47,18 @@ PROVIDER_POOLS: tuple[str, ...] = (
     "fhfa_hpi_files",
     "hud_fmr_il_files",
     "fema_files",
+    "elections_files",
     "fcc_bdc_api",
     "epa_aqs_files",
     "noaa_normals_files",
+    "noaa_climdiv_files",
+    "treasury_mts_pages",
+    "usaspending_api",
+    "noaa_storm_events_files",
     "census_lodes_files",
     "census_cbp_files",
     "irs_soi_files",
+    "dol_childcare_files",
     "census_bps_files",
     "bls_qcew_api",
     "bea_files",
@@ -438,6 +446,11 @@ def register_airflow_runtime(config: PostgresTestConfig) -> None:
 #: orchestrated fixtures deliberately do not load.
 DAG_RUN_CONF: dict[str, dict[str, Any]] = {
     "warehouse_data_quality": {"cadence": "daily"},
+    # The LODES backfill of never-loaded years runs in this process (spawned
+    # workers would not see the stubbed provider) and for one year, every
+    # state: the whole 2002-2022 history adds a thousand state-years to a
+    # tier with a time budget. The unit suite covers the full plan (ETL-110).
+    "census_lodes_ingest": {"backfill_workers": 1, "backfill_years": [2022]},
 }
 
 
@@ -595,7 +608,71 @@ def stub_geography_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         geography_pipeline, "parse_legacy_county_gazetteer_capture", parse_attributes
     )
+    # Census 2000 tracts and places come from a relationship file and a
+    # fixed-width Gazetteer, and 1990's from the STF1A headers; the fixture
+    # publishes the same bounded geographies for those vintages.
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_tract_relationship_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="tract", geography_vintage=geography_vintage
+        ),
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_place_gazetteer_2000_capture",
+        lambda payload, *, geography_vintage: parse_attributes(
+            payload, geo_type="place", geography_vintage=geography_vintage
+        ),
+    )
+    monkeypatch.setattr(
+        geography_pipeline,
+        "parse_stf1990_header_capture",
+        lambda payload, *, geo_type, geography_vintage: parse_attributes(
+            payload, geo_type=geo_type, geography_vintage=geography_vintage
+        ),
+    )
     monkeypatch.setattr(geography_pipeline, "parse_boundary_capture", parse_geometry)
+
+    # The CBSA cartographic boundary (tiles-places-and-metros): one box per
+    # CBSA the reviewed delineation excerpt lists, north of the state lattice
+    # so a metro polygon never overlaps a fixture county or place.
+    from data_ingestion_toolbox.silver_ref import area_geography
+
+    def parse_metro_geometry(
+        payload: bytes, *, geo_type: str, boundary_vintage: int
+    ) -> list[Any]:
+        if geo_type != "metro":
+            return parse_geometry(
+                payload, geo_type=geo_type, boundary_vintage=boundary_vintage
+            )
+        excerpt = (AREA_FIXTURES / "cbsa-est2024-alldata.excerpt.csv").read_text(
+            encoding="latin-1"
+        )
+        codes = sorted(
+            {
+                row["CBSA"]
+                for row in csv.DictReader(io.StringIO(excerpt))
+                if row.get("CBSA")
+            }
+        )
+        return [
+            geography_pipeline.GeometryRecord(
+                geography_pipeline.canonical_geo_id("metro", area_code=code),
+                boundary_vintage,
+                _boundary_polygon(-100.0 + ordinal, 45.0, -100.0 + ordinal + 0.5, 45.5),
+            )
+            for ordinal, code in enumerate(codes)
+        ]
+
+    monkeypatch.setattr(area_geography, "parse_boundary_capture", parse_metro_geometry)
+    # The fixture publishes one bounded set of tracts for every vintage, so the
+    # decade relationship files have no parts to cross; their capture still
+    # runs (tract-crosswalk), and the parse is tested against real excerpts.
+    from data_ingestion_toolbox.silver_ref import tract_crosswalk
+
+    for earlier in tract_crosswalk.PARSERS:
+        monkeypatch.setitem(tract_crosswalk.PARSERS, earlier, lambda _payload: [])
 
 
 def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -615,6 +692,16 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
         "places_county": (
             load_fixture("cdc", "places_county_metadata.json"),
             load_fixture("cdc", "places_county_observations.json"),
+        ),
+        "places_tract": (
+            load_fixture("cdc", "places_tract_metadata.json"),
+            [
+                row
+                for offset in (0, 2000, 4000)
+                for row in load_fixture(
+                    "cdc", f"places_tract_dane_offset_{offset}.json"
+                )
+            ],
         ),
     }
 
@@ -646,8 +733,19 @@ def stub_cdc_socrata(monkeypatch: pytest.MonkeyPatch) -> None:
             len(window),
         )
 
+    def count(asset: Any, **_kwargs: Any) -> SocrataPage:
+        _, rows = resolve(asset)
+        return SocrataPage(
+            {"$select": "count(*)"},
+            json.dumps([{"count": str(len(rows))}]).encode("utf-8"),
+            {"content-type": "application/json"},
+            200,
+            1,
+        )
+
     monkeypatch.setattr(cdc_capture, "fetch_socrata_metadata", metadata)
     monkeypatch.setattr(cdc_capture, "fetch_socrata_page", page)
+    monkeypatch.setattr(cdc_capture, "fetch_socrata_count", count)
 
 
 def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -711,6 +809,48 @@ def stub_fbi_cde(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(fbi_capture, "fetch_summarized_observations", observations)
     monkeypatch.setattr(fbi_capture, "fetch_agency_directory", directory)
+    stub_fbi_return_a(monkeypatch)
+
+
+def stub_fbi_return_a(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the Return A master files from the 2023 sample (ETL-122).
+
+    The registry is narrowed to 2024 and 2023: 2024, the newest, answers "not
+    found" as an unpublished file does, so the scheduled task's
+    ``not_published`` path runs too; 2023 is the verbatim 49-record sample.
+    """
+    import io
+    import zipfile
+    from datetime import date
+
+    from data_ingestion_toolbox.fbi_ucr.return_a import load as return_a_load
+    from data_ingestion_toolbox.fbi_ucr.return_a import registry as return_a_registry
+    from data_ingestion_toolbox.fbi_ucr.return_a.fetch import (
+        FetchedFile,
+        ReturnAFetchError,
+        object_key,
+    )
+
+    sample = FIXTURE_ROOT / "fbi_ucr" / "return_a" / "reta-2023-sample.txt"
+
+    def fetch_year(year: int) -> FetchedFile:
+        if year != 2023:
+            raise ReturnAFetchError("HTTP 404", status_code=404)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            member = zipfile.ZipInfo("reta-2023.txt", date_time=(2026, 8, 20, 0, 0, 0))
+            archive.writestr(member, sample.read_bytes())
+        return FetchedFile(
+            data_year=2023,
+            object_key=object_key(2023),
+            payload=buffer.getvalue(),
+            last_modified=date(2026, 8, 20),
+            http_status=200,
+            response_headers={"Content-Type": "application/zip"},
+        )
+
+    monkeypatch.setattr(return_a_registry, "registered_years", lambda: [2024, 2023])
+    monkeypatch.setattr(return_a_load, "fetch_year", fetch_year)
 
 
 def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -769,14 +909,29 @@ def stub_usda_nass_quick_stats(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed EIA answers: the gasoline window and the area facet."""
+    """Serve the reviewed EIA answers: the gasoline window, the area facet,
+    and each home energy route's answer (home-heating-fuel-prices)."""
     from data_ingestion_toolbox.eia import client as eia_client
 
     window = (FIXTURE_ROOT / "eia" / "weekly_2026-08-31_2026-09-07.json").read_bytes()
     facet = (FIXTURE_ROOT / "eia" / "duoarea_facet.json").read_bytes()
+    energy = FIXTURE_ROOT / "eia" / "energy"
+    by_route = {
+        "electricity/retail-sales/data/": energy / "data_electricity.json",
+        "natural-gas/pri/sum/data/": energy / "data_natgas.json",
+        "petroleum/pri/wfr/data/": energy / "data_wfr_winter.json",
+    }
 
     def get(self: Any, route: str, params: Any, **_kwargs: Any) -> Any:
-        payload = facet if route.endswith("facet/duoarea/") else window
+        diesel = ("facets[product][]", "EPD2D") in list(params)
+        if route.endswith("facet/duoarea/"):
+            payload = facet
+        elif diesel:
+            payload = (energy / "data_diesel.json").read_bytes()
+        elif route in by_route:
+            payload = by_route[route].read_bytes()
+        else:
+            payload = window
         return eia_client.EiaResponse(
             route, payload, {"content-type": "application/json"}, 200
         )
@@ -785,12 +940,13 @@ def stub_eia(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_bea_regional(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed BEA zips: every registered table has one."""
+    """Serve the reviewed BEA zips: every registered table's zip has one."""
     from data_ingestion_toolbox.bea import capture as bea_capture
     from data_ingestion_toolbox.bea.client import BeaFile
 
     def fetch(table: Any, **_kwargs: Any) -> BeaFile:
-        path = FIXTURE_ROOT / "bea" / f"{table.code}.zip"
+        # A table published inside another table's zip reads that zip.
+        path = FIXTURE_ROOT / "bea" / table.path.lstrip("/")
         if not path.is_file():
             raise AssertionError(f"no BEA fixture for {table.code}")
         return BeaFile(
@@ -897,26 +1053,219 @@ def stub_census_saipe_sahie(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sae_capture, "fetch_slice", fetch)
 
 
+def stub_census_decennial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the checked-in 2020 Census responses; other slices answer 204.
+
+    The fixtures are the nation, every state, Wisconsin's counties and Dane
+    County's tracts. Another state's tracts are the API's own "nothing here"
+    answer, a recorded empty slice rather than a failure.
+    """
+    from data_ingestion_toolbox.census_decennial import capture as decennial_capture
+    from data_ingestion_toolbox.census_decennial.client import DecennialResponse
+
+    def fetch(dataset: Any, *, slice_: Any, **_kwargs: Any) -> DecennialResponse:
+        parameters = dataset.request_parameters(slice_)
+        scope = "all" if slice_.scope == "*" else slice_.scope
+        path = (
+            FIXTURE_ROOT
+            / "census_decennial"
+            / f"{dataset.dataset_id}_{slice_.geo_level}_{scope}.json"
+        )
+        if not path.is_file():
+            return DecennialResponse(dataset.api_path, parameters, b"", {}, 204)
+        return DecennialResponse(
+            dataset.api_path,
+            parameters,
+            path.read_bytes(),
+            {"content-type": "application/json;charset=utf-8"},
+            200,
+        )
+
+    monkeypatch.setattr(decennial_capture, "fetch_slice", fetch)
+
+
+def stub_cms_ltc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the CMS catalog excerpt and the three Wisconsin CSV fixtures.
+
+    The catalog is cut to the releases a fixture holds, so a run reads those
+    three and nothing else.
+    """
+    from data_ingestion_toolbox.cms_ltc import capture as cms_capture
+    from data_ingestion_toolbox.cms_ltc.client import CmsResponse, check_file
+    from tests.support import cms_ltc as cms_support
+
+    def catalog(**_kwargs: Any) -> CmsResponse:
+        return CmsResponse(
+            "/data.json",
+            cms_support.fixture_catalog_bytes(),
+            {"content-type": "application/json"},
+            200,
+        )
+
+    def fetch(url: str, series: Any, **_kwargs: Any) -> CmsResponse:
+        name = cms_support.fixture_url_map()[url]
+        payload = cms_support.file_bytes(name)
+        check_file(payload, series, name)
+        return CmsResponse(name, payload, {"content-type": "text/csv"}, 200)
+
+    monkeypatch.setattr(cms_capture, "fetch_catalog", catalog)
+    monkeypatch.setattr(cms_capture, "fetch_file", fetch)
+
+
+def stub_nces_ipeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the IPEDS fixture zips; every other file answers 404, unpaced."""
+    from data_ingestion_toolbox.nces_ipeds import capture as ipeds_capture
+    from data_ingestion_toolbox.nces_ipeds.client import (
+        IpedsNotPublished,
+        IpedsResponse,
+        check_zip,
+    )
+    from data_ingestion_toolbox.nces_ipeds.config import DATA_BASE_URL
+    from tests.support import nces_ipeds as ipeds_support
+
+    def fetch(url: str, **_kwargs: Any) -> IpedsResponse:
+        name = url.removeprefix(DATA_BASE_URL)
+        if name not in ipeds_support.FIXTURE_FILES:
+            raise IpedsNotPublished(name, code="not_published", status=404)
+        payload = ipeds_support.fixture_bytes(ipeds_support.FIXTURE_FILES[name])
+        check_zip(payload, name)
+        return IpedsResponse(name, payload, {"content-type": "application/zip"}, 200)
+
+    monkeypatch.setattr(ipeds_capture, "fetch_file", fetch)
+    monkeypatch.setattr(ipeds_capture, "pause_between_files", lambda _config: None)
+
+
+def stub_cdc_ilinet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the FluView init and the three ILINet downloads."""
+    from data_ingestion_toolbox.cdc_ilinet import capture as ilinet_capture
+    from data_ingestion_toolbox.cdc_ilinet.client import fetch_download, fetch_init
+    from tests.support.cdc_ilinet import FixtureClient
+
+    def init(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_init(**kwargs)
+
+    def download(body: Any, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_download(body, **kwargs)
+
+    monkeypatch.setattr(ilinet_capture, "fetch_init", init)
+    monkeypatch.setattr(ilinet_capture, "fetch_download", download)
+
+
+def stub_cdc_covid_cases(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the two fixture state-months, their index and the view document."""
+    from data_ingestion_toolbox.cdc_covid_cases import capture as covid_capture
+    from data_ingestion_toolbox.cdc_covid_cases.client import (
+        fetch_index,
+        fetch_metadata,
+        fetch_slice,
+    )
+    from tests.support.cdc_covid_cases import FixtureClient
+
+    def index(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_index(**kwargs)
+
+    def one_slice(state: str | None, month: str | None, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_slice(state, month, **kwargs)
+
+    def metadata(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_metadata(**kwargs)
+
+    monkeypatch.setattr(covid_capture, "fetch_index", index)
+    monkeypatch.setattr(covid_capture, "fetch_slice", one_slice)
+    monkeypatch.setattr(covid_capture, "fetch_metadata", metadata)
+
+
+def stub_hhs_hospital_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the Dane County hospital weeks and the view document, unpaced."""
+    from data_ingestion_toolbox.hhs_hospital_capacity import capture as hhs_capture
+    from data_ingestion_toolbox.hhs_hospital_capacity.client import (
+        fetch_metadata,
+        fetch_page,
+    )
+    from tests.support.hhs_hospital_capacity import FixtureClient
+
+    def page(offset: int, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_page(offset, **kwargs)
+
+    def metadata(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_metadata(**kwargs)
+
+    monkeypatch.setattr(hhs_capture, "fetch_page", page)
+    monkeypatch.setattr(hhs_capture, "fetch_metadata", metadata)
+
+
+def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed government finance answers; other periods answer 204.
+
+    The fixtures are the 2022 unit-file excerpts, the 2022 annual finance
+    answers and the 2024 QTAX answers. A period without a fixture is the
+    provider's own "nothing here", a recorded empty slice rather than a
+    failure, so the first run's sweep of every registered period completes.
+    """
+    from data_ingestion_toolbox.census_govfin import capture as govfin_capture
+    from data_ingestion_toolbox.census_govfin.client import GovFinResponse
+    from tests.support import census_govfin
+
+    archives = census_govfin.unit_archives()
+    answers = census_govfin.api_responses()
+    periods = {"asslgf": 2022, "qtax": 2024, "cog_units": census_govfin.UNIT_YEAR}
+
+    def fetch(
+        dataset_id: str, period: int, slice_key: str, **_kwargs: Any
+    ) -> GovFinResponse:
+        endpoint, parameters = govfin_capture._request_identity(
+            dataset_id, period, slice_key
+        )
+        payload = (
+            archives.get(endpoint)
+            if dataset_id == "cog_units"
+            else answers.get(f"{endpoint}|{slice_key}")
+        )
+        if periods[dataset_id] != period or payload is None:
+            return GovFinResponse(
+                endpoint, parameters, b"", {}, 204, "application/json"
+            )
+        media_type = (
+            "application/zip" if dataset_id == "cog_units" else "application/json"
+        )
+        return GovFinResponse(
+            endpoint, parameters, payload, {"content-type": media_type}, 200, media_type
+        )
+
+    monkeypatch.setattr(govfin_capture, "_fetch", fetch)
+
+
 def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed Delaware SOI files.
 
-    Three of the ten registered files have fixtures. The others answer with
-    their registered header and no rows, so the run captures, replays and
-    publishes every file without a network call.
+    Three of the CSV files have fixtures; the other CSVs answer with their
+    registered header and no rows. A zip (before 2011-2012) answers with
+    the reviewed Delaware members of its layout. The run captures, replays
+    and publishes every file without a network call.
     """
     from data_ingestion_toolbox.irs_migration import capture as irs_capture
     from data_ingestion_toolbox.irs_migration.client import (
         MigrationResponse,
         expected_header,
     )
+    from tests.support.irs_migration_zips import zip_payload_for
 
     def fetch(item: Any, **_kwargs: Any) -> MigrationResponse:
         path = FIXTURE_ROOT / "irs_migration" / item.path.lstrip("/")
-        payload = (
-            path.read_bytes()
-            if path.is_file()
-            else (",".join(expected_header(item)) + "\n").encode("ascii")
-        )
+        stand_in = zip_payload_for(item.path)
+        if stand_in is not None:
+            payload = stand_in
+        elif path.is_file():
+            payload = path.read_bytes()
+        else:
+            payload = (",".join(expected_header(item)) + "\n").encode("ascii")
         return MigrationResponse(
             item.path,
             {"direction": item.direction, "year_pair": item.year_pair},
@@ -926,6 +1275,68 @@ def stub_irs_migration(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(irs_capture, "fetch_file", fetch)
+
+
+def stub_irs_soi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Delaware SOI income files.
+
+    Some registered files have fixtures of their own. The others answer with a
+    reviewed file of the same layout -- the 1989 workbook zip for a workbook
+    year, the 2023 files for a later CSV year -- so every registered file
+    captures, replays and publishes without a network call.
+    """
+    from data_ingestion_toolbox.irs_soi import capture as soi_capture
+    from data_ingestion_toolbox.irs_soi.client import SoiResponse
+    from data_ingestion_toolbox.irs_soi.registry import CSV, ZIP_XLS, SoiFile
+
+    def fetch(item: Any, **_kwargs: Any) -> SoiResponse:
+        directory = FIXTURE_ROOT / "irs_soi"
+        reviewed = directory / item.path.lstrip("/")
+        if reviewed.is_file():
+            path = reviewed
+        elif item.container == ZIP_XLS:
+            path = directory / "1989countyincome.zip"
+        else:
+            assert item.container == CSV, item.key
+            # The 2023 file of the same kind (2012's names differ, so the
+            # name is taken from the registry rather than rewritten).
+            path = directory / SoiFile(item.kind, 2023).csv_name
+        return SoiResponse(
+            item.path,
+            {"kind": item.kind, "tax_year": str(item.tax_year)},
+            path.read_bytes(),
+            {
+                "content-type": "text/csv"
+                if item.container == CSV
+                else "application/zip"
+            },
+            200,
+        )
+
+    monkeypatch.setattr(soi_capture, "fetch_file", fetch)
+
+
+def stub_dol_childcare(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Answer DOL's API from the reviewed NDCP fixture records, as the API pages them."""
+    from data_ingestion_toolbox.dol_childcare import capture as ndcp_capture
+    from data_ingestion_toolbox.dol_childcare.client import (
+        NdcpResponse,
+        fetch_release,
+    )
+    from data_ingestion_toolbox.dol_childcare.config import ChildcareConfig
+    from tests.support.dol_childcare import FixtureClient
+
+    def fetch(release: Any, **_kwargs: Any) -> NdcpResponse:
+        return fetch_release(
+            release,
+            config=ChildcareConfig(
+                min_spacing_seconds=0, max_attempts=1, api_key="fixture-dol-key"
+            ),
+            client=FixtureClient(),
+            sleep=lambda _seconds: None,
+        )
+
+    monkeypatch.setattr(ndcp_capture, "fetch_release", fetch)
 
 
 def stub_census_cbp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1031,21 +1442,113 @@ def stub_epa_aqs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def stub_noaa_normals(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Serve the reviewed eleven-station normals archive."""
+    """Serve the reviewed annual (eleven-station) and monthly (two-station) archives."""
     from data_ingestion_toolbox.noaa_normals import capture as normals_capture
     from data_ingestion_toolbox.noaa_normals.client import NormalsResponse
-    from data_ingestion_toolbox.noaa_normals.registry import ARCHIVE_PATH
+    from data_ingestion_toolbox.noaa_normals.registry import ANNUAL, PRODUCTS
 
-    reviewed = (
-        FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
-    ).read_bytes()
+    reviewed = {
+        "annualseasonal": (
+            FIXTURE_ROOT / "noaa_normals" / "annualseasonal_by_station.tar.gz"
+        ).read_bytes(),
+        "monthly": (
+            FIXTURE_ROOT / "noaa_normals" / "monthly_by_station.tar.gz"
+        ).read_bytes(),
+    }
 
-    def fetch_archive(**_kwargs: Any) -> NormalsResponse:
+    def fetch_archive(*, product: str = ANNUAL, **_kwargs: Any) -> NormalsResponse:
         return NormalsResponse(
-            ARCHIVE_PATH, reviewed, {"content-type": "application/gzip"}, 200
+            PRODUCTS[product].path,
+            reviewed[product],
+            {"content-type": "application/gzip"},
+            200,
         )
 
     monkeypatch.setattr(normals_capture, "fetch_archive", fetch_archive)
+
+
+def stub_noaa_climdiv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed ten-line county files of the 20261105 release."""
+    from data_ingestion_toolbox.noaa_climdiv import capture as climdiv_capture
+    from data_ingestion_toolbox.noaa_climdiv.client import (
+        ClimdivFile,
+        ClimdivResponse,
+        check_county_file,
+        listed_files,
+    )
+    from tests.support.noaa_climdiv import fixture_files, listing
+
+    reviewed = fixture_files()
+
+    def fetch_listing(**_kwargs: Any) -> list[ClimdivFile]:
+        return listed_files(listing(sorted(reviewed)))
+
+    def fetch_county_file(file: ClimdivFile, **_kwargs: Any) -> ClimdivResponse:
+        check_county_file(reviewed[file.name], file)
+        return ClimdivResponse(
+            file.name, reviewed[file.name], {"content-type": "text/plain"}, 200
+        )
+
+    monkeypatch.setattr(climdiv_capture, "fetch_listing", fetch_listing)
+    monkeypatch.setattr(climdiv_capture, "fetch_county_file", fetch_county_file)
+
+
+def stub_treasury_mts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed Table 9 page (the August and September 2026 statements)."""
+    from data_ingestion_toolbox.treasury_mts import capture as mts_capture
+    from data_ingestion_toolbox.treasury_mts.client import fetch_page
+    from tests.support.treasury_mts import FixtureClient
+
+    def fetch_reviewed_page(page_number: int, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_page(page_number, **kwargs)
+
+    monkeypatch.setattr(mts_capture, "fetch_page", fetch_reviewed_page)
+
+
+def stub_usaspending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed fiscal 2024 answers for every fiscal year the run reads (three agencies)."""
+    from data_ingestion_toolbox.usaspending import capture as usaspending_capture
+    from data_ingestion_toolbox.usaspending.client import post_search
+    from tests.support.usaspending import FixtureClient
+
+    def post_reviewed(path: str, body: Any, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient(agency_limit=3, any_year=True)
+        return post_search(path, body, **kwargs)
+
+    monkeypatch.setattr(usaspending_capture, "post_search", post_reviewed)
+
+
+def stub_noaa_storm_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed zone-county and 1950, 1995 and 2024 details files."""
+    from data_ingestion_toolbox.noaa_storm_events import capture as storm_capture
+    from data_ingestion_toolbox.noaa_storm_events.client import (
+        SourceFile,
+        StormEventsResponse,
+        check_details_file,
+        check_zone_file,
+        listed_details_files,
+        listed_zone_files,
+    )
+    from tests.support.noaa_storm_events import fixture_files, page
+
+    reviewed = fixture_files()
+
+    def fetch_listing(**_kwargs: Any) -> list[SourceFile]:
+        zones = sorted(name for name in reviewed if name.endswith(".dbx"))
+        details = sorted(name for name in reviewed if name.endswith(".csv.gz"))
+        return listed_zone_files(page(zones)) + listed_details_files(page(details))
+
+    def fetch_file(file: SourceFile, **_kwargs: Any) -> StormEventsResponse:
+        if file.kind == "details":
+            check_details_file(reviewed[file.name], file)
+        else:
+            check_zone_file(reviewed[file.name], file)
+        return StormEventsResponse(file.name, reviewed[file.name], {}, 200)
+
+    monkeypatch.setattr(storm_capture, "fetch_listing", fetch_listing)
+    monkeypatch.setattr(storm_capture, "fetch_file", fetch_file)
+    monkeypatch.setattr(storm_capture, "_pause", lambda _seconds: None)
 
 
 def stub_fcc_bdc(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1079,6 +1582,21 @@ def stub_fema_nri(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(fema_capture, "fetch_page", fetch_page)
+
+
+def stub_elections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the reviewed elections files in place of GitHub, Wikidata and Dataverse."""
+    from data_ingestion_toolbox.elections import capture as elections_capture
+    from data_ingestion_toolbox.elections.client import fetch_file
+    from tests.support.elections import FixtureClient
+
+    client = FixtureClient()
+
+    def fetch(request: Any, **kwargs: Any) -> Any:
+        kwargs["client"] = client
+        return fetch_file(request, **kwargs)
+
+    monkeypatch.setattr(elections_capture, "fetch_file", fetch)
 
 
 def stub_fhfa_hpi(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1291,6 +1809,7 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from data_ingestion_toolbox.census_acs import ingest as acs_ingest
     from data_ingestion_toolbox.census_acs import metadata as acs_metadata
+    from data_ingestion_toolbox.census_acs.config import ACS_METRO_GEOGRAPHY
 
     def observations(
         year: int,
@@ -1310,6 +1829,8 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
             "place": (["state", "place"], [["11", "50000"]]),
             # The tract `build_sub_county_geographies` gives county 11/001.
             "tract": (["state", "county", "tract"], [["11", "001", "000100"]]),
+            # Abilene, TX: a CBSA the reviewed area excerpt publishes (W-7).
+            "metro": ([ACS_METRO_GEOGRAPHY], [["10180"]]),
         }
         if geo_level not in geographies:
             raise AssertionError(
@@ -1396,8 +1917,14 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
                         "data": [
                             {
                                 "year": str(start_year),
-                                "period": "M01",
-                                "periodName": "January",
+                                # The Consumer Expenditure Survey publishes
+                                # whole years only (grocery-spending).
+                                "period": "A01"
+                                if series_id.startswith("CX")
+                                else "M01",
+                                "periodName": "Annual"
+                                if series_id.startswith("CX")
+                                else "January",
                                 "value": "4.5",
                                 "footnotes": [{}],
                                 "latest": "true",
@@ -1435,12 +1962,13 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     }
 
-    # The price programs' series lists are BLS's own excerpts, so the
-    # orchestrated run selects the regional and metro series from them as
-    # production does (grocery-and-gasoline-prices).
+    # The price and spending programs' series lists are BLS's own excerpts,
+    # so the orchestrated run selects the regional and metro series from them
+    # as production does (grocery-and-gasoline-prices, grocery-spending).
     price_lists = {
         "/cu/cu.series": "cu.series.excerpt",
         "/ap/ap.series": "ap.series.excerpt",
+        "/cx/cx.series": "cx.series.excerpt",
     }
 
     def read_tsv(url: str) -> Any:
@@ -1455,6 +1983,37 @@ def stub_bls(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError(f"No BLS catalogue fixture registered for {url}")
 
     monkeypatch.setattr(bls_metadata, "read_bls_tsv", read_tsv)
+
+    # The spending program's few series are read from the BLS API catalog,
+    # shaped as BLS answers it (bls_api_catalog_probe, 2026-11-09), with the
+    # titles of BLS's own series list excerpt.
+    spending_list = pl.read_csv(
+        PRICE_FIXTURES / "cx.series.excerpt", separator="	", infer_schema_length=0
+    )
+    spending_titles = {
+        str(row["series_id"]).strip(): str(row["series_title"]).strip()
+        for row in spending_list.rename(
+            {column: column.strip() for column in spending_list.columns}
+        ).to_dicts()
+    }
+
+    def api_catalog(series_ids: list[str]) -> dict[str, dict[str, str]]:
+        return {
+            series_id: {
+                "series_title": spending_titles[series_id],
+                "series_id": series_id,
+                "seasonality": "Not Seasonally Adjusted",
+                "survey_name": "Consumer Expenditure Surveys",
+                "survey_abbreviation": "CX",
+                "measure_data_type": "Expenditures",
+                "type_of_cases": "Food",
+                "item": "Food at home",
+            }
+            for series_id in series_ids
+            if series_id in spending_titles
+        }
+
+    monkeypatch.setattr(bls_metadata, "fetch_bls_api_catalog", api_catalog)
 
 
 def stub_fred(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1594,7 +2153,16 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("bls", stub_bls),
         ("fred", stub_fred),
         ("irs_migration", stub_irs_migration),
+        ("irs_soi", stub_irs_soi),
+        ("dol_childcare", stub_dol_childcare),
         ("census_saipe_sahie", stub_census_saipe_sahie),
+        ("census_decennial", stub_census_decennial),
+        ("cms_ltc", stub_cms_ltc),
+        ("nces_ipeds", stub_nces_ipeds),
+        ("hhs_hospital_capacity", stub_hhs_hospital_capacity),
+        ("cdc_covid_cases", stub_cdc_covid_cases),
+        ("cdc_ilinet", stub_cdc_ilinet),
+        ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),
         ("cdc", stub_cdc_socrata),
@@ -1605,8 +2173,13 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_lodes", stub_census_lodes),
         ("epa_aqs", stub_epa_aqs),
         ("noaa_normals", stub_noaa_normals),
+        ("noaa_climdiv", stub_noaa_climdiv),
+        ("treasury_mts", stub_treasury_mts),
+        ("usaspending", stub_usaspending),
+        ("noaa_storm_events", stub_noaa_storm_events),
         ("fcc_bdc", stub_fcc_bdc),
         ("fema_nri", stub_fema_nri),
+        ("elections", stub_elections),
         ("fhfa_hpi", stub_fhfa_hpi),
         ("hud_fmr_il", stub_hud_fmr_il),
         ("nces_ccd", stub_nces_ccd),

@@ -1,11 +1,14 @@
 """Capture-first Census SAIPE and SAHIE pipeline (census-saipe-sahie).
 
 Each run captures the two newest registered estimate years of each dataset --
-the Bureau revises nothing older in place, it publishes the next year -- one
-request per grain, and every byte is committed before anything parses it. A
-manual run with ``{"history": true}`` in its conf sweeps every registered
-year instead, which is how a fresh warehouse is loaded
-(``docs/reference/BETA_RESET_REINGESTION.md``).
+the Bureau revises nothing older in place, it publishes the next year -- and
+every registered year the warehouse has never had answered, one request per
+grain, and every byte is committed before anything parses it. So the first
+run on a fresh warehouse loads the whole history (SAIPE from 1989, SAHIE
+from 2006) without anyone asking, and later runs are the two-year window
+again (``data_ingestion_toolbox.utility.backfill``). A manual run with
+``{"history": true}`` in its conf re-sweeps every registered year, answered
+or not (``docs/reference/BETA_RESET_REINGESTION.md``).
 
 The requests share the ``census_api`` pool with the ACS: one host, one key,
 one rate limit.
@@ -23,6 +26,10 @@ from airflow.operators.python import PythonOperator
 
 from data_ingestion_toolbox.census_saipe_sahie.capture import capture_dataset_year
 from data_ingestion_toolbox.census_saipe_sahie.config import SaeConfig
+from data_ingestion_toolbox.census_saipe_sahie.plan import (
+    answered_years,
+    years_to_capture,
+)
 from data_ingestion_toolbox.census_saipe_sahie.registry import DATASETS, get_dataset
 from data_ingestion_toolbox.census_saipe_sahie.schema import ensure_census_sae_schema
 from data_ingestion_toolbox.census_saipe_sahie.silver_census_sae.load import (
@@ -40,11 +47,8 @@ DEFAULT_ARGS = {
     "retry_delay": timedelta(minutes=10),
 }
 
-#: Estimate years an ordinary run captures per dataset, newest first.
-RECENT_YEARS = 2
 
-
-def _get_postgres_hook():  # noqa: ANN202
+def _get_postgres_hook():
     conn_id = SaeConfig.from_environment().postgres_conn_id.strip()
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -64,22 +68,24 @@ def _ensure_schema() -> None:
     ensure_census_sae_schema(_get_postgres_hook())
 
 
-def years_to_capture(dataset_id: str, conf: dict[str, Any] | None) -> list[int]:
-    """The registered years one run captures: recent by default, all on request."""
-    dataset = get_dataset(dataset_id)
-    if conf and conf.get("history"):
-        return list(dataset.years)
-    return list(dataset.years[-RECENT_YEARS:])
-
-
 def _capture(dataset_id: str, **context: Any) -> list[str]:
     dag_run = context.get("dag_run")
     conf = dict(getattr(dag_run, "conf", None) or {})
     dataset = get_dataset(dataset_id)
     connection_factory = _get_postgres_hook().get_conn
     config = SaeConfig.from_environment()
+    with _get_postgres_hook().get_conn() as connection:
+        answered = answered_years(connection, dataset_id)
+    years = years_to_capture(dataset_id, conf, answered)
+    logging.getLogger("airflow.task").info(
+        "%s: capturing %d year(s) (%s); %d already answered",
+        dataset_id,
+        len(years),
+        ", ".join(map(str, years)),
+        len(answered),
+    )
     run_ids = []
-    for year in years_to_capture(dataset_id, conf):
+    for year in years:
         run_id, _slices = capture_dataset_year(
             connection_factory, dataset, year, config=config
         )

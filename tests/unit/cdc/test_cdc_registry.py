@@ -17,11 +17,12 @@ from data_ingestion_toolbox.cdc.registry import (
 pytestmark = pytest.mark.unit
 
 
-def test_registry_enables_both_official_verified_assets() -> None:
+def test_registry_enables_every_official_verified_asset() -> None:
     """Covers: EXT-004 — CDC registry contains exact current provider IDs."""
     assert [(asset.asset_id, asset.socrata_id) for asset in enabled_assets()] == [
         ("cdi", "hksd-2xuw"),
         ("places_county", "swc5-untb"),
+        ("places_tract", "cwsq-ngmh"),
     ]
     assert all(asset.enabled for asset in ALL_ASSETS)
 

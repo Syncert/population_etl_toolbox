@@ -267,6 +267,56 @@ def resolve_env_value(
     return ""
 
 
+#: The build-arg the compose files pass to `Dockerfile.web` as
+#: `NEXT_PUBLIC_BUILD_ID`, which the browser's reports and the page footer name.
+WEB_BUILD_ID_VARIABLE = "WEB_BUILD_ID"
+
+#: How many characters of the commit an unset build id is stamped with.
+WEB_BUILD_ID_LENGTH = 12
+
+
+def deploy_environment(
+    context: ComposeContext,
+    *,
+    environ: Mapping[str, str],
+    commit_sha: str,
+    root: Path = REPOSITORY_ROOT,
+) -> dict[str, str]:
+    """Variables an entrypoint exports before it invokes Compose.
+
+    Today that is one: the web image's build id. `Dockerfile.web` is a
+    production build (`next build`, then the standalone `node server.js`), but
+    `next.config.mjs` falls back to the label `development` when no build id is
+    supplied, and `stack.env.example` ships `WEB_BUILD_ID=` blank. So every
+    image `deploy-up` built named itself `build=development` in its reports --
+    which on 2026-11-01 was read as "the container runs `next dev`" while a
+    hung web container was being diagnosed. Stamping the checked-out commit
+    makes the label say which source the running build came from.
+
+    An operator's own value wins, from the host environment or either env file,
+    because Compose would honour it anyway; a blank is unset, as Compose's
+    `${WEB_BUILD_ID:-}` treats it. With no commit to stamp (no git, or not a
+    checkout) nothing is exported and the old fallback applies.
+    """
+    file_values: dict[str, str] = {}
+    if not context.use_host_env:
+        if context.base_env_file:
+            file_values.update(read_env_file(root / context.base_env_file))
+        file_values.update(read_env_file(root / context.env_file))
+
+    exported: dict[str, str] = {}
+    already = resolve_env_value(
+        [WEB_BUILD_ID_VARIABLE],
+        file_values=file_values,
+        defaults={},
+        environ=environ,
+    )
+    sha = (commit_sha or "").strip()
+    if not already and sha:
+        exported[WEB_BUILD_ID_VARIABLE] = sha[:WEB_BUILD_ID_LENGTH]
+    return exported
+
+
 def database_target(
     label: str,
     *,

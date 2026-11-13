@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_survey (
     program_code       TEXT NOT NULL UNIQUE,
     survey_name        TEXT NOT NULL,
     survey_universe    TEXT,
-    observation_basis  TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')),
+    observation_basis  TEXT NOT NULL CHECK (observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS', 'SPENDING')),
     primary_concept    TEXT,
     id_construction_type TEXT,
     comparison_warning TEXT,
@@ -45,6 +45,28 @@ CREATE TABLE IF NOT EXISTS gold_bls.dim_bls_series (
     semantic_notes             TEXT,
     updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Household spending (grocery-spending, the Consumer Expenditure Survey) is
+-- an observation basis of its own: it is not a price. A warehouse created
+-- before it carries the CHECK without it; re-applying this file replaces
+-- that CHECK only while its definition does not yet name it. The survey
+-- table holds seven rows, so the check is instant.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'gold_bls.dim_bls_survey'::regclass
+          AND conname = 'dim_bls_survey_observation_basis_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%SPENDING%'
+    ) THEN
+        ALTER TABLE gold_bls.dim_bls_survey
+            DROP CONSTRAINT dim_bls_survey_observation_basis_check;
+        ALTER TABLE gold_bls.dim_bls_survey
+            ADD CONSTRAINT dim_bls_survey_observation_basis_check CHECK (
+                observation_basis IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS', 'SPENDING')
+            );
+    END IF;
+END $$;
 
 -- Average prices (grocery-and-gasoline-prices) are a measure category of
 -- their own. A warehouse created before them carries the category CHECK
@@ -344,6 +366,7 @@ DECLARE
     v_started_at TIMESTAMPTZ := clock_timestamp();
     v_deleted_rows BIGINT;
     v_inserted_rows BIGINT;
+    v_candidate_rows BIGINT;
     v_affected_keys BIGINT;
 BEGIN
     RAISE NOTICE '[BLS RPT CHUNK] status=STARTED start=% end=%', p_start_date, p_end_date;
@@ -356,19 +379,15 @@ BEGIN
         PRIMARY KEY (geo_id, series_id, metric_code)
     ) ON COMMIT DROP;
 
-    INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
-    SELECT DISTINCT d.geo_id, d.series_id, d.metric_code
-    FROM gold_bls.rpt_bls_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+    -- The window's rows as they should be served, staged so only the rows
+    -- that differ from what is served are written (refresh-churn audit,
+    -- 2026-11-06). Deleting and re-inserting the whole year rewrote ~181k
+    -- BLS rows per touched year when a month or two had changed.
+    DROP TABLE IF EXISTS pg_temp.gold_bls_rpt_candidate;
+    CREATE TEMP TABLE gold_bls_rpt_candidate
+        (LIKE gold_bls.rpt_bls_observations INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    DELETE FROM gold_bls.rpt_bls_observations
-    WHERE (p_start_date IS NULL OR observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR observation_date <= p_end_date);
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
-
-    INSERT INTO gold_bls.rpt_bls_observations (
+    INSERT INTO gold_bls_rpt_candidate (
         source_code,
         observation_date,
         duration_start,
@@ -452,22 +471,54 @@ BEGIN
     LEFT JOIN silver_ref.dim_geo gl ON gl.geo_id = b.geo_id
     WHERE (p_start_date IS NULL OR b.period_date >= p_start_date)
       AND (p_end_date IS NULL OR b.period_date <= p_end_date);
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    GET DIAGNOSTICS v_candidate_rows = ROW_COUNT;
+    ANALYZE gold_bls_rpt_candidate;
 
-    INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
-    SELECT DISTINCT d.geo_id, d.series_id, d.metric_code
-    FROM gold_bls.rpt_bls_observations d
-    WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
-      AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
-    ON CONFLICT DO NOTHING;
+    -- Served rows of the window with no identical row to serve: gone, or
+    -- changed. An identical row is left physically untouched.
+    WITH removed AS (
+        DELETE FROM gold_bls.rpt_bls_observations d
+        WHERE (p_start_date IS NULL OR d.observation_date >= p_start_date)
+          AND (p_end_date IS NULL OR d.observation_date <= p_end_date)
+          AND NOT EXISTS (
+              SELECT 1 FROM gold_bls_rpt_candidate c
+              WHERE c.geo_id = d.geo_id AND c.observation_date = d.observation_date AND c.series_id = d.series_id
+                AND ROW(c.*) IS NOT DISTINCT FROM ROW(d.*)
+          )
+        RETURNING d.geo_id, d.series_id, d.metric_code
+    ), removed_keys AS (
+        INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
+        SELECT DISTINCT geo_id, series_id, metric_code FROM removed
+        ON CONFLICT DO NOTHING
+    )
+    SELECT COUNT(*) INTO v_deleted_rows FROM removed;
+
+    -- Rows to serve that are not served yet: new, or the changed rows just
+    -- removed.
+    WITH added AS (
+        INSERT INTO gold_bls.rpt_bls_observations
+        SELECT c.* FROM gold_bls_rpt_candidate c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM gold_bls.rpt_bls_observations d
+            WHERE c.geo_id = d.geo_id AND c.observation_date = d.observation_date AND c.series_id = d.series_id
+              AND ROW(c.*) IS NOT DISTINCT FROM ROW(d.*)
+        )
+        RETURNING geo_id, series_id, metric_code
+    ), added_keys AS (
+        INSERT INTO gold_bls_affected_keys (geo_id, series_id, metric_code)
+        SELECT DISTINCT geo_id, series_id, metric_code FROM added
+        ON CONFLICT DO NOTHING
+    )
+    SELECT COUNT(*) INTO v_inserted_rows FROM added;
 
     SELECT COUNT(*) INTO v_affected_keys FROM gold_bls_affected_keys;
     RAISE NOTICE
-        '[BLS RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% affected_keys=% duration_ms=%',
+        '[BLS RPT CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% unchanged_rows=% affected_keys=% duration_ms=%',
         p_start_date,
         p_end_date,
         v_deleted_rows,
         v_inserted_rows,
+        v_candidate_rows - v_inserted_rows,
         v_affected_keys,
         (EXTRACT(EPOCH FROM (clock_timestamp() - v_started_at)) * 1000)::NUMERIC(18,2);
 END;
@@ -504,14 +555,21 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
-    DELETE FROM gold_bls.mv_bls_latest m
-    USING gold_bls_affected_keys k
-    WHERE m.geo_id = k.geo_id
-      AND m.series_id = k.series_id
-      AND m.metric_code = k.metric_code;
-    GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+    -- Each affected key's newest row *with a value*, staged so a latest row
+    -- that did not change is left in place (refresh-churn audit, 2026-11-06).
+    --
+    -- `(d.value IS NULL)` sorts first so a withheld month never stands in for
+    -- the newest published value. BLS keeps answering a discontinued Average
+    -- Price series with a `-` for every month after its last price: the
+    -- Midwest whole-milk series (APU0200709112) last priced April 2020 and
+    -- still served an empty October 2025 as its "latest" (2026-11-06). The
+    -- withheld rows stay in `rpt_bls_observations` with their status; only a
+    -- key whose every row is withheld serves a withheld row as its latest.
+    DROP TABLE IF EXISTS pg_temp.gold_bls_latest_candidate;
+    CREATE TEMP TABLE gold_bls_latest_candidate
+        (LIKE gold_bls.mv_bls_latest INCLUDING DEFAULTS) ON COMMIT DROP;
 
-    INSERT INTO gold_bls.mv_bls_latest
+    INSERT INTO gold_bls_latest_candidate
     SELECT DISTINCT ON (d.geo_id, d.series_id, d.metric_code)
         d.*
     FROM gold_bls.rpt_bls_observations d
@@ -523,9 +581,35 @@ BEGIN
         d.geo_id,
         d.series_id,
         d.metric_code,
+        (d.value IS NULL),
         d.observation_date DESC,
         d.updated_at DESC;
-    GET DIAGNOSTICS v_inserted_rows = ROW_COUNT;
+    ANALYZE gold_bls_latest_candidate;
+
+    WITH removed AS (
+        DELETE FROM gold_bls.mv_bls_latest m
+        USING gold_bls_affected_keys k
+        WHERE m.geo_id = k.geo_id AND m.series_id = k.series_id AND m.metric_code = k.metric_code
+          AND NOT EXISTS (
+              SELECT 1 FROM gold_bls_latest_candidate c
+              WHERE c.geo_id = m.geo_id AND c.series_id = m.series_id AND c.metric_code = m.metric_code
+                AND ROW(c.*) IS NOT DISTINCT FROM ROW(m.*)
+          )
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_deleted_rows FROM removed;
+
+    WITH added AS (
+        INSERT INTO gold_bls.mv_bls_latest
+        SELECT c.* FROM gold_bls_latest_candidate c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM gold_bls.mv_bls_latest m
+            WHERE m.geo_id = c.geo_id AND m.series_id = c.series_id AND m.metric_code = c.metric_code
+              AND ROW(c.*) IS NOT DISTINCT FROM ROW(m.*)
+        )
+        RETURNING 1
+    )
+    SELECT COUNT(*) INTO v_inserted_rows FROM added;
 
     RAISE NOTICE
         '[BLS LATEST CHUNK] status=COMPLETE start=% end=% deleted_rows=% inserted_rows=% duration_ms=%',
@@ -688,12 +772,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_bls_derived_calendar_rollup
 -- A derived window missing a month is served with no value and its reason.
 CREATE OR REPLACE VIEW gold_bls.calendar_window_observation AS
 WITH served AS (
-    SELECT DISTINCT ON (series_id, geo_id)
+    -- `metric_code` leads so a read of one metric's grains reaches the
+    -- (metric_code, geo_id) index instead of ranking every served series
+    -- (place-page-reads); `uq_mv_bls_latest` keeps one metric per series.
+    SELECT DISTINCT ON (metric_code, series_id, geo_id)
            series_id, geo_id, geo_level, units, metric_code
     FROM gold_bls.mv_bls_latest
-    ORDER BY series_id, geo_id, observation_date DESC
+    ORDER BY metric_code, series_id, geo_id, observation_date DESC
 ),
-provider AS (
+-- Referenced twice (the provider rows and the derived rows' exclusion), so
+-- PostgreSQL would materialise it whole -- every annual average of every
+-- served series, 535,572 rows on OFFICE_LAB -- before any metric filter.
+-- Inlined, a read of one metric reaches one series (place-page-reads).
+provider AS NOT MATERIALIZED (
     SELECT served.metric_code, served.geo_id, served.geo_level, served.units,
            annual.period_start, annual.period_end, annual.value,
            annual.value_status, annual.ingested_at
@@ -722,6 +813,7 @@ SELECT provider.metric_code,
        provider.ingested_at::DATE AS as_of_date
 FROM provider
 UNION ALL
+-- A derived quarter never competes with a published annual average.
 SELECT derived.metric_code,
        derived.geo_id,
        derived.geo_level,
@@ -741,13 +833,35 @@ SELECT derived.metric_code,
        derived.component_releases,
        derived.refreshed_at::DATE
 FROM gold_bls.derived_calendar_rollup AS derived
-WHERE NOT (
-    derived.grain = 'year'
-    AND EXISTS (
-        SELECT 1
-        FROM provider
-        WHERE provider.metric_code = derived.metric_code
-          AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
-          AND provider.period_start = derived.window_start
-    )
+WHERE derived.grain = 'quarter'
+UNION ALL
+-- A derived year is served only where BLS published no annual average. A
+-- plain NOT EXISTS (not one OR-ed with the grain) is an anti-join, so a whole
+-- read hashes it once and a one-metric read probes one series.
+SELECT derived.metric_code,
+       derived.geo_id,
+       derived.geo_level,
+       derived.subject_code,
+       derived.unit,
+       derived.grain,
+       derived.window_start,
+       derived.window_end,
+       derived.value,
+       CASE WHEN derived.value IS NULL THEN 'incomplete_window' ELSE 'valid' END,
+       'derived'::TEXT,
+       derived.method,
+       derived.method_version,
+       derived.expected_periods,
+       derived.present_periods,
+       derived.refusal_reason,
+       derived.component_releases,
+       derived.refreshed_at::DATE
+FROM gold_bls.derived_calendar_rollup AS derived
+WHERE derived.grain = 'year'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM provider
+    WHERE provider.metric_code = derived.metric_code
+      AND provider.geo_id IS NOT DISTINCT FROM derived.geo_id
+      AND provider.period_start = derived.window_start
 );

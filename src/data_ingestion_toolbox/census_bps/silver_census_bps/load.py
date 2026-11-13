@@ -68,6 +68,11 @@ def _upsert_dimension(cursor: Any) -> None:
             methodology_url = EXCLUDED.methodology_url,
             parser_contract_version = EXCLUDED.parser_contract_version,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_census_bps.dim_measure.measure_label, silver_census_bps.dim_measure.structure_label, silver_census_bps.dim_measure.unit, silver_census_bps.dim_measure.observation_basis, silver_census_bps.dim_measure.methodology_url, silver_census_bps.dim_measure.parser_contract_version)
+                      IS DISTINCT FROM
+                      (EXCLUDED.measure_label, EXCLUDED.structure_label, EXCLUDED.unit, EXCLUDED.observation_basis, EXCLUDED.methodology_url, EXCLUDED.parser_contract_version)
         """,
         [
             (
@@ -84,6 +89,39 @@ def _upsert_dimension(cursor: Any) -> None:
             for structure_type, structure_label in STRUCTURE_TYPES
         ],
     )
+
+
+def _forget_abandoned_attempts(cursor: Any, run_id: UUID) -> int:
+    """Drop the ledger rows of earlier attempts at this run's period that never replayed.
+
+    A replay that fails rolls back everything it parsed, but the capture step
+    has already committed one ``captured`` slice row per file; the retry
+    captures again under a new run. Once this run reconciles, those earlier
+    rows describe nothing (their revisions were never kept) and would hold
+    ``DQ-BPS-002`` failing for good. Their raw captures stay: the raw layer
+    is immutable, and identical bytes share one payload blob. Only rows
+    created before this run's are removed, in this run's transaction, so a
+    replay that fails again removes nothing.
+    """
+    cursor.execute(
+        """
+        DELETE FROM control.census_bps_slice AS abandoned
+         USING (
+                SELECT frequency, year, month, MIN(created_at) AS created_at
+                  FROM control.census_bps_slice
+                 WHERE run_id = %s
+                 GROUP BY frequency, year, month
+         ) AS current_run
+         WHERE abandoned.run_id <> %s
+           AND abandoned.status = 'captured'
+           AND abandoned.frequency = current_run.frequency
+           AND abandoned.year = current_run.year
+           AND abandoned.month = current_run.month
+           AND abandoned.created_at < current_run.created_at
+        """,
+        (str(run_id), str(run_id)),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
@@ -106,7 +144,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             _upsert_dimension(cursor)
             expected = 0
             for slice_key, frequency, year, month, capture_id, status in slices:
-                if status == "empty":
+                if status in ("empty", "unchanged"):
                     continue
                 item = slice_from_row(slice_key, frequency, year, month)
                 parsed = parse_file(
@@ -219,6 +257,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )
@@ -259,6 +302,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise BpsReconciliationError(
                     f"run {run_id} reconciles {revisions} revisions and {facts} facts against {expected} expected"
                 )
+            _forget_abandoned_attempts(cursor, run_id)
         connection.commit()
     except BaseException:
         connection.rollback()

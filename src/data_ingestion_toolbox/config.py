@@ -224,6 +224,17 @@ class Settings:
         self.backup_retention_days: int = int(
             os.environ.get("BACKUP_RETENTION_DAYS", "0")
         )
+        #: Who may open the admin warehouse pages (`/admin/warehouse/*`):
+        #: comma-separated operator labels (`provision_app_api.py
+        #: --issue-token LABEL`) or signed-in email addresses, matched without
+        #: regard to case. Empty turns the admin resource off entirely: every
+        #: admin route answers 404, so a deployment that has not named an
+        #: admin does not advertise that the resource exists.
+        self.api_admin_accounts: frozenset[str] = frozenset(
+            entry.strip().lower()
+            for entry in os.environ.get("API_ADMIN_ACCOUNTS", "").split(",")
+            if entry.strip()
+        )
 
 
 @lru_cache(maxsize=1)

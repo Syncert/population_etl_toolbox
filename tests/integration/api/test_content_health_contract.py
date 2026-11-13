@@ -96,7 +96,7 @@ def settings() -> PostgresTestConfig:
 def one_measure_per_state(
     postgres_connection_factory: Callable[[], connection],
 ) -> Iterator[list[str]]:
-    """One ``current``, one ``stale`` and one ``retired`` measure for FRED.
+    """One measure in each published freshness state for FRED.
 
     The three states come from the module the content query binds them from,
     so this fixture cannot drift from the vocabulary being counted.
@@ -152,13 +152,14 @@ def test_the_report_counts_the_warehouses_own_freshness_vocabulary(
     A shared warehouse may carry more measures than this fixture seeded, so
     the per-state counts are lower bounds. ``counts_are_complete`` is not: it
     says every measure the relation holds for this source fell into one of
-    the three counted buckets, which is the claim that would break first if
+    the counted buckets, which is the claim that would break first if
     the warehouse gained a fourth state.
     """
     payload = _read_report(settings)
     fred = _source(payload, FIXTURE_SOURCE)
 
     assert fred["metrics_current"] >= 1
+    assert fred["metrics_ended"] >= 1
     assert fred["metrics_stale"] >= 1
     assert fred["metrics_retired"] >= 1
     assert fred["status"] == SERVING
@@ -166,7 +167,10 @@ def test_the_report_counts_the_warehouses_own_freshness_vocabulary(
 
     assert fred["counts_are_complete"] is True, fred
     assert (
-        fred["metrics_current"] + fred["metrics_stale"] + fred["metrics_retired"]
+        fred["metrics_current"]
+        + fred["metrics_ended"]
+        + fred["metrics_stale"]
+        + fred["metrics_retired"]
         == fred["metrics_total"]
     )
 

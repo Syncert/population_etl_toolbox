@@ -1,4 +1,4 @@
-"""Pure parser for the registered CDC PLACES county product."""
+"""Pure parser for the registered CDC PLACES county and tract products."""
 
 from __future__ import annotations
 
@@ -9,10 +9,25 @@ from .cdi import _adjustment, _decimal, _record_id
 from .models import CdcObservation, QuarantinedObservation, ReplayResult
 
 
-def _geo(code: str) -> tuple[str, str | None]:
+def _geo(code: str, asset_id: str = "places_county") -> tuple[str, str | None]:
+    """The served grain and id of a PLACES location code, by the asset's levels.
+
+    The county release codes the nation ``59`` and counties by five digits;
+    the tract release codes tracts by eleven. A code of another shape, or of
+    a grain the asset does not register, is ``unsupported`` and never served.
+    """
+    if not code.isdigit():
+        return "unsupported", None
+    if asset_id == "places_tract":
+        if len(code) == 11:
+            return (
+                "tract",
+                f"state:{code[:2]}|county:{code[2:5]}|tract:{code[5:]}",
+            )
+        return "unsupported", None
     if code == "59":
         return "nation", "us:1"
-    if len(code) == 5 and code.isdigit():
+    if len(code) == 5:
         return "county", f"state:{code[:2]}|county:{code[2:]}"
     return "unsupported", None
 
@@ -95,7 +110,7 @@ def parse_places_county_rows(
             )
             continue
         code = str(item["locationid"])
-        geo_type, geo_id = _geo(code)
+        geo_type, geo_id = _geo(code, asset.asset_id)
         footnote_text = (
             str(item.get("data_value_footnote"))
             if item.get("data_value_footnote")

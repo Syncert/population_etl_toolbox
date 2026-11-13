@@ -215,11 +215,28 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # meaning any constraint that refuses the violation outright -- a foreign
     # key and a CHECK refuse a row as completely as a unique index does.
     # DQ-FBI-009 (derived calendar rollups, ADR-0007) and the new sources' rules
-    # made it forty-five.
+    # made it forty-five, and the elections source's grain rule (DQ-ELEC-001)
+    # forty-six, the IRS SOI income grain (DQ-SOI-001) forty-seven, and
+    # government finance's grain and conformance rules (DQ-GOVFIN-001 and -002)
+    # forty-nine, and the NDCP childcare prices' grain and conformance rules
+    # (DQ-NDCP-001 and -002) fifty-one, and the nClimDiv county series' grain
+    # and conformance rules (DQ-CLIMDIV-001 and -003) fifty-three, and the
+    # Storm Events grain and conformance rules (DQ-STORM-001 and -003)
+    # fifty-five, and the Monthly Treasury Statement's grain and conformance
+    # rules (DQ-TREASURY-001 and -003) fifty-seven, and the 2020 Census
+    # counts' grain and conformance rules (DQ-DECENNIAL-001 and -002)
+    # fifty-nine, the CMS long-term care files' grain and conformance
+    # rules (DQ-CMSLTC-001 and -002) sixty-one, the IPEDS files' grain and
+    # conformance rules (DQ-IPEDS-001 and -002) sixty-three, USAspending's
+    # grain and conformance rules (DQ-USASPENDING-001 and -003) sixty-five,
+    # the HHS hospital weeks' grain and conformance rules (DQ-HHS-001 and
+    # -002) sixty-seven, and the CDC case counts' grain and conformance rules
+    # (DQ-COVID-001 and -002) sixty-nine, and ILINet's grain and conformance
+    # rules (DQ-ILINET-001 and -002) seventy-one.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 45, enforced
+    assert len(enforced) == 71, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -447,10 +464,20 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "CENSUS_BPS",
         "CENSUS_PEP",
         "CENSUS_SAIPE_SAHIE",
+        "CENSUS_DECENNIAL",
+        "CMS_LTC",
+        "NCES_IPEDS",
+        "HHS_HOSPITAL_CAPACITY",
+        "CDC_COVID_CASES",
+        "CDC_ILINET",
         "EIA",
         "FBI_UCR",
         "EPA_AQS",
         "NOAA_NORMALS",
+        "NOAA_CLIMDIV",
+        "TREASURY_MTS",
+        "USASPENDING",
+        "NOAA_STORM_EVENTS",
         "FRED",
         "IRS_MIGRATION",
         "USDA_NASS",
@@ -462,6 +489,10 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "HUD_FMR_IL",
         "NCES_CCD",
         "USDA_ERS",
+        "ELECTIONS",
+        "IRS_SOI",
+        "CENSUS_GOVFIN",
+        "DOL_CHILDCARE",
     }, (
         "every source that publishes gold declares the component its DDL is "
         "recorded under; CDC, FBI and USDA NASS joined the four when their "

@@ -62,6 +62,7 @@ def test_cdc_fixtures_replay_reconcile_and_publish_idempotently(
                 cursor.execute("DELETE FROM silver_cdc.dim_measure")
                 cursor.execute("DELETE FROM silver_cdc.dim_stratum")
                 cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
+                cursor.execute("DELETE FROM control.cdc_release_page")
                 cursor.execute("DELETE FROM control.cdc_dataset_release")
                 for geo_id in sorted(tracked_geo_ids - preexisting_geo_ids):
                     delete_geography(cursor, geo_id)
@@ -333,6 +334,7 @@ def test_an_unsupported_geography_is_kept_but_not_served(
                 cursor.execute("DELETE FROM silver_cdc.dim_measure")
                 cursor.execute("DELETE FROM silver_cdc.dim_stratum")
                 cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
+                cursor.execute("DELETE FROM control.cdc_release_page")
                 cursor.execute("DELETE FROM control.cdc_dataset_release")
                 delete_geography(cursor, "us:1")
                 delete_geography(cursor, "state:01")

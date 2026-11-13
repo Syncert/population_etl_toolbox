@@ -401,26 +401,26 @@ def test_distribution_dispatches_to_the_owning_sources_latest_relation() -> None
 
 
 def test_distribution_filter_unsupported_by_the_source_is_rejected() -> None:
-    """Covers: API-052 — PEP declares no state_fips filter; the API says so."""
-    pep_metric = {
-        "metric_code": "CENSUS_PEP:POP",
-        "source_code": "CENSUS_PEP",
-        "units": "people",
+    """Covers: API-052 — The Building Permits Survey declares no state_fips filter; the API says so."""
+    bps_metric = {
+        "metric_code": "CENSUS_BPS:units:total:annual",
+        "source_code": "CENSUS_BPS",
+        "units": "housing units",
         "valid_time_grains": ["ANNUAL"],
         "valid_geo_grains": ["STATE"],
         "aggregation_characteristic": None,
         "physical_lineage": {
-            "schema": "gold_pep",
-            "relation": "population_estimate_revision",
-            "key": "POP",
+            "schema": "gold_census_bps",
+            "relation": "observation_revision",
+            "key": "units:total:annual",
         },
     }
-    session = _DistributionSession(metric_row=pep_metric)
+    session = _DistributionSession(metric_row=bps_metric)
     client = _client_with(session)
     try:
         response = client.get(
             "/api/v1/distribution/bins",
-            params={"metric_code": "CENSUS_PEP:POP", "state_fips": "06"},
+            params={"metric_code": "CENSUS_BPS:units:total:annual", "state_fips": "06"},
         )
     finally:
         app.dependency_overrides.clear()
@@ -428,7 +428,7 @@ def test_distribution_filter_unsupported_by_the_source_is_rejected() -> None:
     assert response.status_code == 422
     detail = response.json()["detail"]
     assert "state_fips" in detail
-    assert "CENSUS_PEP" in detail
+    assert "CENSUS_BPS" in detail
     assert not _dispatched(session)
 
 

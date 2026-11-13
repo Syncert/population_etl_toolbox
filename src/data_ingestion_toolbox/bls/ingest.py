@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -53,6 +54,28 @@ class BlsRetryableHTTP(Exception):
     """Retry-worthy HTTP cases (429 / 5xx)."""
 
     pass
+
+
+# What every BLS request asks for besides its series and years. A captured
+# slice answers only the request it was made with, so the DAG folds these
+# options into each program's slice fingerprint (ETL-113): when they change,
+# every slice captured under the old ones is planned again on the next
+# scheduled run. Without that, the 1990-2023 history captured before
+# `annualaverage` was added (ADR-0007) stayed "done" and never got BLS's
+# annual averages, which left LAUS annual unemployment at 2024-2025 only.
+BLS_REQUEST_OPTIONS: Dict[str, object] = {"annualaverage": True}
+
+
+def slice_fingerprint(series_ids: List[str]) -> str:
+    """Digest of what a slice asks BLS for: its series and the request options.
+
+    The DAG's ledger treats a historical slice as answered only for this
+    digest, so a change to either the series or `BLS_REQUEST_OPTIONS`
+    re-plans the slices captured under the old request (ETL-113).
+    """
+    options = json.dumps(BLS_REQUEST_OPTIONS, sort_keys=True, separators=(",", ":"))
+    payload = "|".join(sorted(series_ids)) + "#" + options
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _redact_api_key(value: object) -> str:
@@ -208,7 +231,7 @@ def fetch_bls_api(
         "startyear": str(start_year),
         "endyear": str(end_year),
         # BLS's own annual averages (`M13`), kept as provider facts (ADR-0007).
-        "annualaverage": True,
+        **BLS_REQUEST_OPTIONS,
         "registrationkey": CONFIG.bls_api_key,
     }
 
@@ -221,7 +244,7 @@ def fetch_bls_api(
         "seriesid_sample": series_ids[:5],
         "startyear": str(start_year),
         "endyear": str(end_year),
-        "annualaverage": True,
+        **BLS_REQUEST_OPTIONS,
         "registrationkey": "***",
     }
     logger.info(
@@ -529,6 +552,7 @@ def ingest_slice(
                     "seriesid": series_chunk,
                     "startyear": str(yr_start),
                     "endyear": str(yr_end),
+                    **BLS_REQUEST_OPTIONS,
                     "program": program,
                 }
                 request = control.start_request(

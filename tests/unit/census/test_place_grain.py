@@ -45,13 +45,15 @@ def test_place_is_a_configured_grain_with_a_declared_scope_per_dataset() -> None
 def test_only_the_newest_years_are_requested_at_place_grain() -> None:
     """Covers: ETL-055 — place volume is bounded to the newest years by default."""
     years = [2019, 2020, 2021, 2022, 2023]
-    assert CONFIG.place_recent_years == 1
-    assert CONFIG.place_years("acs5", years) == {2023}
-    assert CONFIG.model_copy(update={"place_recent_years": 3}).place_years(
+    newest = CONFIG.model_copy(update={"place_year_scope": "newest"})
+    assert newest.place_years("acs5", years) == {2023}
+    assert CONFIG.model_copy(update={"place_year_scope": "newest:3"}).place_years(
         "acs1", years
     ) == {2021, 2022, 2023}
     assert (
-        CONFIG.model_copy(update={"place_recent_years": 0}).place_years("acs5", years)
+        CONFIG.model_copy(update={"place_year_scope": "none"}).place_years(
+            "acs5", years
+        )
         == set()
     )
     assert (

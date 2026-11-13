@@ -5,7 +5,8 @@
 
 CREATE SCHEMA IF NOT EXISTS gold_irs_migration;
 
--- Every published capture of every flow row: the as-released surface. A
+-- Every published capture of every flow row: the as-released surface. New
+-- columns go last, so CREATE OR REPLACE keeps the dependent views. A
 -- revised file is a second row with its own capture and retrieval time,
 -- never an overwrite. SOI names no release, so the release identity is the
 -- read.
@@ -34,7 +35,10 @@ SELECT fact.direction,
        TO_CHAR(fact.retrieved_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS release_key,
        fact.source_record_id,
        fact.capture_id,
-       fact.run_id
+       fact.run_id,
+       -- What `individuals` counts: exemptions on the year-2 return until
+       -- personal exemptions ended with tax year 2018, people from 2018-2019.
+       CASE WHEN fact.year2 >= 2019 THEN 'individuals' ELSE 'exemptions' END AS people_basis
 FROM silver_irs_migration.fact_flow AS fact
 JOIN control.irs_migration_file AS file ON file.capture_id = fact.capture_id
 WHERE file.status = 'published';
@@ -74,14 +78,18 @@ SELECT revision.direction || ':' || revision.category || ':' || measure.measure 
        revision.release_key,
        revision.source_record_id,
        revision.capture_id,
-       revision.run_id
+       revision.run_id,
+       revision.people_basis
 FROM gold_irs_migration.flow_revision AS revision
 CROSS JOIN (VALUES ('returns', 'returns'), ('individuals', 'individuals'), ('agi', 'thousands of dollars'))
     AS measure(measure, unit)
 WHERE revision.category IN (
     'total_us_and_foreign', 'total_us', 'total_same_state', 'total_different_state',
     'total_foreign', 'non_migrants'
-);
+)
+  -- Files before 1995-1996 publish no AGI: no AGI row, rather than a
+  -- valid row without a number.
+  AND NOT (measure.measure = 'agi' AND revision.value_status = 'valid' AND revision.agi IS NULL);
 
 CREATE OR REPLACE VIEW gold_irs_migration.total_observation_latest AS
 SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.year_pair)

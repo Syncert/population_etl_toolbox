@@ -10,6 +10,7 @@ from uuid import UUID
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.utils.trigger_rule import TriggerRule
 
 from data_ingestion_toolbox.silver_ref.geography_guard import (
     require_shared_geography_loaded,
@@ -121,6 +122,43 @@ def _replay_registered_product(capture: dict[str, Any]) -> dict[str, Any]:
     return {**capture, "silver_row_count": count, "publication_required": True}
 
 
+def _backfill_return_a_source_rows() -> dict[str, Any]:
+    """Record the source rows of Return A years loaded before they were kept.
+
+    Reads only years whose capture has no source row yet, so once every
+    loaded year is covered this is one index probe per year (LOADER RULE: the
+    scheduled run closes the gap, never a manual history run).
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.lineage import backfill_source_rows
+
+    return backfill_source_rows(_get_postgres_hook().get_conn)
+
+
+def _load_return_a() -> dict[str, Any]:
+    """Load every registered Return A year the warehouse lacks or the FBI revised.
+
+    LOADER RULE: the registry periods are the data years 2015 through last
+    year, all asked every week, so a year never loaded is loaded here and
+    never by a manual history run; last year's file may be absent until the
+    FBI publishes it. CHURN RULE: an unchanged file is skipped unread and a
+    revised one writes only the rows that differ (``return_a.load``).
+
+    It runs after the lineage backfill whatever that task's outcome, so the
+    two never contend for the Return A lock, and checks the shared geography
+    itself for the same reason.
+    """
+    from data_ingestion_toolbox.fbi_ucr.return_a.load import load_registered_years
+
+    _require_shared_geography()
+    summary = load_registered_years(_get_postgres_hook().get_conn)
+    log = logging.getLogger("airflow.task")
+    log.info("Return A: %s", summary)
+    if summary["failed_years"]:
+        # Loaded years are kept; the retry (or next week) skips them.
+        raise RuntimeError(f"Return A years not loaded: {summary['failed_years']}")
+    return {key: summary[key] for key in ("run_id", "release_key", "published")}
+
+
 def _refresh_time_rollups() -> int:
     """Derive quarters and years of the FBI UCR counts with an approved method."""
     from data_ingestion_toolbox.semantics.rollups import refresh_calendar_rollups
@@ -162,12 +200,37 @@ with DAG(
         python_callable=_require_shared_geography,
     )
 
+    # Independent of the CDE products: it only reads raw_capture and inserts
+    # lineage rows, so a failure here never holds a publication back.
+    return_a_source_rows = PythonOperator(
+        task_id="backfill_return_a_source_rows",
+        python_callable=_backfill_return_a_source_rows,
+    )
+    ensure_schema >> return_a_source_rows
+
+    # The Return A master files (registry periods = data years). After the
+    # backfill whatever its outcome (ALL_DONE), so neither defers the other on
+    # the shared advisory lock; the CDE signed-URL host is the API's, hence
+    # its pool.
+    return_a_load = PythonOperator(
+        task_id="load_return_a_master_files",
+        python_callable=_load_return_a,
+        pool="fbi_cde_api",
+        trigger_rule=TriggerRule.ALL_DONE,
+        retry_delay=timedelta(minutes=30),
+    )
+    [require_shared_geography, return_a_source_rows] >> return_a_load
+
     # Derived from every product's latest published release, so it waits for
     # every publication in the run.
     time_rollups = PythonOperator(
         task_id="refresh_time_rollups",
         python_callable=_refresh_time_rollups,
     )
+    # Return A facts roll up with the rest, so its load gates them too: a
+    # failed year (the CDE's 503s) retries twice before the roll-ups wait a
+    # week.
+    return_a_load >> time_rollups
 
     for registered_product in enabled_products():
         capture = PythonOperator(

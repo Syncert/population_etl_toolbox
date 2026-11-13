@@ -43,12 +43,34 @@ SHARED_API_PREFIXES: tuple[str, ...] = (
     # sources (API-165): a derived reading owned by the platform, not a
     # provider data product.
     "/api/v1/place/distinctive",
+    # Age and sex structure (ADR-0013): sums and ratios of one ACS table's
+    # lines, computed at request time; a derived reading owned by the
+    # platform, not a provider data product or warehouse publisher.
+    "/api/v1/age-structure",
+    # One tract's history on its 2020 boundary (API-190): the published ACS
+    # values beside the derived comparable series, read from gold views the
+    # ACS pipeline publishes; a reading owned by the platform.
+    "/api/v1/place/tract-history",
+    # Taxes and public money (taxes-and-public-money T-6): shares of BEA, IRS
+    # SOI and ACS figures under approved pairings, the Census tax burden view,
+    # and governor tenures from the elections source joined to them; a
+    # derived reading across five sources, owned by the platform.
+    "/api/v1/public-money",
+    "/api/v1/governor-terms",
+    # Where public money goes (where-public-money-goes slice 5): each
+    # government level's spending lines for one place, read from the Treasury,
+    # Census government finance and USAspending gold views side by side and
+    # never added; a reading across three sources, owned by the platform.
+    "/api/v1/where-money-goes",
     "/api/v1/analysis-configurations",
     "/api/v1/evidence-packets",
     # Identity (ADR-0005). Owned by the API platform and by no data product:
     # a sign-in reaches no source, no gold schema, and no warehouse row.
     "/api/v1/auth",
     "/api/v1/account",
+    # The admin warehouse pages describe every source at once (inventory,
+    # coverage, catalog schema); owned by the platform, not by one product.
+    "/api/v1/admin",
 )
 
 
@@ -291,6 +313,10 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             # latest-release projection, served by /api/v1/crime/county-rollup.
             "gold_fbi.county_rollup",
             "gold_fbi.latest_county_rollup",
+            # The county rate the FBI's way (ADR-0012), served by
+            # /api/v1/observations/derived for its agency_rate pairings.
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
         ),
         source_api_routes=("/api/v1/crime/county-rollup",),
         neutral_api_routes=("/api/v1/catalog/metrics", "/api/v1/catalog/sources"),
@@ -458,6 +484,240 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="census_decennial.count",
+        source="CENSUS_DECENNIAL",
+        publisher_schema="gold_census_decennial",
+        datasets=("pl",),
+        fixtures=(
+            "tests/fixtures/census_decennial/pl_us_1.json",
+            "tests/fixtures/census_decennial/pl_state_all.json",
+            "tests/fixtures/census_decennial/pl_county_all.json",
+            "tests/fixtures/census_decennial/pl_tract_55.json",
+        ),
+        serving_relations=(
+            "gold_census_decennial.count_revision",
+            "gold_census_decennial.count_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_decennial_pipeline.py::"
+            "test_group_quarters_reach_the_neutral_api_for_dane_and_its_tracts"
+        ),
+        api_absence_reason=(
+            "The 2020 Census counts publish no source-specific HTTP route: each "
+            "row is the neutral observation shape with its variable, universe "
+            "and parent variable as dimensions, so `/api/v1/observations` "
+            "serves them through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="cms_ltc.area_total",
+        source="CMS_LTC",
+        publisher_schema="gold_cms_ltc",
+        datasets=("cost_report", "characteristics"),
+        fixtures=(
+            "tests/fixtures/cms_ltc/data_json_excerpt.json",
+            "tests/fixtures/cms_ltc/CostReportsnf_Final_24_wi.csv",
+            "tests/fixtures/cms_ltc/Form_671_Q2_2026_wi.csv",
+            "tests/fixtures/cms_ltc/Form_671_Q3_2026_wi.csv",
+        ),
+        serving_relations=(
+            "gold_cms_ltc.area_revision",
+            "gold_cms_ltc.area_latest",
+            "gold_cms_ltc.facility_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cms_ltc_pipeline.py::"
+            "test_dane_nursing_home_residents_and_beds_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The CMS long-term care files publish no source-specific HTTP "
+            "route: each area sum is the neutral observation shape with its "
+            "series, basis and facility count as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="nces_ipeds.area_total",
+        source="NCES_IPEDS",
+        publisher_schema="gold_nces_ipeds",
+        datasets=("HD", "IC", "EFA"),
+        fixtures=(
+            "tests/fixtures/nces_ipeds/HD2023_wi.zip",
+            "tests/fixtures/nces_ipeds/IC2023_wi.zip",
+            "tests/fixtures/nces_ipeds/EF2023A_wi.zip",
+            "tests/fixtures/nces_ipeds/HD2012_uw.zip",
+            "tests/fixtures/nces_ipeds/IC2012_uw.zip",
+            "tests/fixtures/nces_ipeds/EF2012A_uw.zip",
+        ),
+        serving_relations=(
+            "gold_nces_ipeds.area_revision",
+            "gold_nces_ipeds.area_latest",
+            "gold_nces_ipeds.institution_year",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_nces_ipeds_pipeline.py::"
+            "test_dane_college_housing_and_enrolment_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The IPEDS files publish no source-specific HTTP route: each area "
+            "sum is the neutral observation shape with its basis and "
+            "institution count as dimensions, so `/api/v1/observations` "
+            "serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="hhs_hospital_capacity.area_week",
+        source="HHS_HOSPITAL_CAPACITY",
+        publisher_schema="gold_hhs_hospital_capacity",
+        datasets=("anag-cw7u",),
+        fixtures=(
+            "tests/fixtures/hhs_hospital_capacity/anag_view.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_0.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_400.json",
+            "tests/fixtures/hhs_hospital_capacity/anag_dane_offset_800.json",
+        ),
+        serving_relations=(
+            "gold_hhs_hospital_capacity.area_revision",
+            "gold_hhs_hospital_capacity.area_latest",
+            "gold_hhs_hospital_capacity.facility_latest",
+            "gold_hhs_hospital_capacity.facility_week",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_hhs_hospital_capacity_pipeline.py::"
+            "test_dane_weekly_hospital_beds_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The HHS weekly file publishes no source-specific HTTP route: each "
+            "area sum is the neutral observation shape with its reporting, "
+            "suppressed and missing hospital counts as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="cdc_covid_cases.area_month",
+        source="CDC_COVID_CASES",
+        publisher_schema="gold_cdc_covid_cases",
+        datasets=("n8mc-b4w4",),
+        fixtures=(
+            "tests/fixtures/cdc_covid_cases/n8mc_view.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_index.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_wi_2021-11.json",
+            "tests/fixtures/cdc_covid_cases/n8mc_ca_2022-01.json",
+        ),
+        serving_relations=(
+            "gold_cdc_covid_cases.area_revision",
+            "gold_cdc_covid_cases.area_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cdc_covid_cases_pipeline.py::"
+            "test_dane_monthly_case_records_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The CDC case counts publish no source-specific HTTP route: each "
+            "count is the neutral observation shape with its age group, case "
+            "records and unplaced records as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="cdc_ilinet.week_value",
+        source="CDC_ILINET",
+        publisher_schema="gold_cdc_ilinet",
+        datasets=("fluview_ilinet",),
+        fixtures=(
+            "tests/fixtures/cdc_ilinet/fluview_init.json",
+            "tests/fixtures/cdc_ilinet/ilinet_national.zip",
+            "tests/fixtures/cdc_ilinet/ilinet_hhs_region.zip",
+            "tests/fixtures/cdc_ilinet/ilinet_state.zip",
+        ),
+        serving_relations=(
+            "gold_cdc_ilinet.area_revision",
+            "gold_cdc_ilinet.area_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_cdc_ilinet_pipeline.py::"
+            "test_wisconsin_weekly_ili_reaches_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "FluView ILINet publishes no source-specific HTTP route: each "
+            "weekly figure is the neutral observation shape with its MMWR "
+            "week and CDC's own text as dimensions, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="census_govfin.taxes_and_revenue",
+        source="CENSUS_GOVFIN",
+        publisher_schema="gold_census_govfin",
+        datasets=("cog_units", "asslgf", "qtax"),
+        fixtures=(
+            "tests/fixtures/census_govfin/finestdat_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/fin_pid_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/statetypepu_2022_excerpt.txt",
+            "tests/fixtures/census_govfin/asslgf_2022_us.json",
+            "tests/fixtures/census_govfin/asslgf_2022_state.json",
+            "tests/fixtures/census_govfin/qtax_2024_us.json",
+            "tests/fixtures/census_govfin/qtax_2024_state.json",
+        ),
+        serving_relations=(
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_census_govfin_pipeline.py::"
+            "test_county_area_and_state_taxes_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "Census government finance publishes no source-specific HTTP route: "
+            "each figure is the neutral observation shape with its government "
+            "level, derivation and record coverage as declared dimensions, so "
+            "`/api/v1/observations` serves it. The tax mix and tax burden views "
+            "get routes in the taxes API step."
+        ),
+    ),
+    DataProductE2E(
         product_id="irs_migration.county_flows",
         source="IRS_MIGRATION",
         publisher_schema="gold_irs_migration",
@@ -481,6 +741,71 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         owner=(
             "tests/e2e/test_irs_migration_pipeline.py::"
             "test_top_origins_and_destinations_reach_the_api_with_withheld_categories"
+        ),
+    ),
+    DataProductE2E(
+        product_id="dol_childcare.prices",
+        source="DOL_CHILDCARE",
+        publisher_schema="gold_dol_childcare",
+        datasets=("ndcp2022",),
+        fixtures=("tests/fixtures/dol_childcare/NDCP2022.xlsx",),
+        serving_relations=(
+            "gold_dol_childcare.observation_revision",
+            "gold_dol_childcare.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_dol_childcare_pipeline.py::"
+            "test_county_childcare_prices_reach_the_neutral_api_with_imputation_flags"
+        ),
+        api_absence_reason=(
+            "NDCP childcare prices publish no source-specific HTTP route: each "
+            "price is the neutral observation shape with care-type, age-group "
+            "and imputation dimensions, so `/api/v1/observations` serves them "
+            "through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
+        product_id="irs_soi.income",
+        source="IRS_SOI",
+        publisher_schema="gold_irs_soi",
+        datasets=(
+            "county_total:1989",
+            "county_total:2010",
+            "county_agi:2010",
+            "county_total:2023",
+            "county_agi:2023",
+            "state:2023",
+        ),
+        fixtures=(
+            "tests/fixtures/irs_soi/1989countyincome.zip",
+            "tests/fixtures/irs_soi/2010countydata.zip",
+            "tests/fixtures/irs_soi/23incyallnoagi.csv",
+            "tests/fixtures/irs_soi/23incyallagi.csv",
+            "tests/fixtures/irs_soi/23in55cmcsv.csv",
+        ),
+        serving_relations=(
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_irs_soi_pipeline.py::"
+            "test_county_and_state_income_reach_the_neutral_api_by_agi_band"
+        ),
+        api_absence_reason=(
+            "IRS SOI income publishes no source-specific HTTP route: its rows "
+            "are the neutral observation shape with an AGI band dimension, so "
+            "`/api/v1/observations` serves them through the dispatch registry "
+            "and a source route would repeat it."
         ),
     ),
     DataProductE2E(
@@ -631,6 +956,126 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="noaa_climdiv.county_monthly_series",
+        source="NOAA_CLIMDIV",
+        publisher_schema="gold_noaa_climdiv",
+        datasets=("climdiv-county:v1.0.0",),
+        fixtures=(
+            "tests/fixtures/noaa_climdiv/climdiv-pcpncy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmpccy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmaxcy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-tmincy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-hddccy-v1.0.0-20261105",
+            "tests/fixtures/noaa_climdiv/climdiv-cddccy-v1.0.0-20261105",
+        ),
+        serving_relations=(
+            "gold_noaa_climdiv.observation_revision",
+            "gold_noaa_climdiv.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_climdiv_pipeline.py::"
+            "test_county_months_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "NOAA nClimDiv publishes no source-specific HTTP route: each county "
+            "month is the neutral observation shape with its calendar month and "
+            "NCEI's own text as declared dimensions, so `/api/v1/observations` "
+            "serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="treasury_mts.receipts_and_outlays",
+        source="TREASURY_MTS",
+        publisher_schema="gold_treasury_mts",
+        datasets=("mts_table_9:v1",),
+        fixtures=("tests/fixtures/treasury_mts/mts_table_9_2026-08_2026-09.json",),
+        serving_relations=(
+            "gold_treasury_mts.observation_revision",
+            "gold_treasury_mts.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_treasury_mts_pipeline.py::"
+            "test_fiscal_year_outlays_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "The Monthly Treasury Statement publishes no source-specific HTTP "
+            "route: each fiscal-year line total is the neutral observation "
+            "shape for the nation, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="usaspending.place_of_performance_obligations",
+        source="USASPENDING",
+        publisher_schema="gold_usaspending",
+        datasets=("usaspending_geography:v1",),
+        fixtures=(
+            "tests/fixtures/usaspending/state_all_fy2024.json",
+            "tests/fixtures/usaspending/county_grants_fy2024_wi.json",
+            "tests/fixtures/usaspending/awarding_agencies_fy2024.json",
+        ),
+        serving_relations=(
+            "gold_usaspending.observation_revision",
+            "gold_usaspending.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_usaspending_pipeline.py::"
+            "test_place_obligations_reach_the_neutral_api_as_published"
+        ),
+        api_absence_reason=(
+            "USAspending award obligations publish no source-specific HTTP "
+            "route: each state or county fiscal-year amount is the neutral "
+            "observation shape, so `/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="noaa_storm_events.event_counts",
+        source="NOAA_STORM_EVENTS",
+        publisher_schema="gold_noaa_storm_events",
+        datasets=("storm-events-details:v1.0", "nws-zone-county"),
+        fixtures=(
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d1950_c20260323.csv.gz",
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d1995_c20260323.csv.gz",
+            "tests/fixtures/noaa_storm_events/StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz",
+            "tests/fixtures/noaa_storm_events/bp16ap26.dbx",
+            "tests/fixtures/noaa_storm_events/bp18mr25.dbx",
+        ),
+        serving_relations=(
+            "gold_noaa_storm_events.observation_revision",
+            "gold_noaa_storm_events.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_noaa_storm_events_pipeline.py::"
+            "test_event_counts_reach_the_neutral_api_as_counted"
+        ),
+        api_absence_reason=(
+            "The Storm Events Database publishes no source-specific HTTP route: each "
+            "count and impact is the neutral observation shape with its event type and "
+            "how many events were county- or zone-reported as declared dimensions, so "
+            "`/api/v1/observations` serves it; the event records are "
+            "`gold_noaa_storm_events.event_detail`."
+        ),
+    ),
+    DataProductE2E(
         product_id="fcc_bdc.broadband_availability",
         source="FCC_BDC",
         publisher_schema="gold_fcc_bdc",
@@ -658,6 +1103,45 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
             "each row is the neutral observation shape with its as-of date, the "
             "FCC's revision and the unit denominator as declared dimensions, so "
             "`/api/v1/observations` serves it."
+        ),
+    ),
+    DataProductE2E(
+        product_id="elections.presidential_vote",
+        source="ELECTIONS",
+        publisher_schema="gold_elections",
+        datasets=(
+            "medsl:countypres_2000-2024",
+            "medsl:1976-2020-president",
+            "medsl:1976-2024-senate-state",
+            "medsl:1976-2024-house",
+            "congress-legislators:gh-pages",
+            "wikidata:governors",
+        ),
+        fixtures=(
+            "tests/fixtures/elections/county_president.csv",
+            "tests/fixtures/elections/state_president.csv",
+            "tests/fixtures/elections/legislators-current.json",
+            "tests/fixtures/elections/wikidata-governors.json",
+        ),
+        serving_relations=(
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_elections_pipeline.py::"
+            "test_presidential_margins_reach_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "The elections source publishes no source-specific HTTP route yet: "
+            "each presidential row is the neutral observation shape with how the "
+            "share or margin is counted and the leading party as declared "
+            "dimensions, so `/api/v1/observations` serves it. Seat terms and "
+            "contest results get their own routes in the API step (E-4)."
         ),
     ),
     DataProductE2E(

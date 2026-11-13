@@ -93,6 +93,11 @@ def _write_locations(cursor: Any, run_id: str, capture_id: str, parsed: Any) -> 
             status = EXCLUDED.status,
             reason_code = EXCLUDED.reason_code,
             resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
         """,
         (SOURCE_CODE, run_id),
     )
@@ -281,9 +286,33 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     finally:
         connection.close()
     if published:
+        _analyze(connection_factory)
         from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
 
         emit_latest_publisher_ready(
             connection_factory, publisher_schema="gold_nces_ccd"
         )
     return published
+
+
+#: Refreshed after every publication, so the gold views are planned from real
+#: counts. Never analysed, a county read of students per teacher was planned
+#: as a nested loop of every school count against every placement (18.6 s on
+#: the internal stack, 2026-11-10; about 0.5 s once analysed).
+ANALYZED_RELATIONS = (
+    "control.nces_ccd_file",
+    "silver_nces_ccd.school_location",
+    "silver_nces_ccd.school_directory",
+    "silver_nces_ccd.school_count",
+)
+
+
+def _analyze(connection_factory: Callable[[], Any]) -> None:
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            for relation in ANALYZED_RELATIONS:
+                cursor.execute(f"ANALYZE {relation}")
+        connection.commit()
+    finally:
+        connection.close()

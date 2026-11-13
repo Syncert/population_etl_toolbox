@@ -108,12 +108,26 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-00000000010d', 'CENSUS_LODES', 'success'),
     ('00000000-0000-4000-8000-000000000e9a', 'EPA_AQS', 'success'),
     ('00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'success'),
+    ('00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'success'),
+    ('00000000-0000-4000-8000-00000000075a', 'TREASURY_MTS', 'success'),
+    ('00000000-0000-4000-8000-0000000005a5', 'USASPENDING', 'success'),
+    ('00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'success'),
     ('00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'success'),
     ('00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'success'),
+    ('00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'success'),
+    ('00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'success'),
     ('00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'success'),
     ('00000000-0000-4000-8000-000000000d0d', 'HUD_FMR_IL', 'success'),
     ('00000000-0000-4000-8000-000000000ce5', 'NCES_CCD', 'success'),
-    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success')
+    ('00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'success'),
+    ('00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'success'),
+    ('00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'success'),
+    ('00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'success'),
+    ('00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'success'),
+    ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success'),
+    ('00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'success'),
+    ('00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'success'),
+    ('00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -152,10 +166,22 @@ INSERT INTO control.ingestion_request (
      'EPA_AQS', 'smoke://seed', '{}'::JSONB, '867caaa54cc939c28f650c85e03bac20cd781d68037f65698b6061b0377a927f', 'captured'),
     ('00000000-0000-4000-9000-0000000000aa', '00000000-0000-4000-8000-0000000000aa',
      'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB, '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', 'captured'),
+    ('00000000-0000-4000-9000-000000000cd1', '00000000-0000-4000-8000-000000000cd1',
+     'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB, 'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', 'captured'),
+    ('00000000-0000-4000-9000-00000000075a', '00000000-0000-4000-8000-00000000075a',
+     'TREASURY_MTS', 'smoke://seed', '{}'::JSONB, 'fea5ec5e83f1121d5f5b6349684c02c22860e50f30724ea5e627df0e6f5edfa6', 'captured'),
+    ('00000000-0000-4000-9000-0000000005a5', '00000000-0000-4000-8000-0000000005a5',
+     'USASPENDING', 'smoke://seed', '{}'::JSONB, 'b69e7a8d84866c056fd4077433fb788fe92aca53d31093c1ba5847b1c9f0b93e', 'captured'),
+    ('00000000-0000-4000-9000-0000000005e1', '00000000-0000-4000-8000-0000000005e1',
+     'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB, '230c6a6c4345a9b26b793deab0f1c9a61b7ce7d9670561465f7a1d702edf6153', 'captured'),
     ('00000000-0000-4000-9000-000000000fcc', '00000000-0000-4000-8000-000000000fcc',
      'FCC_BDC', 'smoke://seed', '{}'::JSONB, '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', 'captured'),
     ('00000000-0000-4000-9000-000000000fe1', '00000000-0000-4000-8000-000000000fe1',
      'FEMA_NRI', 'smoke://seed', '{}'::JSONB, '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', 'captured'),
+    ('00000000-0000-4000-9000-000000000e1e', '00000000-0000-4000-8000-000000000e1e',
+     'ELECTIONS', 'smoke://seed', '{}'::JSONB, '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', 'captured'),
+    ('00000000-0000-4000-9000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+     'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB, '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', 'captured'),
     ('00000000-0000-4000-9000-000000000f4f', '00000000-0000-4000-8000-000000000f4f',
      'FHFA_HPI', 'smoke://seed', '{}'::JSONB, 'f2e7ee8ee51eca3509f4cfeb8fe40010dfd40869385e7de053b889d337e0c3cb', 'captured'),
     ('00000000-0000-4000-9000-000000000d0d', '00000000-0000-4000-8000-000000000d0d',
@@ -163,7 +189,23 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000ce5', '00000000-0000-4000-8000-000000000ce5',
      'NCES_CCD', 'smoke://seed', '{}'::JSONB, '8810aaf0efde64c71b93928d2098f1d062c906dae797a9469e65d04f57c39668', 'captured'),
     ('00000000-0000-4000-9000-000000000e45', '00000000-0000-4000-8000-000000000e45',
-     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured')
+     'USDA_ERS', 'smoke://seed', '{}'::JSONB, '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', 'captured'),
+    ('00000000-0000-4000-9000-000000000501', '00000000-0000-4000-8000-000000000501',
+     'IRS_SOI', 'smoke://seed', '{}'::JSONB, '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', 'captured'),
+    ('00000000-0000-4000-9000-000000000dc0', '00000000-0000-4000-8000-000000000dc0',
+     'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB, 'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', 'captured'),
+    ('00000000-0000-4000-9000-000000000dec', '00000000-0000-4000-8000-000000000dec',
+     'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB, 'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', 'captured'),
+    ('00000000-0000-4000-9000-000000000c71', '00000000-0000-4000-8000-000000000c71',
+     'CMS_LTC', 'smoke://seed', '{}'::JSONB, '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', 'captured'),
+    ('00000000-0000-4000-9000-0000000001ed', '00000000-0000-4000-8000-0000000001ed',
+     'NCES_IPEDS', 'smoke://seed', '{}'::JSONB, 'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', 'captured'),
+    ('00000000-0000-4000-9000-00000000044b', '00000000-0000-4000-8000-00000000044b',
+     'HHS_HOSPITAL_CAPACITY', 'smoke://seed', '{}'::JSONB, '8b4de6708e7e19ceb03930abb3f71c52b1377f6c229b6b2d0630f90321cf7120', 'captured'),
+    ('00000000-0000-4000-9000-000000000c19', '00000000-0000-4000-8000-000000000c19',
+     'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB, '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', 'captured'),
+    ('00000000-0000-4000-9000-00000000f1e7', '00000000-0000-4000-8000-00000000f1e7',
+     'CDC_ILINET', 'smoke://seed', '{}'::JSONB, 'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -227,6 +269,22 @@ INSERT INTO raw_capture.response_capture (
      '00000000-0000-4000-8000-0000000000aa', 'NOAA_NORMALS', 'smoke://seed', '{}'::JSONB,
      '704e1b270076137d346303215f65e90f673f32938b0996e07c4b80f3f8d4acc4', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000cd1', '00000000-0000-4000-9000-000000000cd1',
+     '00000000-0000-4000-8000-000000000cd1', 'NOAA_CLIMDIV', 'smoke://seed', '{}'::JSONB,
+     'b8fc3d25fa0dd97b2aad8365752f7ec1a3f6cb9d4442b92223637e3b3d6a8dd2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000075a', '00000000-0000-4000-9000-00000000075a',
+     '00000000-0000-4000-8000-00000000075a', 'TREASURY_MTS', 'smoke://seed', '{}'::JSONB,
+     'fea5ec5e83f1121d5f5b6349684c02c22860e50f30724ea5e627df0e6f5edfa6', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000005a5', '00000000-0000-4000-9000-0000000005a5',
+     '00000000-0000-4000-8000-0000000005a5', 'USASPENDING', 'smoke://seed', '{}'::JSONB,
+     'b69e7a8d84866c056fd4077433fb788fe92aca53d31093c1ba5847b1c9f0b93e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000005e1', '00000000-0000-4000-9000-0000000005e1',
+     '00000000-0000-4000-8000-0000000005e1', 'NOAA_STORM_EVENTS', 'smoke://seed', '{}'::JSONB,
+     '230c6a6c4345a9b26b793deab0f1c9a61b7ce7d9670561465f7a1d702edf6153', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000fcc', '00000000-0000-4000-9000-000000000fcc',
      '00000000-0000-4000-8000-000000000fcc', 'FCC_BDC', 'smoke://seed', '{}'::JSONB,
      '8639ff5d5f7518dea854d19fc48d45e0cc1ced0bb63e230b2bf29fe6af0add6a', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
@@ -234,6 +292,14 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000fe1', '00000000-0000-4000-9000-000000000fe1',
      '00000000-0000-4000-8000-000000000fe1', 'FEMA_NRI', 'smoke://seed', '{}'::JSONB,
      '3905b3189883473e55eb8e3576335c6c9f28854bb5b3ac4123168dcb3ec070c7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e1e', '00000000-0000-4000-9000-000000000e1e',
+     '00000000-0000-4000-8000-000000000e1e', 'ELECTIONS', 'smoke://seed', '{}'::JSONB,
+     '99b97623b9e580c7955bea51e0423fb422cdc761a0294e36a5a70e4fd3db5d47', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-9000-0000000006f1',
+     '00000000-0000-4000-8000-0000000006f1', 'CENSUS_GOVFIN', 'smoke://seed', '{}'::JSONB,
+     '0d22fc01bcebc964591c62614b2c4e51ec6f5811014a45817ce6709b42902eb9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/zip',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
     ('00000000-0000-4000-a000-000000000f4f', '00000000-0000-4000-9000-000000000f4f',
      '00000000-0000-4000-8000-000000000f4f', 'FHFA_HPI', 'smoke://seed', '{}'::JSONB,
@@ -250,6 +316,38 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-000000000e45', '00000000-0000-4000-9000-000000000e45',
      '00000000-0000-4000-8000-000000000e45', 'USDA_ERS', 'smoke://seed', '{}'::JSONB,
      '46c01d80a5c7b379400ed9908fef72ca8cdf1feb7a00a953356e3770eadae0c8', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000501', '00000000-0000-4000-9000-000000000501',
+     '00000000-0000-4000-8000-000000000501', 'IRS_SOI', 'smoke://seed', '{}'::JSONB,
+     '6312db22d0a1fcd7c083326048ac1ff5ab5ea78ec8c4aa8e8f3e00870f65ddda', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'text/csv',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000dc0', '00000000-0000-4000-9000-000000000dc0',
+     '00000000-0000-4000-8000-000000000dc0', 'DOL_CHILDCARE', 'smoke://seed', '{}'::JSONB,
+     'd01c4a5e7b2f9083c6e1a4d7b0f3e6c9a2d5f8b1e4c7a0d3f6b9e2c5a8d1f4b7', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000dec', '00000000-0000-4000-9000-000000000dec',
+     '00000000-0000-4000-8000-000000000dec', 'CENSUS_DECENNIAL', 'smoke://seed', '{}'::JSONB,
+     'fb5a6a07b1ba26ca2587481c803e47dc44475ef9a499cf359757e0fec52d85c9', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000c71', '00000000-0000-4000-9000-000000000c71',
+     '00000000-0000-4000-8000-000000000c71', 'CMS_LTC', 'smoke://seed', '{}'::JSONB,
+     '4f2d20998a80f1e3c1252cb75e66e3f0c3a1425f6f055a7eba7ba185ae97697e', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-0000000001ed', '00000000-0000-4000-9000-0000000001ed',
+     '00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'smoke://seed', '{}'::JSONB,
+     'd5667b1a38628d217f02e1eb9b600acde09812c5ffc9d9953e677d23813fb950', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000044b', '00000000-0000-4000-9000-00000000044b',
+     '00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'smoke://seed', '{}'::JSONB,
+     '8b4de6708e7e19ceb03930abb3f71c52b1377f6c229b6b2d0630f90321cf7120', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000c19', '00000000-0000-4000-9000-000000000c19',
+     '00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB,
+     '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-00000000f1e7', '00000000-0000-4000-9000-00000000f1e7',
+     '00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'smoke://seed', '{}'::JSONB,
+     'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -796,6 +894,38 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- IRS SOI income -- one county's returns from a county totals file. COUNTY
+-- only, like the migration rows above.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.irs_soi_file (
+    run_id, file_kind, tax_year, capture_id, captured_row_count,
+    quarantined_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000501', 'county_total', 2098, '00000000-0000-4000-a000-000000000501', 1, 0, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_measure (measure_id, soi_column, measure_label, unit, parser_contract_version)
+VALUES ('returns', 'N1', 'Number of returns', 'returns', 'irs_soi_income:v1')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.dim_agi_band (agi_band, band_label, lower_dollars, upper_dollars)
+VALUES ('all', 'All returns', NULL, NULL)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_irs_soi.fact_observation (
+    file_kind, metric_key, tax_year, geo_id, capture_id, run_id, measure_id,
+    agi_band, agi_stub, retrieved_at, geo_sk, geo_type, geography_status,
+    value_source, value, value_status, source_record_id
+)
+SELECT 'county_total', 'returns', 2098, 'state:55|county:025', '00000000-0000-4000-a000-000000000501',
+       '00000000-0000-4000-8000-000000000501', 'returns', 'all', 0, '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved',
+       '289000.0000', 289000, 'valid',
+       '9b0c1d2e3f405162738495a6b7c8d9eafb0c1d2e3f405162738495a6b7c8d9ea'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- EIA weekly retail gasoline -- a state's regular-grade price for one week.
 -- EIA publishes no county, so this is the STATE exception to rule 2. EIA
 -- does not publish Wisconsin; the state is a fixture, like every value here.
@@ -855,7 +985,7 @@ ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Census LEHD LODES -- workplace jobs summed from census blocks to one
--- county, served from views over a published state slice.
+-- county, served from the sums computed when the state slice publishes.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO control.census_lodes_slice (
@@ -882,6 +1012,11 @@ SELECT '00000000-0000-4000-8000-00000000010d', 'wac', 'C000', 'state:55|county:0
        'resolved', 1, '345678', 345678, 'valid'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
+
+-- The served sums are computed at publish, as `publish_run` does.
+SELECT gold_census_lodes.refresh_observation_fact(
+    ARRAY['00000000-0000-4000-8000-00000000010d']::UUID[]
+);
 
 -- ---------------------------------------------------------------------------
 -- EPA AirData -- one complete monitor's PM2.5 annual mean, which the county
@@ -946,6 +1081,134 @@ INSERT INTO silver_noaa_normals.station_normal (
 ) ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- NOAA nClimDiv -- one published county month of one element, as NCEI
+-- writes it. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_climdiv_file (
+    run_id, file_element, file_name, version, release_stamp, capture_id,
+    payload_checksum, line_count, value_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000cd1', 'pcpn', 'climdiv-pcpncy-v1.0.0-20981231', '1.0.0', '20981231',
+    '00000000-0000-4000-a000-000000000cd1', '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_climdiv.county_month (
+    ncei_state_code, county_fips, measure, year, month, state_fips, geo_id, geo_sk,
+    geography_status, value_source, value, value_status, run_id, capture_id,
+    source_line, source_record_id
+)
+SELECT '47', '025', 'monthly_precipitation_total', 2098, 7, '55', 'state:55|county:025', geo_sk,
+       'resolved', '4.12', 4.12, 'valid', '00000000-0000-4000-8000-000000000cd1', '00000000-0000-4000-a000-000000000cd1', 1,
+       'b64f3958a8808f44a79cc8b2bb97f72c'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Treasury MTS -- one published September statement line (total outlays),
+-- whose fiscal-year-to-date column is the fiscal year's total. NATIONAL only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.treasury_mts_page (
+    run_id, page_number, since_record_date, capture_id, payload_checksum,
+    row_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-00000000075a', 1, '2098-09-30', '00000000-0000-4000-a000-00000000075a',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_treasury_mts.statement_line (
+    record_date, line_code, classification_id, parent_id, classification_desc,
+    sequence_level, sequence_number_cd, src_line_nbr, print_order_nbr, data_type_cd,
+    record_type_cd, fiscal_year, fiscal_quarter, calendar_month, current_month_source,
+    current_month_amount, value_source, current_fytd_amount, prior_fytd_source,
+    prior_fytd_amount, value_status, run_id, capture_id, source_row_index, source_record_id
+) VALUES (
+    '2098-09-30', '340', '59498966', '59498945', 'Total', 2, '2.20', 33, '33', 'T',
+    'SL', 2098, 4, 9, '584774866340.26', 584774866340.26, '7395799983313.23',
+    7395799983313.23, '7009985661849.26', 7009985661849.26, 'valid',
+    '00000000-0000-4000-8000-00000000075a', '00000000-0000-4000-a000-00000000075a', 1,
+    '0c7d6f6f1b1e4b5a9a3d2e7f8c9b0a12'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- USAspending -- one published county answer (all awards) for Dane County.
+-- STATE and COUNTY are served by the pipeline; the seed holds the county only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.usaspending_request (
+    run_id, fiscal_year, geo_layer, cut_kind, cut_key, capture_id,
+    payload_checksum, row_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000005a5', 2098, 'county', 'all', '', '00000000-0000-4000-a000-0000000005a5',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_usaspending.geography_amount (
+    fiscal_year, geo_layer, cut_kind, cut_key, shape_code, display_name, value_source,
+    amount, value_status, population_source, geo_id, geography_status, run_id,
+    capture_id, source_row_index, source_record_id
+) VALUES (
+    2098, 'county', 'all', '', '55025', 'Dane County', '53600000000.00', 53600000000.00,
+    'valid', '561504', 'state:55|county:025', 'resolved', '00000000-0000-4000-8000-0000000005a5',
+    '00000000-0000-4000-a000-0000000005a5', 1, '5a5e7c0d9b1f4a2e8c3d6f7a0b1c2d3e'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- NOAA Storm Events -- one published county-reported tornado and its counts.
+-- NATIONAL, STATE and COUNTY are served by the pipeline; the seed holds the
+-- county count only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.noaa_storm_events_file (
+    run_id, file_kind, file_name, data_year, stamp, capture_id, payload_checksum,
+    row_count, written_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000005e1', 'details', 'StormEvents_details-ftp_v1.0_d2098_c20981231.csv.gz',
+    2098, '20981231', '00000000-0000-4000-a000-0000000005e1',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event (
+    event_id, year, begin_date, begin_time, end_time, begin_date_time, end_date_time,
+    cz_timezone, state_name, state_fips, event_type, event_type_key, cz_type, cz_fips,
+    cz_name, cz_name_key, wfo, deaths_direct, damage_property_published, damage_property_usd,
+    damage_property_status, damage_crops_status, source, magnitude_type, flood_cause,
+    category, tor_f_scale, begin_location, end_location, episode_narrative, event_narrative,
+    data_source, event_status, placement_status, row_hash, run_id, capture_id, source_line,
+    source_record_id
+) VALUES (
+    209800001, 2098, '2098-06-01', '1500', '1510', '01-JUN-98 15:00:00', '01-JUN-98 15:10:00',
+    'CST-6', 'WISCONSIN', '55', 'Tornado', 'tornado', 'C', '025', 'DANE', 'DANE', 'MKX', 0,
+    '6.00K', 6000, 'reported', 'not_reported', 'Public', '', '', '', 'EF0', '', '', '', '',
+    'CSV', 'current', 'county', '0f3b5e9a2c7d4e1f8a6b0c9d2e7f4a1b',
+    '00000000-0000-4000-8000-0000000005e1', '00000000-0000-4000-a000-0000000005e1', 2,
+    'c3e1a5b7d9f0e2c4a6b8d0f1e3c5a7b9'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event_place (event_id, geo_id, geo_sk, year, metric_key, basis)
+SELECT 209800001, geo_id, geo_sk, 2098, 'storm_events_tornado', 'county_reported'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.event_type (event_type_key, event_type, first_seen_run_id)
+VALUES ('tornado', 'Tornado', '00000000-0000-4000-8000-0000000005e1')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_noaa_storm_events.place_year (
+    metric_key, geo_type, geo_id, geo_sk, year, event_type, value, events_counted,
+    county_reported, zone_reported, run_id
+)
+SELECT counted.metric_key, 'county', entity.geo_id, entity.geo_sk, 2098, counted.event_type,
+       1, 1, 1, 0, '00000000-0000-4000-8000-0000000005e1'
+FROM silver_ref.dim_geo_entity AS entity
+CROSS JOIN (VALUES ('storm_events_tornado', 'Tornado'), ('storm_events_all_types', NULL)) AS counted(metric_key, event_type)
+WHERE entity.geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- FCC Broadband Data Collection -- one county's availability shares for
 -- one technology, served from views over a published read. COUNTY only.
 -- ---------------------------------------------------------------------------
@@ -1007,6 +1270,78 @@ SELECT '00000000-0000-4000-8000-000000000fe1', 'state:55|county:025', 'EAL_VALT'
        '00000000-0000-4000-a000-000000000fe1', '55025', 'County', 'November 2098', geo_sk, 'resolved',
        '12345678.9', 12345678.9, 'valid', 'Relatively Low',
        'cee25f8f9d0cabcbdcfe0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Elections (MEDSL) -- one county's 2096 presidential TOTAL lines from a
+-- published county read. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.elections_run (
+    run_id, stream, status, run_checksum, source_file, file_count, record_count, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000e1e', 'county_president', 'published',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+    'countypres_2000-2096.csv', 1, 2, '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.elections_file (run_id, file_index, file_key, file_kind, capture_id)
+VALUES ('00000000-0000-4000-8000-000000000e1e', 0, 'data', 'results', '00000000-0000-4000-a000-000000000e1e')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_elections.candidate_result (
+    run_id, result_key, office, election_year, stage, special, state_code, state_fips,
+    county_fips, district, candidate, party_text, party_code, writein, mode, candidate_votes,
+    total_votes, geo_level, geo_id, geo_sk, geography_status, source_record_id, capture_id,
+    record_index
+)
+SELECT '00000000-0000-4000-8000-000000000e1e', candidate.result_key, 'president', 2096, 'GEN', FALSE,
+       'WI', '55', '55025', NULL, candidate.name, candidate.party_text, candidate.party_code, FALSE,
+       'TOTAL', candidate.votes, 300000, 'county', 'state:55|county:025', entity.geo_sk, 'resolved',
+       candidate.result_key, '00000000-0000-4000-a000-000000000e1e', candidate.record_index
+FROM silver_ref.dim_geo_entity AS entity
+CROSS JOIN (VALUES
+    ('e1e0000000000000000000000000000000000000000000000000000000000001', 'SMOKE REPUBLICAN', 'REPUBLICAN', 'REP', 100000::BIGINT, 1),
+    ('e1e0000000000000000000000000000000000000000000000000000000000002', 'SMOKE DEMOCRAT', 'DEMOCRAT', 'DEM', 190000::BIGINT, 2)
+) AS candidate(result_key, name, party_text, party_code, votes, record_index)
+WHERE entity.geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- What publish_run does after marking a read published: store its contests.
+SELECT gold_elections.sync_contest_result();
+
+-- ---------------------------------------------------------------------------
+-- Census government finance -- one county area's local government taxes
+-- from a published Census of Governments unit file. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_govfin_slice (
+    run_id, dataset_id, period, slice_key, capture_id, captured_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000006f1', 'cog_units', 2097, 'bundle',
+    '00000000-0000-4000-a000-0000000006f1', 3, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.dim_measure (
+    dataset_id, measure_id, measure_label, definition, unit, cadence, methodology_url,
+    parser_contract_version
+) VALUES (
+    'cog_units', 'taxes_total', 'Taxes (smoke fixture)', 'All taxes collected.',
+    'thousands of dollars', 'annual',
+    'https://www.census.gov/programs-surveys/cog/technical-documentation.html', 'smoke:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_govfin.fact_observation (
+    dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id, run_id,
+    retrieved_at, geo_sk, geo_type, geography_status, value_source, value, value_status,
+    government_count, derivation, record_coverage, source_record_id
+)
+SELECT 'cog_units', 'taxes_total', 'local', 2097, 0, 'state:55|county:025',
+       '00000000-0000-4000-a000-0000000006f1', '00000000-0000-4000-8000-0000000006f1',
+       '2098-12-31 00:00:00+00', geo_sk, 'county', 'resolved', '746500', 746500, 'valid',
+       3, 'county_area_rollup', 'reported_and_imputed',
+       '6f10000000000000000000000000000000000000000000000000000000000001'
 FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
@@ -1137,6 +1472,233 @@ FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- DOL Women's Bureau childcare prices -- one county's median weekly price
+-- for center-based infant care from a published release. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.dol_childcare_file (
+    run_id, release, capture_id, captured_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000dc0', 'ndcp2098', '00000000-0000-4000-a000-000000000dc0',
+    1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_dol_childcare.fact_price (
+    metric_key, geo_id, study_year, capture_id, run_id, release, care_type,
+    age_group, retrieved_at, fips_code, county_name, geo_sk, geo_type,
+    geography_status, value_source, value, value_status, imputed,
+    imputation_code, source_record_id
+)
+SELECT 'center_infant', 'state:55|county:025', 2098, '00000000-0000-4000-a000-000000000dc0',
+       '00000000-0000-4000-8000-000000000dc0', 'ndcp2098', 'center', 'infant',
+       '2098-12-31 00:00:00+00', '55025', 'Dane County', geo_sk, 'county',
+       'resolved', '293', 293, 'valid', FALSE, '00000',
+       'c4e1f7a0b3d6e9f2a5c8b1d4e7f0a3c6b9d2e5f8a1c4b7d0e3f6a9c2b5d8e1f4'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 2020 Census -- one county's people in group quarters, as the Bureau
+-- publishes it for Census Day. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.census_decennial_slice (
+    run_id, dataset_id, geo_level, scope, capture_id, captured_row_count,
+    status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000dec', 'pl', 'county', '*',
+    '00000000-0000-4000-a000-000000000dec', 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_decennial.dim_variable (
+    dataset_id, variable_id, variable_label, universe, unit, parent_variable,
+    methodology_url, parser_contract_version
+) VALUES (
+    'pl', 'P5_001N', 'People in group quarters', 'Population in group quarters',
+    'people', NULL, 'https://www.census.gov/programs-surveys/decennial-census/about/rdo/summary-files.html',
+    'census_decennial_pl:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_census_decennial.fact_count (
+    dataset_id, variable_id, geo_id, capture_id, run_id, retrieved_at, geo_sk,
+    geo_type, geography_status, value_source, value, value_status, source_record_id
+)
+SELECT 'pl', 'P5_001N', 'state:55|county:025', '00000000-0000-4000-a000-000000000dec',
+       '00000000-0000-4000-8000-000000000dec', '2098-12-31 00:00:00+00', geo_sk,
+       'county', 'resolved', '17465', 17465, 'valid', 'd3c5a1e0f7b9d2c4e6a8b0d2f4e6a8c0'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- CMS nursing homes -- one county's residents on a published Form 671
+-- quarter, summed from the facilities CMS lists there. COUNTY only. The
+-- catalog capture and the file capture are the same seed capture.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.cms_ltc_file (
+    run_id, series_id, period_start, period_end, release_title, catalog_modified,
+    download_url, catalog_capture_id, capture_id, payload_checksum, row_count,
+    kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-000000000c71', 'characteristics', '2098-07-01', '2098-09-30',
+    'Long-Term Care Facility Characteristics : 2098-07-01', '2098-12-31', 'smoke://seed',
+    '00000000-0000-4000-a000-000000000c71', '00000000-0000-4000-a000-000000000c71',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cms_ltc.dim_measure (
+    series_id, measure_id, source_column, measure_label, unit, basis, accrual,
+    parser_contract_version
+) VALUES (
+    'characteristics', 'total_residents', 'Total Residents', 'Nursing home residents',
+    'residents', 'residents counted on the facility''s CMS Form 671 at its most recent survey', 'quarterly', 'cms_ltc_form671_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cms_ltc.area_total (
+    run_id, measure_id, geo_id, geo_type, geo_sk, value, facility_count,
+    unplaced_facility_count, geography_status, source_record_id
+)
+SELECT '00000000-0000-4000-8000-000000000c71', 'total_residents', 'state:55|county:025',
+       'county', geo_sk, 883, 16, 0, 'resolved', 'e1b7c3d9f5a2e8c4b0d6f2a8e4c0b6d2'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- NCES IPEDS -- one county's college housing capacity, summed from the
+-- institutions a published directory places there. COUNTY only.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.nces_ipeds_file (
+    run_id, component_id, collection_year, file_stem, download_url, capture_id,
+    payload_checksum, csv_member, row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-8000-0000000001ed', 'IC', 2098, 'IC2098', 'smoke://seed',
+    '00000000-0000-4000-a000-0000000001ed',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 'IC2098_RV.csv', 1, 1,
+    'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ipeds.dim_measure (
+    measure_id, component_id, source_column, source_level, measure_label, unit, basis,
+    parser_contract_version
+) VALUES (
+    'housing_capacity', 'IC', 'ROOMCAP', NULL, 'College housing capacity', 'students',
+    'the most students an institution can house in institutionally controlled housing, on or off campus, as the institution reports it to IPEDS',
+    'nces_ipeds_ic_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_nces_ipeds.area_total (
+    run_id, measure_id, collection_year, geo_id, geo_type, geo_sk, value,
+    institution_count, unplaced_institution_count, geography_status, source_record_id
+)
+SELECT '00000000-0000-4000-8000-0000000001ed', 'housing_capacity', 2098, 'state:55|county:025',
+       'county', geo_sk, 9484, 2, 0, 'resolved', 'a4d0c6e2f8b1d7c3e9a5b1f7d3c9e5a1'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- HHS hospital capacity -- one county's weekly inpatient beds, summed from the
+-- hospitals HHS places there by their published county FIPS code.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.hhs_hospital_capacity_snapshot (
+    snapshot_id, metadata_run_id, metadata_capture_id, rows_updated_at, page_size,
+    page_count, row_count, kept_row_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-00000000044b', '00000000-0000-4000-8000-00000000044b', '00000000-0000-4000-a000-00000000044b', NULL, 50000,
+    1, 5, 5, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hhs_hospital_capacity.dim_measure (
+    measure_id, source_column, coverage_column, measure_label, unit, basis,
+    parser_contract_version
+) VALUES (
+    'inpatient_beds', 'inpatient_beds_7_day_avg', 'inpatient_beds_7_day_coverage',
+    'Inpatient beds', 'beds',
+    'the seven-day average of all staffed inpatient beds a hospital reported to HHS for the collection week',
+    'hhs_anag_cw7u_json:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_hhs_hospital_capacity.area_week (
+    snapshot_id, measure_id, collection_week, geo_id, geo_type, geo_sk,
+    geography_status, value, value_status, facility_count, reporting_facility_count,
+    suppressed_count, missing_count, unplaced_facility_count, source_record_id
+)
+SELECT '00000000-0000-4000-b000-00000000044b', 'inpatient_beds', DATE '2098-01-04',
+       'state:55|county:025', 'county', geo_sk, 'resolved', 1335.7, 'valid', 5, 5, 0, 0, 0,
+       'b6e1d4c8a2f0e7d3c9b5a1f7e3d9c5b1'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- CDC COVID-19 case counts -- one county's published case records for a month.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.cdc_covid_cases_snapshot (
+    snapshot_id, metadata_run_id, metadata_capture_id, index_run_id, index_capture_id,
+    index_payload_checksum, rows_updated_at, group_limit, slice_count, index_record_count,
+    group_count, captured_record_count, kept_record_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-000000000c19', '00000000-0000-4000-8000-000000000c19', '00000000-0000-4000-a000-000000000c19', '00000000-0000-4000-8000-000000000c19', '00000000-0000-4000-a000-000000000c19',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', NULL, 50000, 1, 3651,
+    1, 3651, 3651, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_covid_cases.dim_measure (
+    measure_id, measure_label, basis, parser_contract_version
+) VALUES (
+    'case_records', 'COVID-19 case records',
+    'case records CDC published for the county of residence and case month',
+    'cdc_n8mc_b4w4_grouped_json:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_covid_cases.area_month (
+    snapshot_id, measure_id, age_key, case_month, geo_id, geo_sk, geo_type,
+    geography_status, value, value_status, case_record_count, unplaced_record_count,
+    source_record_id
+)
+SELECT '00000000-0000-4000-b000-000000000c19', 'case_records', 'all_ages', DATE '2098-01-01',
+       'state:55|county:025', geo_sk, 'county', 'resolved', 3651, 'valid', 3651, 0,
+       'c19d4c8a2f0e7d3c9b5a1f7e3d9c5b10'
+FROM silver_ref.dim_geo_entity WHERE geo_id = 'state:55|county:025'
+ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- CDC FluView ILINet -- one state's weekly influenza-like illness percentage.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.cdc_ilinet_release (
+    release_id, run_id, init_capture_id, row_count, kept_row_count,
+    changed_value_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-00000000f1e7', '00000000-0000-4000-8000-00000000f1e7',
+    '00000000-0000-4000-a000-00000000f1e7', 1, 1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.dim_measure (
+    measure_id, source_column, measure_label, unit, basis, parser_contract_version
+) VALUES (
+    'unweighted_ili_pct', '%UNWEIGHTED ILI', 'Influenza-like illness, percentage of visits',
+    'percent',
+    'influenza-like illness visits as a percentage of all patient visits reported by the sentinel providers',
+    'cdc_fluview_ilinet_csv:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.region (
+    region_type, region, geo_id, geo_type, geography_status, jurisdiction_note
+) VALUES ('state', 'Wisconsin', 'state:55', 'state', 'resolved', NULL)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_cdc_ilinet.week_value (
+    region_type, region, mmwr_year, mmwr_week, measure_id, release_id, week_start,
+    capture_id, source_row_index, value_source, value, value_status
+) VALUES (
+    'state', 'Wisconsin', 2098, 2, 'unweighted_ili_pct', '00000000-0000-4000-b000-00000000f1e7',
+    DATE '2098-01-05', '00000000-0000-4000-a000-00000000f1e7', 1, '3.04037', 3.04037, 'valid'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1150,29 +1712,45 @@ ON CONFLICT DO NOTHING;
 -- ---------------------------------------------------------------------------
 
 CREATE TEMP VIEW smoke_published AS
-SELECT * FROM gold_census.metric_publisher
-UNION ALL SELECT * FROM gold_fred.metric_publisher
-UNION ALL SELECT * FROM gold_bls.metric_publisher
-UNION ALL SELECT * FROM gold_pep.metric_publisher
-UNION ALL SELECT * FROM gold_cdc.metric_publisher
-UNION ALL SELECT * FROM gold_fbi.metric_publisher
-UNION ALL SELECT * FROM gold_nass.metric_publisher
-UNION ALL SELECT * FROM gold_bea.metric_publisher
-UNION ALL SELECT * FROM gold_bls_qcew.metric_publisher
-UNION ALL SELECT * FROM gold_census_bps.metric_publisher
-UNION ALL SELECT * FROM gold_census_sae.metric_publisher
-UNION ALL SELECT * FROM gold_irs_migration.metric_publisher
-UNION ALL SELECT * FROM gold_eia.metric_publisher
-UNION ALL SELECT * FROM gold_census_cbp.metric_publisher
-UNION ALL SELECT * FROM gold_census_lodes.metric_publisher
-UNION ALL SELECT * FROM gold_epa_aqs.metric_publisher
-UNION ALL SELECT * FROM gold_noaa_normals.metric_publisher
-UNION ALL SELECT * FROM gold_fcc_bdc.metric_publisher
-UNION ALL SELECT * FROM gold_fema_nri.metric_publisher
-UNION ALL SELECT * FROM gold_fhfa_hpi.metric_publisher
-UNION ALL SELECT * FROM gold_hud_fmr_il.metric_publisher
-UNION ALL SELECT * FROM gold_nces_ccd.metric_publisher
-UNION ALL SELECT * FROM gold_usda_ers.metric_publisher;
+-- The publisher contract's own columns, named: a publisher may append
+-- optional ones (`last_value_date`), so `SELECT *` arms stop lining up.
+SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fred.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bls.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_pep.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fbi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nass.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bea.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_bls_qcew.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_bps.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_sae.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_irs_migration.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_irs_soi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_eia.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_cbp.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_lodes.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_epa_aqs.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_normals.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_climdiv.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_treasury_mts.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usaspending.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_noaa_storm_events.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fcc_bdc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fema_nri.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_elections.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_govfin.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_fhfa_hpi.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hud_fmr_il.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ccd.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_usda_ers.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_dol_childcare.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_census_decennial.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cms_ltc.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hhs_hospital_capacity.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_covid_cases.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_ilinet.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

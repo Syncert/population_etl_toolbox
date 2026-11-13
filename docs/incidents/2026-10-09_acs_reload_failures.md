@@ -151,3 +151,8 @@ every year from 2013 ran past the 90-minute limit.
 - Not related to the reload: the API retries a login as `api_app_writer`
   about every 8 seconds and fails, because the role is not provisioned on this
   stack (`scripts/provision_app_api.py --apply-schema` has never been run).
+
+The operator procedure for history loads (order, resume, safe stop) and for
+what follows them is
+[`BETA_RESET_REINGESTION.md`](../reference/BETA_RESET_REINGESTION.md),
+sections 9 and 10.

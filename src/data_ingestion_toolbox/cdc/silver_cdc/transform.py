@@ -96,6 +96,11 @@ def transform_release(
                     estimate_method = EXCLUDED.estimate_method,
                     population_basis = EXCLUDED.population_basis,
                     updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_cdc.dim_measure.measure_label, silver_cdc.dim_measure.topic, silver_cdc.dim_measure.value_type_label, silver_cdc.dim_measure.unit, silver_cdc.dim_measure.adjustment_status, silver_cdc.dim_measure.estimate_method, silver_cdc.dim_measure.population_basis)
+                      IS DISTINCT FROM
+                      (EXCLUDED.measure_label, EXCLUDED.topic, EXCLUDED.value_type_label, EXCLUDED.unit, EXCLUDED.adjustment_status, EXCLUDED.estimate_method, EXCLUDED.population_basis)
                 """,
                 (str(run_id),),
             )
@@ -109,7 +114,7 @@ def transform_release(
                 """,
                 (str(run_id),),
             )
-            geography_vintage = 2020 if asset.asset_id == "places_county" else None
+            geography_vintage = asset.geography_vintage
             cursor.execute(
                 """
                 INSERT INTO silver_ref.geography_resolution (
@@ -150,6 +155,11 @@ def transform_release(
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (
                     geography_vintage,

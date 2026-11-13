@@ -13,6 +13,8 @@ import type {
   ComparisonResponse,
   ComparisonRow,
   DistributionResponse,
+  GeographyLocateResponse,
+  GeographySearchResponse,
   GeographySummary,
   HealthResponse,
   AnalysisDocument,
@@ -26,6 +28,7 @@ import type {
   SourceCapability,
   SourceFreshness,
   SourceSummary,
+  TileLayerCatalogResponse,
 } from "./types";
 
 export const API_BASE = "/api/v1";
@@ -466,6 +469,46 @@ export function fetchAllMetrics(
   return fetchAllPages<MetricSummary>("/catalog/metrics", { ...options, params });
 }
 
+/**
+ * Several metrics' catalog rows in one read per 200 codes, by code. A code the
+ * catalog does not hold is absent. An API that ignores `metric_codes` answers
+ * other rows too, and is then asked code by code, as before.
+ */
+export async function getMetricsByCode(
+  metricCodes: string[],
+  options: RequestOptions = {},
+): Promise<Map<string, MetricSummary>> {
+  const codes = [...new Set(metricCodes)];
+  const found = new Map<string, MetricSummary>();
+  const chunks: string[][] = [];
+  for (let start = 0; start < codes.length; start += 200) chunks.push(codes.slice(start, start + 200));
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      apiFetch<CollectionResponse<MetricSummary>>("/catalog/metrics", {
+        ...options,
+        params: { metric_codes: chunk.join(","), limit: 1000 },
+      }),
+    ),
+  );
+  const asked = new Set(codes);
+  const items = pages.flatMap((page) => (Array.isArray(page?.items) ? page.items : []));
+  if (items.some((item) => !asked.has(item.metric_code))) {
+    await Promise.all(
+      codes.map(async (code) => {
+        try {
+          const metric = await getMetric(code, options);
+          if (metric?.metric_code) found.set(metric.metric_code, metric);
+        } catch (error) {
+          if (!(error instanceof ApiError && error.status === 404)) throw error;
+        }
+      }),
+    );
+    return found;
+  }
+  for (const item of items) found.set(item.metric_code, item);
+  return found;
+}
+
 export function getMetric(
   metricCode: string,
   options: RequestOptions = {},
@@ -488,6 +531,38 @@ export function fetchAllGeographies(
   options: PageOptions = {},
 ): Promise<GeographySummary[]> {
   return fetchAllPages<GeographySummary>("/catalog/geographies", { ...options, params });
+}
+
+/**
+ * Places a typed name may mean, best match first (A-1). `q` needs two letters
+ * or digits; the API answers a 422 otherwise.
+ */
+export function searchGeographies(
+  params: { q: string; limit?: number; state_fips?: string },
+  options: RequestOptions = {},
+): Promise<GeographySearchResponse> {
+  return apiFetch<GeographySearchResponse>("/catalog/geographies/search", { ...options, params });
+}
+
+/**
+ * The geographies containing one point (A-1). A point no state covers is a
+ * 404. The response never echoes the coordinates.
+ */
+export function locateGeography(
+  lat: number,
+  lon: number,
+  options: RequestOptions = {},
+): Promise<GeographyLocateResponse> {
+  return apiFetch<GeographyLocateResponse>("/catalog/geographies/locate", { ...options, params: { lat, lon } });
+}
+
+/**
+ * Every tile layer a map can draw and the boundary vintages each holds
+ * (tiles-places-and-metros). Maps build their sources from this list rather
+ * than from the tile server's own catalog.
+ */
+export function getTileLayers(options: RequestOptions = {}): Promise<TileLayerCatalogResponse> {
+  return apiFetch<TileLayerCatalogResponse>("/catalog/tile-layers", options);
 }
 
 // The capability resource answers with the standard `{total, items}`

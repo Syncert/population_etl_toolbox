@@ -51,6 +51,7 @@ from data_ingestion_toolbox.fred.silver_fred.transform import transform_fred_to_
 from data_ingestion_toolbox.utility.gold_schema import (
     refresh_serving_layer_in_year_chunks,
 )
+from data_ingestion_toolbox.utility.operator_stop import fail_without_retry_when_stopped
 from data_ingestion_toolbox.utility.serving_reserve import FRED_CHUNK_CONFIG
 from data_ingestion_toolbox.normalization import sanitize_error_message
 
@@ -600,11 +601,15 @@ def fred_ingest():
     @task(trigger_rule="none_failed")
     def refresh_gold_fred_serving_layer() -> dict[str, int]:
         """Refresh changed FRED years as independently committed annual chunks."""
-        return refresh_serving_layer_in_year_chunks(
-            hook=_get_postgres_hook(),
-            config=FRED_CHUNK_CONFIG,
-            task_logger=logger,
-        )
+        with fail_without_retry_when_stopped(
+            "the FRED serving refresh",
+            "Clear this task to resume: finished years are committed and skipped.",
+        ):
+            return refresh_serving_layer_in_year_chunks(
+                hook=_get_postgres_hook(),
+                config=FRED_CHUNK_CONFIG,
+                task_logger=logger,
+            )
 
     @task(trigger_rule="none_failed")
     def confirm_configured_domain_coverage() -> None:

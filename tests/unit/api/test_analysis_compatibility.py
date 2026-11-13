@@ -212,8 +212,18 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "BLS_QCEW",
         "CENSUS_BPS",
         "CENSUS_SAIPE_SAHIE",
+        "CENSUS_DECENNIAL",
+        "CMS_LTC",
+        "NCES_IPEDS",
+        "HHS_HOSPITAL_CAPACITY",
+        "CDC_COVID_CASES",
+        "CDC_ILINET",
         "IRS_MIGRATION",
+        "IRS_SOI",
         "EIA",
+        "DOL_CHILDCARE",
+        "NOAA_CLIMDIV",
+        "NOAA_STORM_EVENTS",
         "CENSUS_CBP",
         "CENSUS_LODES",
         "EPA_AQS",
@@ -222,6 +232,8 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "FHFA_HPI",
         "HUD_FMR_IL",
         "NCES_CCD",
+        "ELECTIONS",
+        "CENSUS_GOVFIN",
     }
 
 

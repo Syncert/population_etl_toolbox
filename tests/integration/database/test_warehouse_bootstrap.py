@@ -494,6 +494,111 @@ def test_the_manifest_rule_reports_a_removed_row_as_missing(
         database.close()
 
 
+_ELECTIONS_COMPONENT = "gold_ddl_elections"
+
+
+def _set_ledger(database: connection, rows: dict[str, str]) -> None:
+    with database.cursor() as cursor:
+        for name, digest in rows.items():
+            cursor.execute(
+                "INSERT INTO control.schema_migration_state (component_name, ddl_hash)"
+                " VALUES (%s, %s) ON CONFLICT (component_name) DO UPDATE"
+                " SET ddl_hash = EXCLUDED.ddl_hash",
+                (name, digest),
+            )
+    database.commit()
+
+
+def _ledger(database: connection, names: list[str]) -> dict[str, tuple[str, object]]:
+    with database.cursor() as cursor:
+        cursor.execute(
+            "SELECT component_name, ddl_hash, applied_at"
+            " FROM control.schema_migration_state WHERE component_name = ANY(%s)",
+            (names,),
+        )
+        rows = {name: (digest, at) for name, digest, at in cursor.fetchall()}
+    database.commit()
+    return rows
+
+
+def test_a_source_task_that_applies_a_manifest_file_records_it(
+    postgres_connection_factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Covers: DQ-SHARED-004, DB-049 — DDL a source task applies is not reported as drift.
+
+    OFFICE_LAB, 2026-11-08: `ensure_elections_schema` and `ensure_fbi_schema`
+    applied the changed elections and FBI DDL and recorded only their own
+    component rows, so the manifest rows kept the last deploy's hashes and
+    the BLOCK rule failed with `silver-fbi`, `silver-elections`,
+    `gold-elections` and `publisher-elections` drifted although the
+    warehouse carried exactly the checkout's files.
+    """
+    from data_ingestion_toolbox.elections.schema import (
+        DDL_FILES,
+        ensure_elections_schema,
+    )
+    from data_ingestion_toolbox.utility.gold_schema import _compute_ddl_hash
+    from data_ingestion_toolbox.utility.warehouse_manifest import assets_for_files
+    from tests.support.postgres import PostgresHookStub
+
+    assets = list(assets_for_files(DDL_FILES).values())
+    assert len(assets) == len(DDL_FILES), "every elections DDL file is a manifest step"
+    current = {asset.id: asset.content_hash() for asset in assets}
+    stale = {asset.id: "0" * 64 for asset in assets}
+    component_hash = _compute_ddl_hash(sorted(DDL_FILES))
+    names = [*current, _ELECTIONS_COMPONENT]
+    hook = PostgresHookStub(postgres_connection_factory)
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+
+        def drifted() -> list:
+            with database.cursor() as cursor:
+                outcome = {
+                    o.partition_key: o for o in verify_manifest_ledger(cursor, {})
+                }["drifted"]
+            database.commit()
+            return list(outcome.evidence)
+
+        # 1. The task already applied these bytes (its row is current) and
+        #    the manifest rows lag: the next task run brings them level.
+        _set_ledger(database, {**stale, _ELECTIONS_COMPONENT: component_hash})
+        assert sorted(drifted()) == sorted(current)
+        ensure_elections_schema(hook)
+        assert drifted() == []
+        level = _ledger(database, names)
+        assert {name: level[name][0] for name in current} == current
+        # ...and a run that finds nothing to change rewrites no row.
+        ensure_elections_schema(hook)
+        assert _ledger(database, names) == level
+
+        # 2. The manifest applier already applied them (its rows are current)
+        #    and the component row lags: the task records and does not re-apply.
+        _set_ledger(database, {_ELECTIONS_COMPONENT: "0" * 64})
+        caplog.clear()
+        with caplog.at_level("INFO"):
+            ensure_elections_schema(hook)
+        assert "already applied by the warehouse manifest" in caplog.text
+        assert _ledger(database, [_ELECTIONS_COMPONENT])[_ELECTIONS_COMPONENT][0] == (
+            component_hash
+        )
+
+        # 3. Both lag: the task applies the files and records both rows.
+        _set_ledger(database, {**stale, _ELECTIONS_COMPONENT: "0" * 64})
+        caplog.clear()
+        with caplog.at_level("INFO"):
+            ensure_elections_schema(hook)
+        assert "Applied gold DDL" in caplog.text
+        after = _ledger(database, names)
+        assert after[_ELECTIONS_COMPONENT][0] == component_hash
+        assert {name: after[name][0] for name in current} == current
+        assert drifted() == []
+    finally:
+        database.rollback()
+        _set_ledger(database, {**current, _ELECTIONS_COMPONENT: component_hash})
+        database.close()
+
+
 def test_the_manifest_rule_is_not_applicable_on_a_warehouse_with_no_ledger(
     postgres_connection_factory,
 ) -> None:
@@ -518,6 +623,49 @@ def test_the_manifest_rule_is_not_applicable_on_a_warehouse_with_no_ledger(
         assert "apply_warehouse_manifest" in str(outcomes[0].partition_detail), (
             "the outcome does not tell the reader what would make the rule apply"
         )
+    finally:
+        database.rollback()
+        database.close()
+
+
+def test_only_flagged_applies_just_what_the_ledger_lacks(
+    postgres_connection_factory,
+) -> None:
+    """Covers: DB-049 — a populated warehouse re-applies its gaps, not every step.
+
+    A full re-apply re-runs migrations whose constraint checks scan every
+    fact under an exclusive lock; on the internal warehouse that held the ACS
+    silver table for nothing when four hand-applied migrations were the only
+    gap. `--only-flagged` selects the missing and drifted assets alone.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[3] / "scripts/apply_warehouse_manifest.py"
+    spec = importlib.util.spec_from_file_location("apply_warehouse_manifest", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+
+    # The read-only grants are re-applied on every run whatever the ledger
+    # says (DB-072), so they are always selected and never count as a gap.
+    always = [asset.id for asset in manifest_assets() if asset.reapply]
+    removed = next(
+        asset.id for asset in reversed(manifest_assets()) if not asset.reapply
+    )
+    database = postgres_connection_factory()
+    try:
+        apply_warehouse_manifest(database)
+        assert [asset.id for asset in script.flagged_assets(database)] == always
+        with database.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM control.schema_migration_state WHERE component_name = %s",
+                (removed,),
+            )
+        assert [asset.id for asset in script.flagged_assets(database)] == [
+            removed,
+            *always,
+        ]
+        assert script.parse_args(["--only-flagged"]).only_flagged is True
     finally:
         database.rollback()
         database.close()

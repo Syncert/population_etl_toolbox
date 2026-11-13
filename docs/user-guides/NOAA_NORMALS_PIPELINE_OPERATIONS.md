@@ -1,7 +1,7 @@
 # Operating the NOAA climate normals pipeline
 
 The `noaa_normals_ingest` DAG captures NCEI's U.S. Climate Normals 1991-2020
-and publishes six county climate figures. NCEI publishes stations with
+and publishes six annual and seven monthly county climate figures. NCEI publishes stations with
 coordinates, not counties: each county figure is this warehouse's mean of
 the stations it places inside the county, and every row says so. A normal is
 a 30-year average, not the value of any year.
@@ -25,6 +25,29 @@ Six annual elements are kept:
 | `annual_heating_degree_days` | `ANN-HTDD-NORMAL` | degree days (base 65 F) |
 | `annual_cooling_degree_days` | `ANN-CLDD-NORMAL` | degree days (base 65 F) |
 
+A second archive holds the monthly normals:
+`https://www.ncei.noaa.gov/data/normals-monthly/1991-2020/archive/us-climate-normals_1991-2020_v1.0.1_monthly_multivariate_by-station_c20230404.tar.gz`
+(29.7 MB, 15,616 station files, read 2026-11-11). Each station file has
+twelve rows, `month` `01` to `12`; a file without exactly twelve distinct
+months, or whose station columns change between months, is quarantined.
+Seven monthly elements are kept:
+
+| Measure | NCEI element | Unit |
+| --- | --- | --- |
+| `monthly_mean_temperature` | `MLY-TAVG-NORMAL` | degrees Fahrenheit |
+| `monthly_mean_maximum_temperature` | `MLY-TMAX-NORMAL` | degrees Fahrenheit |
+| `monthly_mean_minimum_temperature` | `MLY-TMIN-NORMAL` | degrees Fahrenheit |
+| `monthly_precipitation` | `MLY-PRCP-NORMAL` | inches |
+| `monthly_snowfall` | `MLY-SNOW-NORMAL` | inches |
+| `monthly_heating_degree_days` | `MLY-HTDD-NORMAL` | degree days (base 65 F) |
+| `monthly_cooling_degree_days` | `MLY-CLDD-NORMAL` | degree days (base 65 F) |
+
+Each archive is its own run (`control.noaa_normals_file.product` is
+`annualseasonal` or `monthly`): the DAG reads the annual archive, then the
+monthly one, and a read is `unchanged` only against the last published read
+of the same archive. Monthly normals land in
+`silver_noaa_normals.station_monthly_normal`.
+
 A station that does not measure an element has no column for it, and no row.
 Measurement flags `M` (missing), `V` (too cold to compute) and `Y`
 (insufficient values) publish no number; `X` is a nonzero value NCEI
@@ -36,9 +59,11 @@ such as `-9999` without one of those flags quarantines the station file.
 Replay places each station in the county boundary
 (`silver_ref.dim_geo_geometry_version`, `geo_type = 'county'`) of the newest
 boundary vintage loaded that covers its coordinates, and records that
-vintage on the run and every station. A station inside no county
-(Canada, territories without boundaries, offshore) is kept as `unmapped`
-with reason `outside_counties`; one on a shared edge is `ambiguous`; with no
+vintage on the run and every station. A station inside no county is placed
+on the nearest county when that county's boundary is within 1,000 m (a
+shoreline station just off the generalised shape, described below);
+otherwise (Canada, territories without boundaries, offshore) it is kept as
+`unmapped` with reason `outside_counties`; one on a shared edge is `ambiguous`; with no
 county boundaries loaded at all every station is `unmapped`
 (`no_county_boundaries`). Load the reference geography's boundaries before
 the first run, and re-run the DAG after a new boundary vintage loads to
@@ -54,7 +79,9 @@ NCEI flags standard (`S`) or representative (`R`) for that element, with
 `station_ids`, `station_count` and `boundary_vintage`. Estimated (`E`) and
 provisional (`P`) stations are kept but never averaged in; a county without
 an eligible station has no row. Rows cover 1991-01-01 to 2020-12-31 and are
-labelled year 2020. The analysis routes decline the source.
+labelled year 2020; a monthly row covers its calendar month from 1991 to
+2020 and carries `month`, through `gold_noaa_normals.station_monthly_observation`
+for its lineage. The analysis routes decline the source.
 
 ## Schedule and scope
 
@@ -102,7 +129,19 @@ SELECT metric_key, COUNT(*) FROM gold_noaa_normals.observation_latest GROUP BY 1
   failing and its error is in that task's log.
 - `DQ-NOAA-004` warns on a negative precipitation or degree-day normal, a
   station on a county edge, or a station NCEI codes to the United States
-  (GHCN country `US`) that falls outside every county.
+  (GHCN country `US`) that falls outside every county and is not within
+  1,000 m of one.
+
+The county shapes are Census 1:500k cartographic boundaries, which follow a
+generalised shoreline, so a pier, point or harbour station can sit just off
+every shape. A station no shape covers is placed on the nearest county when
+that county's shape is within 1,000 m (`placement_method = 'nearest_county'`,
+with `placement_distance_m`), and the county row's `placement_note` names it
+with its distance. A station farther away stays `unmapped`
+(`outside_counties`) and is never counted: in the 2025 shapes these are
+Vero Beach Intl AP, FL (10.6 km) and S Padre Is, TX (5.0 km). Each
+`noaa_normals_ingest` run first places again any published run whose
+stations were placed before this rule.
 
 Source: NOAA National Centers for Environmental Information, U.S. Climate
 Normals 1991-2020.

@@ -60,7 +60,7 @@ The deterministic browser scenarios cover every page at desktop and 390px,
 including WCAG AA checks. To capture all twenty example screenshots in PowerShell:
 
 ```powershell
-$env:USE_CASE_SCREENSHOT_DIR = 'G:\population_etl_toolbox\.codex\artifacts\use-case-examples'
+$env:USE_CASE_SCREENSHOT_DIR = 'H:\population_etl_toolbox\.codex\artifacts\use-case-examples'
 npm --prefix apps/web run test:browser -- use-cases.spec.js --workers=2
 ```
 

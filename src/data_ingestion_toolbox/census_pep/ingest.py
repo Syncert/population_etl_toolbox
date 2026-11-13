@@ -28,6 +28,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: The newest capture of the same release that reached silver: its bytes and
+#: the parser contract it was read under. Every monthly run reads each
+#: registered release again; replaying identical bytes stored a second full
+#: copy of the release's revisions and facts, which are keyed by capture.
+_LATEST_LOADED_SQL = """
+    SELECT capture.payload_checksum, capture.payload_schema_version
+    FROM silver_pep.release_load AS release
+    JOIN raw_capture.response_capture AS capture USING (capture_id)
+    WHERE release.dataset_code = %s AND release.release_vintage = %s
+      AND capture.capture_id <> %s
+    ORDER BY capture.retrieved_at DESC, capture.capture_id DESC
+    LIMIT 1
+"""
+
+
+def _repeats_loaded_release(
+    conn_factory: Callable[[], object], release: PEPRelease, receipt: CaptureReceipt
+) -> bool:
+    """Whether this capture's bytes equal the release's newest loaded capture."""
+    connection = conn_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _LATEST_LOADED_SQL,
+                (release.dataset_code, release.vintage_year, str(receipt.capture_id)),
+            )
+            previous = cursor.fetchone()
+    finally:
+        connection.close()
+    return previous is not None and tuple(previous) == (
+        receipt.payload_checksum,
+        release.schema_version,
+    )
+
 
 def _get_hook() -> PostgresHook:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -240,6 +274,18 @@ def _ingest_release(
     except Exception as exc:
         ctrl.finish_request(req.request_id, status="failed", error=exc)
         raise RuntimeError(f"Capture failed for {release.product_code}: {exc}") from exc
+
+    if _repeats_loaded_release(conn_factory, release, receipt):
+        # The capture is kept as evidence; nothing new reaches silver.
+        ctrl.finish_request(req.request_id, status="captured")
+        logger.info(
+            "Census PEP unchanged: dataset=%s vintage=%s product=%s checksum=%s",
+            release.dataset_code,
+            release.vintage_year,
+            release.product_code,
+            receipt.payload_checksum,
+        )
+        return receipt
 
     try:
         replay_pep_capture(

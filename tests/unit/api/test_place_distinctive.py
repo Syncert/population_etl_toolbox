@@ -144,3 +144,64 @@ def test_the_route_answers_the_derived_reading_and_refuses_an_unknown_place(
     )
     assert missing.status_code == 404
     assert missing.json() == {"detail": "geo_id not found"}
+
+
+class _RecordingDb:
+    """Answers the place and sibling lookups, then records each ranking read."""
+
+    def __init__(self):
+        self.reads: list[tuple[str, dict]] = []
+
+    def execute(self, query, params=None):
+        sql = str(query)
+        params = dict(params or {})
+
+        class _Result:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def mappings(self):
+                return self
+
+            def first(self):
+                return self._rows[0] if self._rows else None
+
+            def all(self):
+                return self._rows
+
+        if "WHERE geo_id = :geo_id" in sql:
+            return _Result([{"geo_id": PLACE, "geo_level": "COUNTY"}])
+        if "is_active" in sql:
+            return _Result([{"geo_id": f"state:55|county:{n:03d}"} for n in (1, 3)])
+        self.reads.append((sql, params))
+        return _Result([])
+
+
+def test_each_ranking_reads_only_the_siblings_it_ranks(monkeypatch) -> None:
+    """Covers: API-165 — the sibling read is bounded by the siblings' ids.
+
+    The ranking keeps only the place and its siblings, so the statement names
+    them: every source then reaches them through its (metric, geo_id) index,
+    or pushes the filter inside a view that ranks by geography, rather than
+    reading every row of the measure at every grain first (11.3 s for a
+    Wisconsin county on the internal stack before this).
+    """
+    metric = {
+        "metric_code": "CENSUS_ACS:acs5:B19013_001",
+        "source_code": "CENSUS_ACS",
+        "valid_geo_grains": ["COUNTY", "STATE"],
+        "metric_display_name": "Median household income",
+        "units": "dollars",
+    }
+    monkeypatch.setattr(distinctive_service, "require_relation", lambda db, rel: None)
+    monkeypatch.setattr(distinctive_service, "resolve_metric", lambda db, code: metric)
+    db = _RecordingDb()
+    distinctive_service.distinctive_measures(
+        db, PLACE, measures=[metric["metric_code"]]
+    )
+    assert len(db.reads) == 1
+    sql, params = db.reads[0]
+    assert "geo_id = ANY(:sibling_ids)" in sql
+    assert params["sibling_ids"] == sorted(
+        {"state:55|county:001", "state:55|county:003", PLACE}
+    )

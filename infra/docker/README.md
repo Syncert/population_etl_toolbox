@@ -74,6 +74,52 @@ Secrets guidance:
 - Put credentials in `infra/docker/stack.external.env` (local, gitignored) or provide them via host environment variables.
 - Do not put real secrets in tracked example files.
 
+## The Web Container Is a Production Build
+
+The `web` service in both deployment stacks builds `Dockerfile.web`: `next build`
+with `output: "standalone"`, then `node server.js` under `NODE_ENV=production`
+on container port 3100, published on `${WEB_BIND_ADDRESS}:${WEB_HOST_PORT}`
+(3001 by default). There is no `next dev` anywhere in a deployment, and this is
+the build a public or demo address should serve. `npm run dev` (port 3100, from
+`apps/web`) stays the local development path; see `apps/web/README.md`.
+
+**Which build is running.** The browser's reports and the client-report log
+lines carry `build=<id>`, baked in at `next build` from the `WEB_BUILD_ID`
+build arg. `deploy_stack.py` / `deploy_stack.ps1` (and so `make deploy-up`)
+stamp it with the first 12 characters of the checked-out commit when neither
+the host environment nor the env files set it. `build=development` therefore
+means only "built without a build id", not "running `next dev`": on 2026-11-01
+that label was read as the dev server while a hung container was diagnosed.
+To check the server itself:
+
+```bash
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml exec web ls /app/server.js
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml ps web   # healthy / unhealthy
+```
+
+**Health.** The service has a healthcheck (`node` fetches `/robots.txt` every
+30 s; the image has no curl). That route asks the API nothing, so `unhealthy`
+means the web process itself stopped answering, and a slow API does not mark it.
+
+**Rebuilding after a code change.** `up -d` reuses an image that already exists,
+so pulling new code and running `make deploy-up` alone keeps serving the old
+build. Rebuild the web image explicitly, with the build id set, then recreate it:
+
+```powershell
+$env:WEB_BUILD_ID = (git rev-parse HEAD).Substring(0, 12)
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml build web
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d web
+```
+
+```bash
+export WEB_BUILD_ID=$(git rev-parse --short=12 HEAD)
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml build web
+docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d web
+```
+
+`API_ORIGIN` and `TILES_ORIGIN` are baked into the rewrites at build time, so a
+change to either also needs a rebuild, not just a restart.
+
 ## Smoke Checks
 
 ### Internal Mode

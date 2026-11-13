@@ -1,0 +1,190 @@
+# ADR-0009: Per-capita and share views are a declared derived product
+
+- **Status:** Accepted 2026-10-26 by the repository owner (Nick); proposed the same day.
+- **Date:** 2026-10-26
+- **Decision owners:** Repository owner and data-product maintainers
+- **Related work:** v1.0 build-out items A-3 (`feat/api-per-capita-and-shares`)
+  and D-6 (`feat/web-per-capita-toggle`).
+- **Builds on:** [ADR-0001](0001-data-layer-boundaries.md) (derived products
+  are labelled and never written over provider facts) and
+  [ADR-0007](0007-derived-time-aggregates.md) (a reviewed method per metric,
+  complete inputs only). ADR-0007 covers time, not ratios between two
+  measures, so this decision is needed.
+
+## Context
+
+Place pages show counts: people in poverty, uninsured children, reported
+violent offenses, housing units. A reader comparing a city of 30,000 with a
+county of 1,000,000 needs "per 1,000 residents" or "share of households",
+which no provider publishes for most of these counts. Dividing two numbers is
+easy and easy to get wrong:
+
+- the numerator and denominator can describe different universes (people in
+  poverty are counted among people whose poverty status is determined, not
+  all residents);
+- they can describe different periods (a 2019–2023 survey count over a 2024
+  population estimate);
+- they can come from different programs with different methods (ACS counts
+  over a PEP population);
+- an ACS ratio has a margin of error the Bureau tells users how to compute,
+  and dropping it presents a survey estimate as exact;
+- a provider sometimes publishes the rate itself (FBI's rate per 100,000,
+  PEP's rates per 1,000, SAIPE's poverty percentage), and a recomputed rate
+  beside it invites the reader to pick whichever suits them.
+
+## Decision
+
+1. **A reviewed pairing per derived view.** A versioned semantic record
+   (`docs/semantics/derived_ratios.json`) binds each derived view to a
+   numerator metric, a denominator metric, a kind (`per_capita` with its
+   scale -- per 1, per 1,000 or per 100,000 -- or `share`), the universe the
+   result describes, owner, reviewer, status and citations. Only `approved`
+   entries are served; `draft` entries are proposals. Nothing is paired by
+   inference from names or units.
+2. **Same program, same period, same geography.** A derived value is computed
+   only when numerator and denominator come from the same program and the
+   same release (an ACS 5-year count over the same release's ACS total, never
+   over PEP), the same period and the same geography. Otherwise the view is
+   unavailable for that row and says why (`different_period`,
+   `denominator_missing`, `denominator_zero`, `suppressed_input`).
+   Suppressed, missing or withheld inputs make the result missing, never zero.
+3. **The share's denominator is the numerator's universe.** A share uses the
+   table total that defines the numerator's universe (people below poverty
+   over people whose poverty status is determined, B17001_002 / B17001_001),
+   not the total population. A `per_capita` view over total population is a
+   different, separately named product and is offered only where the
+   numerator's universe is all residents.
+4. **Margins of error follow the Bureau.** For ACS inputs the derived value
+   carries a margin of error computed with the Census Bureau's published
+   formulas for derived proportions and ratios (*Understanding and Using
+   American Community Survey Data*, chapter 8): the proportion formula when
+   the numerator is a subset of the denominator, the ratio formula when it is
+   not (and when the proportion formula's radicand is negative). Inputs
+   published with a controlled margin (the Bureau's `*****`) are treated as
+   zero margin, as the Bureau instructs.
+5. **Provider rates take precedence.** Where the provider publishes the rate
+   (FBI UCR rate per 100,000, PEP rates per 1,000, SAIPE and SAHIE
+   percentages, CDC PLACES prevalence), that is what the per-capita view
+   shows, labelled as the provider's; no recomputed value appears beside it.
+6. **Labelled in every response.** A derived row carries `derived: true`,
+   the pairing's identity and version, the numerator's and denominator's
+   metric codes, release and period, the universe, and the method of its
+   margin of error. The web names the denominator beside every per-capita or
+   share value ("per 1,000 residents, ACS 2019–2023 total population").
+7. **Computed in the API over served rows.** Like ADR-0007's trailing
+   windows, a derived ratio is computed at request time from served provider
+   rows; nothing is written to gold, and no ratio becomes a provider fact.
+
+## Consequences
+
+- The per-capita and share toggles (D-6) can only offer what an approved
+  pairing allows, so the first release covers the place pages' ACS counts
+  and FBI/PEP provider rates; others are added one reviewed pairing at a
+  time.
+- A reader can always see what was divided by what, from which release, and
+  how uncertain the result is.
+- Composite scores remain out of scope: a ratio of two measures is not an
+  index, and nothing here sums unlike quantities.
+
+## Amendment, 2026-11-05: a ratio of two measures
+
+The taxes-and-public-money plan (T-2) divides median real estate taxes paid
+(B25103) by median home value (B25077). The tax is not a part of the value,
+so it is not a share, and it is not a value per resident. Such a pairing has
+kind `ratio`: same program, release, period and geography (rule 2), the
+Bureau's ratio formula for its margin (rule 4), a unit that names the
+denominator ("percent of median home value"), and no subset flag. Rule 1
+applies unchanged: each ratio is one reviewed entry.
+
+## Amendment, 2026-11-06: minutes of work, a time cost
+
+The cost-of-living section (plan `cost-of-living-section`, CL-3) shows an
+everyday price as the minutes of work it takes to buy it. Nick approved the
+measure on 2026-11-06. No source publishes it, and rule 2 cannot hold for
+it: BLS publishes average prices only for the nation and the four Census
+regions, and QCEW publishes the average weekly wage for counties, states and
+the nation. Such a pairing has kind `time_cost`, and for it rule 2 is
+replaced by:
+
+- The numerator is one BLS average price (`BLS:APU...`), one pairing per
+  BLS price area (`minutes_of_work_eggs:0200` is the Midwest's eggs). The
+  denominator is QCEW's annual average weekly wage for all industries and
+  all ownerships, over the entry's `hours_per_week` (40), in minutes.
+- The wage's area is the reader's own county, state or nation, named in the
+  request (`wage_geo_id`) and on every row, and the price's area stays on
+  the row too. The page names both ("Midwest Region figure" beside the
+  price, "Dane County's average wage" above the table).
+- The wage is the price's own calendar year. QCEW publishes about six
+  months after a year ends, so a price newer than every published wage year
+  takes the newest year and the row says so (`wage_year:
+  newest_published_year`). A price older than every wage has no value
+  (`different_period`), and no other area's wage is ever used.
+- A time cost has no margin of error (neither input is a survey estimate
+  with one), and it is not compared across places, since each place would
+  need its own wage area.
+
+Rules 1, 6 and 7 apply unchanged: each time cost is a reviewed entry,
+labelled in every response, computed in the API over served rows.
+
+## Amendment, 2026-11-10: county prices, and sums made from parts
+
+Approved by Nick on 2026-11-10 with the starting-a-family-collection plan
+("Yes show hours of work"). Three changes, each a registry field the
+parser checks:
+
+- **A HUD Fair Market Rent is a county time cost.** Like the Women's
+  Bureau's childcare prices (2026-11-08), `HUD_FMR_IL:fmr_3br` is divided
+  by the county's own QCEW wage (`wage_geo_levels: ["COUNTY"]`). HUD sets the rent
+  for the county's HUD area and repeats it for each county in it, so the row
+  names the area as well as the county. The year rule above is unchanged.
+  The rent's year is HUD's fiscal year, whose `period_start` is October 1
+  of the year before, and it is matched to the wage of that calendar year,
+  or the newest wage year, as the row says.
+- **Students per teacher divides sums over one set of schools.** NCES's
+  county and state figures are sums of schools, and the membership and
+  staff sums each skip the schools that did not report that count, so the
+  two can cover different schools. The warehouse therefore also publishes
+  `student_membership_matched` and `teacher_fte_matched`: both summed over
+  only the schools that reported both counts in the year's newest
+  membership and staff files, under one release that names both files.
+  `students_per_teacher` divides those two. Each input carries
+  `schools_with_value` and `schools_without_value`, so the row says how many
+  of the place's schools the figure covers.
+
+  This replaces the first version of this amendment (same day), which
+  served no value unless every school reported both
+  (`complete_inputs_only`, `partial_input`) and paired the two separate
+  files across releases (`match_release`). Nick, 2026-11-10 18:48Z: "even if
+  not every school reported it should still display what was reported."
+  Both registry fields are removed; `partial_input` stays for a summed
+  numerator with a line missing (below).
+
+### Amendment, 2026-11-10: summed numerators (acs-family-tables)
+
+Approved with the three ACS family tables (Nick, 2026-11-10, "Add the 3
+tables"). A share may name `numerator_addends`: further lines of the
+numerator's own ACS table that are added to it before dividing, as the
+Bureau adds them in its profile tables. The first is
+`young_children_all_parents_in_labor_force_share`, which is DP03's own line
+for children under 6 with all parents in the labor force:
+B23008_004 + B23008_010 + B23008_013, divided by B23008_002. The parser
+checks that:
+
+- it is a share over ACS lines;
+- every addend comes from the numerator's table;
+- each addend is named once and is not the numerator itself.
+
+The sum's margin is the square root of the summed squared margins, which is
+the ACS handbook's formula for a sum. The share's margin then follows rule
+4. The served numerator names every line that was added. If any line is
+missing for the period, or has no number, the row is served as
+`partial_input` and is not divided. The page states the arithmetic under
+the row.
+
+## Alternatives considered
+
+- **Per-capita over PEP population for every count.** Rejected: it mixes
+  programs and periods, and the survey's own total is the denominator its
+  counts were weighted to.
+- **Computing ratios in the web client.** Rejected by ADR-0001 and AGENTS.md:
+  the rule would live where no other consumer can reuse or review it.

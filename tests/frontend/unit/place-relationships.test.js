@@ -74,6 +74,17 @@ describe("a city or town's counties", () => {
     expect(crossCountyNote("Nowhere", [])).toBe("");
   });
 
+  it("does not say a place crosses county lines over a boundary sliver", () => {
+    // Abanda CDP: 100% Chambers County and 0% Randolph County by overlap area.
+    const sliver = groupNearby({ geo_id: "state:01|place:00100", total: 2, items: [
+      row("intersects", "state:55|county:025", "COUNTY", "Dane County", "55", { overlap_weight: 0.9988 }),
+      row("intersects", "state:55|county:105", "COUNTY", "Rock County", "55", { overlap_weight: 0.0012 }),
+    ] }, states, wisconsin);
+    expect(crossCountyNote("Abanda CDP", sliver.counties)).toBe(
+      "Abanda CDP lies in Dane County. Its boundary also touches Rock County, by less than half a percent of its area.",
+    );
+  });
+
   it("links a place within a county by its seven-digit code", () => {
     const county = groupNearby({ geo_id: "state:55|county:025", total: 1, items: [
       row("intersects", "state:55|place:99999", "PLACE", "Crossing city", "55", { overlap_weight: 0.6 }),
@@ -99,9 +110,24 @@ describe("a city or town's metro", () => {
       "South Region",
       "United States",
     ]);
-    expect(city.partOf[0].href).toBeNull();
+    // Covers: WEB-153 — the metro links to its page by CBSA code, which the
+    // metro route settles on its named address.
+    expect(city.partOf[0].href).toBe("/metro/12420");
     expect(partOfShareText(city.partOf[0])).toBe("");
     expect(partOfShareText(city.partOf[1])).toBe("");
+  });
+
+  // Covers: WEB-153 — where the API names the metro's page, the link is that
+  // named address, and a path off the site is never followed.
+  it("links the metro by the page the API names for it", () => {
+    const named = groupNearby({ geo_id: "state:48|place:05000", total: 1, items: [
+      row("intersects", "cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX", null, { overlap_weight: 1, page_path: "/metro/austin-round-rock-san-marcos-tx" }),
+    ] }, states, []);
+    expect(named.partOf[0].href).toBe("/metro/austin-round-rock-san-marcos-tx");
+    const offSite = groupNearby({ geo_id: "state:48|place:05000", total: 1, items: [
+      row("intersects", "cbsa:12420", "METRO", "Austin-Round Rock-San Marcos, TX", null, { page_path: "https://example.com/x" }),
+    ] }, states, []);
+    expect(offSite.partOf[0].href).toBe("/metro/12420");
   });
 
   it("says how much of the place lies in a metro it only partly reaches", () => {

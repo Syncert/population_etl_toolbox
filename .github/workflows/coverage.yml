@@ -84,8 +84,10 @@ jobs:
           key: ${{ runner.os }}-pip-coverage-py311-${{ hashFiles('pyproject.toml') }}
 
       - name: Install API and test dependencies
+        # martin-test: the database tier decodes the place and metro tiles
+        # the warehouse functions return (DB-067).
         run: |
-          python -m pip install -e ".[api,dev]"
+          python -m pip install -e ".[api,dev,martin-test]"
           python -m pip check
 
       - name: Run deterministic unit coverage

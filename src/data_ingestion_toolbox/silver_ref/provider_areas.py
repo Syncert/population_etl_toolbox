@@ -50,9 +50,10 @@ PARSER_VERSION = "provider-area-list-v1"
 BLS_CPI_METRO = re.compile(r"^S[1-4][0-9][A-Z]$")
 
 #: download.bls.gov refuses clients that do not name themselves; this is the
-#: adapter's own identifying string (``bls/metadata.py``).
+#: adapter's own identifying string (``bls/metadata.py``): the project and
+#: where to reach it, never a person.
 BLS_HEADERS = {
-    "User-Agent": "population_toolbox/1.0 (contact: your_email@example.com)",
+    "User-Agent": "population_toolbox/1.0 (+https://github.com/Syncert/population_etl_toolbox)",
     "Accept": "text/plain,*/*",
 }
 

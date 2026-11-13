@@ -15,6 +15,7 @@ advertise a route the application does not serve.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -43,6 +44,7 @@ from apps.api.schemas import (
 )
 from apps.api.services.contracts import require_relation
 from apps.api.services.metric_freshness import is_retired
+from apps.api.services.place_paths import SegmentRow, metro_segments
 from apps.api.versioning import VERSIONED_ROOT
 from data_ingestion_toolbox.semantics.rollups import (
     ROLLUP_SOURCES,
@@ -54,6 +56,8 @@ from data_ingestion_toolbox.sql.catalog_queries import (
     GEOGRAPHY_EXISTS_QUERY,
     GEOGRAPHY_RELATED_QUERY,
     GEOGRAPHY_RELATION,
+    GEO_SEARCH_RELATION,
+    METRO_PAGES_QUERY,
     RELATIONSHIP_RELATION,
     METRIC_RELATION,
     SOURCE_FRESHNESS_QUERY,
@@ -78,6 +82,7 @@ def list_metrics(
     q: Optional[str],
     limit: int,
     offset: int,
+    metric_codes: Optional[Sequence[str]] = None,
 ) -> MetricListResponse:
     require_relation(db, METRIC_RELATION)
     list_query, count_query, params = build_metrics_queries(
@@ -86,6 +91,7 @@ def list_metrics(
         q=q,
         limit=limit,
         offset=offset,
+        metric_codes=metric_codes,
     )
     total = int(db.execute(count_query, params).scalar() or 0)
     rows = db.execute(list_query, params).mappings().all()
@@ -387,6 +393,17 @@ def get_geography_related(
         return None
     rows = db.execute(GEOGRAPHY_RELATED_QUERY, {"geo_id": geo_id}).mappings().all()
     items = [GeographyRelationship.model_validate(row) for row in rows]
+    if any(item.geo_level == "METRO" for item in items):
+        # A metro's segment is decided against every metro (about 925 search
+        # rows), so it is read only when the answer names a metro.
+        require_relation(db, GEO_SEARCH_RELATION)
+        segments = metro_segments(
+            SegmentRow.from_mapping(row)
+            for row in db.execute(METRO_PAGES_QUERY).mappings().all()
+        )
+        for item in items:
+            if item.geo_level == "METRO" and item.geo_id in segments:
+                item.page_path = f"/metro/{segments[item.geo_id]}"
     return GeographyRelatedResponse(
         geo_id=own["geo_id"], geo_level=own["geo_level"], total=len(items), items=items
     )

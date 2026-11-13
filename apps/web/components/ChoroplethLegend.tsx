@@ -13,6 +13,7 @@ export default function ChoroplethLegend({
   items,
   ariaLabel,
   showCounts = false,
+  note,
 }: {
   title: string;
   items: LegendItem[];
@@ -20,13 +21,28 @@ export default function ChoroplethLegend({
   ariaLabel: string;
   /** Whether each row names how many geographies it colours. */
   showCounts?: boolean;
+  /**
+   * A line under the title naming what the map is drawn on, shown also as the
+   * title's tooltip. `marked` puts an asterisk on the title pointing at it,
+   * for boundaries from a year other than the values' (web-place-maps).
+   */
+  note?: { text: string; marked: boolean } | null;
 }) {
   if (items.length === 0) {
     return null;
   }
   return (
     <div className="map-legend" aria-label={ariaLabel}>
-      <div className="legend-title">{title}</div>
+      <div className="legend-title" title={note?.text}>
+        {title}
+        {note?.marked ? <span aria-hidden="true"> *</span> : null}
+      </div>
+      {note ? (
+        <div className="legend-note" data-testid="map-legend-boundary" data-marked={note.marked ? "true" : "false"} title={note.text}>
+          {note.marked ? "* " : ""}
+          {note.text}
+        </div>
+      ) : null}
       {items.map((item) => (
         <div className="legend-row" key={`${item.color}-${item.label}`}>
           <span className="legend-swatch" style={{ backgroundColor: item.color }} />

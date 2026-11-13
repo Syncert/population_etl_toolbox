@@ -55,6 +55,7 @@ This resource reports on content, per source:
       "registered": true,
       "metrics_total": 4447,
       "metrics_current": 4447,
+      "metrics_ended": 0,
       "metrics_stale": 0,
       "metrics_retired": 0,
       "counts_are_complete": true,
@@ -85,6 +86,15 @@ This resource reports on content, per source:
   is the publisher's own harvest time, not this request's clock.
 - `silent_sources` lists the registered sources publishing nothing. It is the
   field to page on: every chart over those sources draws nothing.
+- `metrics_ended` counts measures the provider still lists but stopped
+  publishing values for: the newest value served is older than the measure's
+  time grain allows (18 months for a monthly series, 4 months weekly, 3
+  months daily, 2 years quarterly; annual and longer series are never ended
+  by age). BLS's Midwest whole-milk price, last priced April 2020, is one.
+  Their history is still served and every observation route still answers
+  them, but they are not `current`, so `active_only=true` leaves them out and
+  `/catalog/freshness` reports them as `ended_count`. A discontinued series is
+  expected, so they are not drift and never appear in `stale_sources`.
 - `stale_sources` lists the registered sources carrying at least one measure
   the warehouse has marked `stale` — the publisher stopped emitting it and it
   has not been retired. Those measures still serve their last values, so
@@ -116,10 +126,15 @@ list.
 | Route | Answers |
 | --- | --- |
 | `GET /api/v1/catalog/sources` | Every published source system |
-| `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`) |
+| `GET /api/v1/catalog/metrics` | Metric search and paging (`q`, `source_code`, `active_only`; `metric_codes` for up to 200 named rows in one read) |
 | `GET /api/v1/catalog/metrics/{metric_code}` | One metric's full published semantics plus the routes that serve it; stable `404 {"detail": "metric_code not found"}` |
 | `GET /api/v1/catalog/geographies` | Geography identities and attribution, from a projection refreshed on its own schedule (`geo_level`, `state_fips`, `county_fips`, `q`, `active_only`) — see below |
-| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence. Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
+| `GET /api/v1/catalog/geographies/{geo_id}/related` | The geographies one served geography `contains`, is `part_of` (its state and nation), `intersects` (a county and the places its boundary overlaps, with `overlap_weight`, the overlap's share of the place, and `overlap_area_m2`) and is `adjacent` to (counties sharing a boundary). A city or town also `intersects` the `METRO` of each county it lies in: OMB builds metros from whole counties, so a place has no metro by code, and that row's `overlap_weight` is the share of the place inside the metro's counties, with the delineation's vintage and evidence, and a `METRO` row carries its page's `page_path` (`/metro/<segment>`; `null` for every other level). Every row names its `geography_vintage` and `evidence_source`; nothing is matched by name. A state lists its counties, not its places, because a place can cross a county line; stable `404 {"detail": "geo_id not found"}`. URL-encode the `geo_id` (`state%3A55%7Ccounty%3A025`) |
+| `GET /api/v1/catalog/geographies/search` | Places a typed name may mean, for "find your place": states, counties, metros, cities and towns, and ZCTAs, best match first and ranked by population, with the containing state and county and the web page path — see [Finding a place](#finding-a-place-by-name-or-by-location) |
+| `GET /api/v1/catalog/geographies/locate` | The city or town, county, tract, ZCTA, state and metro a latitude and longitude lie in, with `landing` (the city, else the county) for "use my location"; `404 {"detail": "no geography contains this point"}` where no state does |
+| `GET /api/v1/catalog/geographies/metros` | Metro and micro areas (CBSAs) by name, each with its page path and principal state; `state_fips` lists the metros with a member county in that state, so a two-state metro is listed in both — see [Metro pages](#metro-pages) |
+| `GET /api/v1/catalog/geographies/metros/{segment}` | Everything a metro page needs before it reads a figure: the metro, its member counties under the newest delineation held, every state they lie in, and the areas its principal state lies in; `404 {"detail": "metro not found"}` — see [Metro pages](#metro-pages) |
+| `GET /api/v1/catalog/tile-layers` | Every vector tile layer a map can draw (`counties`, `tracts`, `places`, `metros`), its grains, zooms and join key, and for the versioned place and metro layers each boundary vintage held with its own tile template — see [Map tiles](#map-tiles-places-and-metros-by-boundary-vintage) |
 | `GET /api/v1/catalog/capabilities` | **The route map.** Per source: route segment, whether the neutral routes answer, registered dataset identities, the exact routes that serve it with their query-parameter names, `observation_filters` — the neutral filters that source supports — `observation_dimensions`, `publishes_value_status`, and `publishes_aligned_reduction` |
 | `GET /api/v1/catalog/freshness` | Per-source publication and freshness state from the warehouse's own signal, with `geo_grains`: the sorted union of grains the source's non-retired metrics publish |
 
@@ -214,6 +229,184 @@ same name here and on every observation route. It was not always: a place
 answered under its own name here and under its state's name on
 `/observations`, which is one geography with two names to anyone joining the
 two responses.
+
+### Plain labels and definitions
+
+Every response that names a metric -- catalog entries, observation rows,
+distinctive ranks (ranked and not ranked), `/distribution/bins` and each
+measure of `/comparison/matrix` -- carries `metric_label` and
+`metric_label_status` beside the provider's own `metric_display_name`, which
+is never changed. The two-sided responses (`/comparison`,
+`/comparison/preflight`, `/comparison/correlation`) carry the same pair per
+side as `metric_label_a`/`metric_label_status_a` and
+`metric_label_b`/`metric_label_status_b`:
+
+- `metric_label_status: "approved"` (or `"draft"` until the owner has
+  reviewed it): the label comes from the metric's entry in
+  `docs/semantics/metric_definitions.json`, the plain-language registry of
+  every measure a place page shows. `/catalog/metrics` and
+  `/catalog/metrics/{metric_code}` also carry the entry itself as
+  `definition` -- `label`, a one-sentence `definition`, `unit`, `universe`,
+  `caveat`, `status`, `version` and `citations`.
+- `metric_label_status: "provider"`: no entry defines the metric yet, and
+  `metric_label` is the provider's own label. For the American Community
+  Survey the Bureau's label path is set as words (`Estimate!!Total:!!Male:`
+  becomes `Total: Male`); nothing is reworded or guessed.
+
+Show `metric_label`; keep `metric_display_name` for a citation that must
+reproduce the provider's wording. Additive in v1.
+
+A deployment that must show only reviewed wording sets
+`METRIC_LABELS_REVIEWED_ONLY=1`: a `draft` entry's label then gives way to the
+provider's (`metric_label_status: "provider"`), while the catalog still serves
+the draft `definition` with its status. Off by default, so the drafts can be
+reviewed on the running site.
+
+### Finding a place by name or by location
+
+Two catalog reads answer "find your place". Both read projections the
+glossary reconciliation run rebuilds daily, directly after the geography
+projection (`gold_glossary.geo_search` and `gold_glossary.geo_boundary`), so
+a geography published since that run is not offered yet — the same caveat as
+`/catalog/geographies` above.
+
+**Search.** `GET /api/v1/catalog/geographies/search?q=Austin` answers up to
+`limit` (1–25, default 10) geographies a typed name may mean:
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Required. Matched case-insensitively with accents removed, `&` read as "and", and punctuation as spaces ("Española", "espanola" and "ESPANOLA" are one query). At least two letters or digits after that, at most 100 characters; otherwise a `422` naming the rule |
+| `grain` | Optional, repeatable or comma-separated: `STATE`, `COUNTY`, `METRO`, `PLACE`, `ZCTA`. Any other word is a `422` naming the five. Tracts are not searched by name; reach one from its county or by location |
+| `state_fips` | Optional two digits. A metro's state is its **principal state**, the state of its most populous member county |
+
+Each item says why it was offered in `match`:
+
+| `match` | Offered because |
+| --- | --- |
+| `exact` | Its name without the Census description is the query: "Austin" for "Austin city", "Travis" for "Travis County", a metro's title before the comma, a ZCTA's five digits |
+| `prefix` | Its name starts with the query |
+| `word_prefix` | A later word of its name starts with the query ("Round" finds the Austin–Round Rock metro) |
+| `fuzzy` | A close spelling by trigram similarity ("Austn") |
+| `contains_match` | It contains one of the three best city matches, named in `matched_via` |
+
+The order is: `exact`, then `prefix`, then `word_prefix`, then `fuzzy` (closest
+first); within each, **larger population first**, a geography with no served
+population last, then grain (city, county, metro, state, ZCTA), then `geo_id`,
+so the order is total. Each of the three best `exact` or `prefix` city matches
+is followed by its county and its metro, unless they are already listed or
+`grain`/`state_fips` exclude them. So "Austin" answers Austin city, then Travis
+County (`contains_match`, `matched_via` Austin city) and the Austin–Round
+Rock–San Marcos metro, then Austin County and the other Austins by
+population.
+
+`population`, `population_year` and `population_metric_code` are the newest
+valid ACS 5-year total population (`CENSUS_ACS:acs5:B01003_001`) for that
+geography. They rank the answer and are labelled so a client can show them;
+read the observation routes for the series. `null` means none is served (a
+ZCTA, until ACS publishes at that grain here), never zero.
+
+`county_geo_id` and `county_name` are a city's containing county: the county
+holding the largest share of it by the published overlap weight. A city that
+crosses a county line has others; `/related` lists every one.
+
+`page_path` is the web page for the geography (`/us/texas/austin-city`,
+`/us/texas/travis-county`), made by the web's own address rule, including
+its FIPS fallback when two names in a state slug the same way. A metro's is
+`/metro/<segment>` (see [Metro pages](#metro-pages)). It is `null` for a
+grain with no page yet: tract, ZCTA.
+
+**Locate.** `GET /api/v1/catalog/geographies/locate?lat=30.2650&lon=-97.7470`
+answers the current geographies whose boundary covers the point: `state`,
+`county`, `place`, `tract` and `zcta`, each with its `boundary_vintage` and
+`page_path`, and `metro`, the county's metro by its delineated membership
+(OMB builds metros from whole counties, so the metro follows from the
+county rather than from the metro's own polygon; its `boundary_vintage` is the
+delineation's). `landing` is the city
+or town the point is in, or its county when it is in none (unincorporated
+land), so "use my location" opens the page a resident calls home. Where two
+current boundaries of one grain cover the point (a tract the newer decade
+split), the newer boundary wins. Boundaries are the Census cartographic
+files (1:500,000), so a point within a few metres of a line can land on
+either side of it.
+
+- `lat` is a finite number from −90 to 90 and `lon` from −180 to 180, both
+  required; anything else is a `422`.
+- A point no state boundary covers (abroad, offshore) is
+  `404 {"detail": "no geography contains this point"}`.
+- The response never echoes the coordinates, the shared cache stores it
+  under a SHA-256 of the request, and query strings are never logged, so a
+  stored answer names a tract, not a point.
+
+Both are catalog reads: they spend the catalog rate-limit budget and are
+publicly cacheable like the rest of `/catalog/`.
+
+### Metro pages
+
+A metro or micro area (a CBSA) is built by OMB from whole counties and can
+span states, so its page is not under `/us/<state>`: it is
+`/metro/<segment>`, where the segment is the slug of its published name
+(`/metro/austin-round-rock-san-marcos-tx`), or its five-digit
+CBSA code when another metro's name slugs the same way. Search, locate,
+`/related` and the routes below answer that path; the web redirects a
+`/metro/<code>` request to the named page.
+
+**One metro.** `GET /api/v1/catalog/geographies/metros/{segment}` accepts the
+canonical segment or the CBSA code (`/metros/12420`) and answers:
+
+| Field | Meaning |
+| --- | --- |
+| `requested_segment` | The segment asked for. When it is not `metro.segment` (a CBSA code), a page settles on `metro.page_path` |
+| `metro` | `geo_id`, `geo_name`, `short_name`, `cbsa_code`, `segment`, `page_path`, the principal state (`principal_state_fips`, `principal_state_name`) and the newest ACS population with its year and metric code |
+| `member_counties` | The counties the newest delineation the reference holds puts in the metro (`delineation_vintage`, `evidence_source`), most populous first, each with its page path |
+| `states` | Every state a member county lies in, with how many; the **principal state** first: the state of its most populous member county, the rule the search uses |
+| `principal_state_areas` | The Census division, region and nation the principal state lies in, for figures no source publishes for a metro (gas, food prices) |
+
+A segment outside the slug vocabulary is a `422`; one no metro answers to is
+`404 {"detail": "metro not found"}`.
+
+**A state's metros.** `GET /api/v1/catalog/geographies/metros?state_fips=48`
+lists by name the metros with a member county in the state (`limit` 1–1000,
+default 100, `offset`), so Texarkana, TX-AR is listed for Texas and for
+Arkansas. Without `state_fips` it lists every metro. A malformed state code
+is a `422`.
+
+Both are catalog reads of the search projection and the relationship view,
+publicly cacheable and on the catalog rate-limit budget. The figures are the
+observation routes' as for any place: ACS publishes metro estimates, BLS
+LAUS metro unemployment, BEA metro price parities; BEA's metro income is
+summed from the counties (see [Reading a BEA row](#reading-a-bea-row-current-chained-or-per-capita)).
+
+### Map tiles: places and metros by boundary vintage
+
+`GET /api/v1/catalog/tile-layers` lists the vector tile layers the same
+origin serves under `/tiles/`, so a map is built from this list rather than
+from guesses about the tile server:
+
+| Layer | Grains | Zooms | Boundaries |
+| --- | --- | --- | --- |
+| `counties` | `STATE`, `COUNTY` | 0–12 | current |
+| `tracts` | `TRACT` | 6–14 | current |
+| `places` | `PLACE` (cities and towns) | 6–14 | by vintage |
+| `metros` | `METRO` (metropolitan and micropolitan areas) | 0–12 | by OMB delineation vintage |
+
+A place annexes, incorporates or disincorporates, and OMB redelineates
+metros, so a figure for an earlier year belongs on that year's boundary. The
+`places` and `metros` layers are **versioned**: `vintages` lists each
+boundary vintage held, with its `feature_count` and its own `tile_template`
+(`/tiles/places/{z}/{x}/{y}?vintage=2010`). `default_vintage` is the newest,
+and the layer's `tile_template` draws it. A vintage that is not listed draws
+**nothing**: the tile server never substitutes another vintage, because a
+value drawn on another vintage's boundary is drawn on the wrong shape. A
+versioned layer with nothing loaded has `available: false`. Metro polygons
+are the Census cartographic boundary of each delineation, never a union of
+member counties.
+
+Every feature carries `geo_id` (the `join_key`), `geo_level`, its name
+(`name_field`), its state where it has one and `boundary_vintage`. **Tiles
+carry no values.** A map colours a geography by joining a published value
+on `geo_id`, and `uncoloured_rule` is the rule it follows: a geography with
+no published value is left uncoloured, never drawn as zero, and the map says
+how many it left uncoloured. A catalog read like the rest of `/catalog/`.
 
 ## Observations
 
@@ -473,6 +666,44 @@ That geography's history is every release that published it, which is what
 `scope=as_released&newest_release_per_period=true` answers: each period as
 its newest release left it.
 
+### Many measures' newest values for a few places
+
+`GET /api/v1/observations/newest/batch?metric_codes=…&geo_ids=…` takes
+comma-separated `metric_codes` (at most 40) and `geo_ids` (at most 8) and
+answers every pair in `items`, metrics outer, in the order asked. Each item's
+`observations` is exactly what
+`/observations?metric_code=…&scope=latest&newest_per_geography=true&geo_id=…&limit=1`
+answers for that pair, so a page that reads a dozen measures for a place, its
+state and the nation makes one request instead of one per measure and place.
+The metrics one source relation holds are read in one statement, each its
+own single read. A metric that read would refuse carries its `status` and
+`detail` and no `observations`: `404` for an unknown code, `422` for a source
+that declines the reduction, `503` when its serving relation is absent. An
+empty or oversized batch is `422`; split it.
+
+### Many measures' histories for a few places
+
+`GET /api/v1/observations/history/batch?metric_codes=…&geo_ids=…` takes
+comma-separated `metric_codes` (at most 12) and `geo_ids` (at most 8) and
+answers every pair in `items`, metrics outer, in the order asked. Each item's
+`observations` is exactly what
+`/observations?metric_code=…&scope=as_released&newest_release_per_period=true&geo_id=…&limit=1000`
+answers for that pair: the geography's settled history, each period as its
+newest release left it, oldest first, with each row's margin of error where
+the source publishes one. A pair with more than 1,000 periods answers its
+oldest 1,000 and states the rest in `total`. A place page draws a city's
+median household income beside its county, state and the nation from one
+request rather than one per line. The metrics one released relation holds are
+read in one statement, each its own single read. A metric that read would
+refuse carries its `status` and `detail` and no `observations`: `404` for an
+unknown code, `422` for a source that declines the reduction, `503` when its
+released relation is absent. An empty or oversized batch is `422`; split it.
+
+A period a place has no row for is one its source did not publish for it.
+Census ACS publishes more tables for a place as the Bureau widens its
+curated set, so a city's line for one measure can start years after its
+county's; nothing fills those years in.
+
 ### Quarters and years
 
 `time_grain=quarterly` and `time_grain=annual` on `/observations` answer a
@@ -533,6 +764,114 @@ a release pin or a reduction, and filters by `geo_id`, `geo_level` and
 `subject_code`. A metric without an approved method answers 422 naming
 ADR-0007; `/catalog/metrics/{code}` lists the windows a metric answers in
 `time_windows`, empty where it has none.
+
+### Per person, per household and share of the total
+
+A count is hard to compare between a city of 30,000 and a county of a
+million. `GET /api/v1/observations/derived?ratio_id=...` answers a
+**declared derived** per-capita or share value ([ADR-0009](../decisions/0009-per-capita-and-share-views.md)),
+and `GET /api/v1/catalog/derived-ratios` lists the reviewed pairings it can
+answer; `?numerator=<metric_code>` narrows that to the views one count
+offers, and `served_only=true` to those the API will answer now.
+
+Each pairing in `docs/semantics/derived_ratios.json` names its numerator,
+its denominator (or the provider's own rate), its `kind` (`share`,
+`per_capita` or `provider_rate`), the `scale` and `unit` the result is
+stated in, and the `universe` the result describes, which is the
+denominator's: a poverty share is people below the poverty level over people
+whose poverty status is determined (`B17001_002` / `B17001_001`), not over
+the total population. An ACS pairing exists once per dataset
+(`poverty_share:acs5`, `poverty_share:acs1`), so a 5-year count is only ever
+divided by a 5-year total. **Only an `approved` pairing is served**; any
+other answers 422 naming its status. A local stack can set
+`DERIVED_RATIOS_SERVE_DRAFTS=1` to serve drafts for review, and every row
+carries `pairing_status`, so a draft is never mistaken for a reviewed view.
+
+The route takes the parameters `/observations` takes for the numerator --
+`scope`, `release`, `period_start`, `geo_id`, `geo_level`, `state_fips`,
+`county_fips`, `year_from`, `year_to`, `newest_per_geography`,
+`newest_release_per_period`, `limit`, `offset` -- reads the numerator's page
+exactly as `/observations` would, and divides each row by the denominator
+row with **the same geography, period and release**. Nothing else is ever
+matched. Each row carries:
+
+- `value`, rounded to two decimals of `unit` (percent, per 1,000, per
+  100,000), or `null` with `unavailable_reason`: `different_period` (the
+  denominator is published for this geography, but not for this period and
+  release), `denominator_missing`, `denominator_zero`, `suppressed_input`,
+  or `partial_input` (a pairing with `numerator_addends` is missing one of
+  the lines it adds). A missing or withheld input is never read as zero.
+- `margin_of_error` and `margin_of_error_method`. For ACS inputs the margin
+  is the Census Bureau's formula for a derived proportion (`proportion`), or
+  for a ratio (`ratio`), or the ratio formula where the proportion formula's
+  radicand is negative (`ratio_fallback`), at the inputs' 90 percent
+  confidence. `unavailable` means an input's margin is not published. The
+  served ACS rows do not keep the Bureau's "controlled" annotation, so a
+  pairing names the levels at which the Bureau controls its denominator
+  (total population and housing units at nation, state, county and metro);
+  there a null denominator margin is taken as zero, as the Bureau instructs,
+  and the denominator says `margin_of_error_controlled: true`.
+- `derived: true`, `ratio_id`, `pairing_version`, and both inputs in
+  `numerator` and `denominator`: metric code, plain label, release, period,
+  value, value status and margin.
+
+Where the provider publishes the rate itself -- the FBI's rate per 100,000,
+the Population Estimates Program's births and deaths per 1,000, SAIPE's and
+SAHIE's percentages -- the pairing is a `provider_rate`: the route answers
+the provider's own rows, `derived: false`, with the provider's row in
+`provider_rate`, and no recomputed value appears beside it. Its paging,
+scope and filters are the rate metric's.
+
+A `time_cost` pairing (`minutes_of_work_<item>:<area>`, such as
+`minutes_of_work_eggs:0200` for the Midwest's eggs; ADR-0009 amendment of
+2026-11-06) answers minutes of work: each BLS average price row over the
+hourly wage, QCEW's annual average weekly wage over `hours_per_week`, of the
+county, state or nation you name in `wage_geo_id` (required; any other kind
+refuses it, and a metro is a `422` because QCEW publishes none). The wage is
+the price's calendar year, or the newest published year for a newer price,
+said in `wage_year` (`same_year` or `newest_published_year`). Each row
+carries the price as `numerator`, the wage as `denominator`, and
+`wage_geo_id` and `wage_geo_name`. Your `release` pin applies to the price,
+never to the wage.
+
+The FBI publishes its rate only for states and the nation. For a county, an
+`agency_rate` pairing (`violent_crime_county_agency_rate`,
+`property_crime_county_agency_rate`; ADR-0012) answers a rate the warehouse
+computes the FBI's way: the offenses reported by the agencies serving only
+that county, over those agencies' FBI-published populations, per 100,000,
+for one month. The pairing names the FBI rate it stands beside in
+`reads_beside`, and `geo_levels` is `["COUNTY"]`; asking it for a state or
+the nation is a `422`. Each row is `derived: true`, carries the offenses as
+`numerator`, and carries `coverage`:
+
+- `covered_population`: the reporting agencies' FBI population, the
+  denominator;
+- `linked_population`: every agency serving only this county with a
+  published population, reporting or not; `coverage_share` is one over the
+  other, and `coverage_floor` is 0.5;
+- `contributing_agencies`, `excluded_multi_county_agencies`,
+  `non_reporting_agencies`, `unknown_population_agencies` and
+  `not_loaded_agencies`, as FBI ORIs.
+
+A month with an agency serving only this county whose reports are not
+loaded, no reporting agency, only agencies that also serve other counties,
+or coverage under the floor has no value and says why in
+`unavailable_reason` (`agencies_not_loaded`, `no_reporting_agency`,
+`only_multi_county_agencies`, `coverage_below_floor`), never a zero. An
+`agencies_not_loaded` month also leaves `coverage_share` empty: without those
+agencies' populations the coverage cannot be judged. Show the coverage beside the figure:
+the rate describes the people its reporting agencies cover, not every
+resident, and it is not comparable with a Census per-capita figure. Its rows
+are ordered by period, county and release, and `newest_per_geography` keeps
+each county's newest month whether it has a rate or a refusal. The agencies
+come from the FBI's Return A master files (`FBI_UCR:return_a_violent_crime:*`
+and `FBI_UCR:return_a_property_crime:*`), which hold every agency; a pairing's
+`numerator` names that product.
+
+`total`, `limit` and `offset` page the numerator's (or the provider rate's)
+rows in that metric's own `/observations` order; the response's `ratio`
+repeats the pairing so a client can name the denominator beside every value
+("percent of households, ACS 2019-2023").
 
 ### Census PEP spans six decades, and its measures do not
 
@@ -696,7 +1035,11 @@ losses such as `FEMA_NRI:expected_annual_loss_inland_flooding`, and the
 annualized frequency of inland flooding, tornado, wildfire, hurricane and
 heat wave. From OpenFEMA: `FEMA_NRI:major_disaster_declarations`,
 `FEMA_NRI:emergency_declarations` and `FEMA_NRI:fire_management_declarations`
-per county and calendar year.
+per county and calendar year, and one count per FEMA incident type, keyed by
+the type's own words: `FEMA_NRI:incident_declarations_flood`,
+`FEMA_NRI:incident_declarations_hurricane`,
+`FEMA_NRI:incident_declarations_severe_storm` and so on. An incident type
+FEMA adds is served under its own key with no code change.
 
 - **Expected annual loss is a model, not a measurement.** FEMA multiplies
   annualized frequency, exposure and a historic loss ratio; the unit is
@@ -709,12 +1052,43 @@ per county and calendar year.
   vulnerability and resilience are relative ranks, not measures.
 - **A declaration count is this warehouse's count.** It counts distinct
   declarations of the type that designated the county in the calendar year
-  of the declaration date; `dimensions.declarations` lists them. Statewide
+  of the declaration date; `dimensions.declarations` lists them. An
+  incident-type count covers all three declaration types (major disaster,
+  emergency, fire management), so one declaration counts once. Statewide
   and tribal-area designations are not counted toward a county, and a year
   with no declaration has no row. OpenFEMA still designates Connecticut's
   legacy counties, which the shared geography may not hold.
 - **Required notice:** This product uses the Federal Emergency Management
   Agency's OpenFEMA API, but is not endorsed by FEMA.
+
+### Reading an elections row: a two-party share, dated on election day
+
+`ELECTIONS` serves the MIT Election Data and Science Lab's presidential
+general-election returns for states and counties as three measures:
+`ELECTIONS:president_two_party_republican_share` (percent),
+`ELECTIONS:president_two_party_margin` (percentage points) and
+`ELECTIONS:president_total_votes` (votes).
+
+- **Two-party, by construction.** The share is the Republican candidate's
+  votes over the Republican and Democratic candidates' combined votes; the
+  margin is the Republican share minus the Democratic share, so positive
+  leans Republican. Third-party votes count only toward the total.
+  `dimensions.observation_basis` says so on every row.
+- **A candidate is counted once.** Where a candidate stands on several
+  ballot lines (New York's fusion lines) the lines are added; where a county
+  publishes its vote only by mode (election day, absentee, early) the modes
+  are added.
+- **Dated on election day.** `period_start` and `period_end` are the
+  Tuesday after the first Monday of November; `year` is the election year.
+- **`dimensions.leading_party`** is the party of the candidate with the
+  most votes in the area (`REP`, `DEM`, `IND` or `OTH`).
+- **A missing count is not zero.** A county row MEDSL publishes without a
+  vote count is held back, so an area with no row was not published, not
+  won by nobody.
+- **Not an economic measure.** Nothing here is scored, ranked or combined
+  with another source's measure (ADR-0014). Seat holders (who held each
+  House, Senate and governor seat, and when) are not observations; they get
+  their own routes in a later release.
 
 ### Reading an FCC broadband row: reported availability, not subscription
 
@@ -764,6 +1138,15 @@ million, the year's fourth-highest daily maximum 8-hour average under the
 `annual_heating_degree_days` and `annual_cooling_degree_days` (degree days,
 base 65 F).
 
+It also serves seven monthly figures from the monthly by-station archive:
+`monthly_mean_temperature`, `monthly_mean_maximum_temperature`,
+`monthly_mean_minimum_temperature`, `monthly_precipitation`,
+`monthly_snowfall` (inches; only stations that measure snowfall),
+`monthly_heating_degree_days` and `monthly_cooling_degree_days`, one row per
+county and calendar month, with `dimensions.month` (1 to 12). A monthly row's
+period is that month from 1991 to 2020 (January: 1991-01-01 to 2020-01-31),
+labelled year 2020 like the annual rows.
+
 - **It is a normal, not a year.** Each row covers 1991-01-01 to 2020-12-31
   and is labelled year 2020; it is not the value of 2020 or of any year, and
   the analysis routes decline it so it is never aligned with annual values.
@@ -778,6 +1161,114 @@ base 65 F).
   element has no row, never a zero. A withheld station normal (NCEI flags
   `M`, `V`, `Y`) carries no number; an `X` normal is NCEI's rounded zero and
   keeps its flag.
+
+### Reading a NOAA Storm Events row: events reported in a place and year
+
+`NOAA_STORM_EVENTS` serves counts of hazardous weather events from NCEI's
+Storm Events Database, 1950 onward, for counties, states and the nation:
+one measure per event type as NCEI names it (`storm_events_tornado`,
+`storm_events_thunderstorm_wind`, `storm_events_flash_flood` ...), all types
+(`storm_events_all_types`), and six impact sums
+(`storm_event_deaths_direct`, `storm_event_deaths_indirect`,
+`storm_event_injuries_direct`, `storm_event_injuries_indirect`,
+`storm_event_property_damage`, `storm_event_crop_damage`). One row per place,
+year and measure; the period is the calendar year of the event's begin date.
+
+- **Which types a year can hold.** 1950-1954 tornado only; 1955-1995
+  tornado, thunderstorm wind and hail; 1996 onward all 48 types of NWS
+  Directive 10-1605. In a year that records a type, a place with no row had
+  no such event reported; outside it the type was not recorded.
+- **Where an event counts.** A county counts the events reported for it and
+  the events reported for an NWS forecast zone that includes part of it
+  (`dimensions.county_reported` and `dimensions.zone_reported`). A zone event
+  counts in every county of the zone, and only when its zone code and name
+  match a published NWS zone-county file; other zone events count at state
+  and nation level only.
+- **Deaths, injuries and damage are not split.** A county's figures sum the
+  events reported for that county only. A blank figure is not reported and
+  is not counted; `dimensions.events_counted` is how many events had it.
+  Dollars are as reported in the event's year.
+- **The current year is partial.** `dimensions.coverage_note` names the NCEI
+  file the figure is counted from while NCEI is still adding events.
+
+### Reading a NOAA nClimDiv row: a county month as NCEI publishes it
+
+`NOAA_CLIMDIV` serves six monthly county series from NCEI's nClimDiv county
+files, from January 1895: `monthly_precipitation_total` (inches),
+`monthly_average_temperature`, `monthly_maximum_temperature` and
+`monthly_minimum_temperature` (degrees Fahrenheit; the maximum and minimum
+are averages of daily maxima and minima), and `monthly_heating_degree_days`
+and `monthly_cooling_degree_days` (degree days, base 65 F; NCEI publishes
+these for the 48 contiguous states only). One row per county and calendar
+month, with `dimensions.month` (1 to 12); the period runs from the first to
+the last day of that month.
+
+- **It is NCEI's county value.** NCEI derives it from its 5 km nClimGrid
+  grid, interpolated from GHCN-Daily stations; this warehouse does not
+  average stations for it. `dimensions.value_source` is the text NCEI
+  wrote.
+- **Recent months change.** NCEI revises the latest two calendar years
+  every month. `/api/v1/observations/releases` returns each value a later
+  release replaced, with the file name (`nClimDiv climdiv-pcpncy-v1.0.0-20261105`)
+  as the release.
+- **A month NCEI has not published has no row.** The files write a missing
+  marker for months not yet published; it is never served as a value.
+- **Monthly only.** Months are not added or averaged into a year here.
+
+### Reading a Monthly Treasury Statement row: a federal fiscal year as Treasury publishes it
+
+`TREASURY_MTS` serves the lines of the Monthly Treasury Statement's Table 9
+for the nation (`us:1`): federal receipts by source (`receipts_individual_income_taxes`
+to `receipts_total`) and outlays by budget function (`outlays_national_defense`
+to `outlays_total`), in US dollars and cents. One row per line and federal
+fiscal year; `period_start` is October 1 of the prior calendar year and
+`period_end` is September 30.
+
+- **It is the September statement's fiscal-year-to-date column.** The
+  fiscal-year value is read as Treasury published it, never added up from
+  months. A fiscal year with no September statement yet has no row.
+- **Federal government only.** These are the federal government's own
+  receipts and outlays, not state or local spending, and not where the money
+  was spent. Outlays are net of offsetting collections, so a line (such as
+  undistributed offsetting receipts) can be negative.
+- **Recent months change.** Each read re-reads the three months before the
+  newest statement; `/api/v1/observations/releases` returns a restated
+  fiscal-year total beside the one it replaced.
+- **Shares and months live in the warehouse view.** `gold_treasury_mts.outlays_by_function`
+  holds each budget function's share of total outlays for fiscal years, the
+  open fiscal year to date, and each month.
+
+### Reading a USAspending row: federal award money by place of performance
+
+`USASPENDING` serves federal award obligations as USAspending.gov publishes
+them by place of performance: `federal_award_obligations` (every award) and
+one measure per award type group (`federal_award_obligations_contracts`,
+`_grants`, `_direct_payments`, `_loans`, `_other_assistance`), in US dollars
+and cents, for states (`STATE`, the 50 states, DC and the territories) and
+counties (`COUNTY`). One row per measure, place and federal fiscal year;
+`period_start` is October 1 of the prior calendar year and `period_end` is
+September 30. Fiscal 2008 is the first year USAspending answers.
+
+- **Where the work is performed, not where the money is felt.** Pass-through
+  grants sit with the state agency that receives them, and some payments
+  (Medicare) where the claims processor is, so a county can show far more
+  than its residents receive. Each row's `observation_basis` says so.
+- **Award obligations, not all federal spending.** Salaries and most
+  interest are not awards. For the federal budget as a whole see
+  `TREASURY_MTS`.
+- **Separate from local government spending.** `CENSUS_GOVFIN` reports what
+  the governments in a place spend; this is federal money awarded there.
+  Never add the two.
+- **Awards with no recorded place are kept but never served.** USAspending
+  answers them under an empty code; they are in the warehouse, not on any
+  place.
+- **Recent years change.** Agencies keep reporting the current and prior
+  fiscal years, so each run re-reads them; `/api/v1/observations/releases`
+  returns a restated amount beside the one it replaced.
+- **Shares live in the warehouse views.** `gold_usaspending.awards_by_award_type`
+  and `gold_usaspending.awards_by_agency` hold each group's and each awarding
+  agency's share of a place's all-award total, with the reason when that
+  total is not published.
 
 ### Reading a LEHD LODES row: jobs where people live and where they work
 
@@ -861,6 +1352,13 @@ capita personal income and `BEA:CAGDP1:1` is real GDP.
 - BEA's regions and its combined areas, such as the Virginia independent
   cities merged with their surrounding county, are not served: they are not
   counties.
+- **A metro's income is summed from its counties, and says so.** BEA
+  publishes no metro rows for county income, so the warehouse adds up each
+  metro's counties as BEA does. Those rows carry
+  `dimensions.derivation`: `sum_of_member_counties` for a summed line,
+  `ratio_of_member_county_sums` for per capita income (summed income over
+  summed population). It is `null` on every figure BEA published. Chained
+  dollars are never summed, so a metro has no real GDP here.
 
 ### Price levels, regional and metro prices
 
@@ -990,6 +1488,95 @@ warehouse read the Bureau's response, because the API names no release; a
 changed response is a new release beside the old one, readable with
 `scope=as_released`.
 
+### Government finance: Census figures, county-area sums and fiscal years
+
+`CENSUS_GOVFIN` serves the Census Bureau's state and local government
+finances: taxes by type, charges, own-source revenue, aid between
+governments and debt, in thousands of dollars (QTAX in millions). A metric
+code is `CENSUS_GOVFIN:<dataset>:<measure>:<government level>` -- for
+example `CENSUS_GOVFIN:asslgf:taxes_total:state_and_local` for a state's
+state and local taxes, or `CENSUS_GOVFIN:cog_units:taxes_total:local` for a
+county area's local government taxes.
+
+- `dimensions.derivation` says whose figure it is: `census_published` for
+  Census's own state and national figures, `county_area_rollup` for the
+  warehouse's sum of the local governments Census places in a county, and
+  `state_local_rollup` or `state_government_units` for a state summed from
+  its unit records. `government_count` is how many governments a sum holds.
+- A government spanning counties is counted whole in its Census home county,
+  so a county area's taxes were collected in that county, not necessarily
+  paid by its residents.
+- County areas exist only for Census of Governments years (2002, 2012, 2017,
+  2022). `record_coverage = reported_only` marks 2002, whose file left out
+  the governments Census imputed; it reads low beside later years.
+- `period_start` is January 1 of the year a fiscal year ends in, and
+  `dimensions.period_label` says "fiscal year ending in 2022". Most states'
+  fiscal 2022 ran from July 2021 to June 2022.
+
+### Taxes and public money for one place, and governors' fiscal change
+
+Two derived reads (taxes-and-public-money T-6) answer the place pages'
+"Taxes and public money" group and the state pages' governor table. Both are
+scoped to one place and follow ADR-0014's fiscal section: each measure on its
+own, no score or rank, fiscal years dated by the calendar year they end in,
+taxes "collected in" a place, payments read one way round. Every value is
+text; null is missing, with `unavailable_reason`, never zero.
+
+`GET /api/v1/public-money?geo_id=` takes the nation (`us:1`), a state
+(`state:NN`) or a county (`state:NN|county:NNN`), anything else is 422, and
+answers for the place, its state and the nation (`levels`):
+
+- `payments`: BEA CAINC35 program receipts as shares of CAINC1 personal
+  income for the newest year the place publishes, the same year for every
+  level. Programs are grouped in six; `other` is BEA's total less the named
+  programs, and is null rather than negative when their releases differ.
+- `income_sources`: earnings and the rest, dividends-interest-rent and
+  payments as shares of personal income (CAINC4 lines 46 and 47 over CAINC1
+  line 1); earnings is 100 less the other two, BEA's line 45 in effect.
+- `federal_tax_rate`: the `income_tax_share_of_agi` pairing over every year
+  each level publishes (counties from 2010, the nation from 2020).
+- `tax_burden`: `gold_census_govfin.tax_burden` -- state and local taxes for a
+  state and the nation every fiscal year, a county area's local governments
+  in Census of Governments years only. The two are different measures and a
+  reader should not draw them on one line.
+- `property_tax`: the `property_tax_to_home_value:acs5` pairing for the
+  place's newest five-year period, with its derived margin.
+
+`GET /api/v1/governor-terms?geo_id=state:NN` serves
+`gold_elections.governor_term_fiscal`: one item per governor tenure
+(consecutive terms of one holder and party joined), newest first. Each
+`fiscal` entry is one measure's window -- the last full year before the
+tenure to its last full year, or "so far" to the newest year the state and
+nation both publish -- with the state's change, the nation's, and
+`net_change` (state minus nation, in points). A completed tenure whose end
+year is unpublished says `end_year_not_published` and is never moved to a
+nearby year. `tax_mix` holds the shares of state and local taxes from
+property, general sales, income and other taxes in the window's last year.
+
+`GET /api/v1/where-money-goes?geo_id=` serves where public money goes for
+the nation (`us:1`), a state or a county. There is one `layers` entry for each
+government level, each read from its own gold view for one year, with
+`lines` ordered by amount, largest first, and each line's `share_pct` of that
+layer's own `total`:
+
+- `federal_outlays` (the nation only): `gold_treasury_mts.outlays_by_function`,
+  the newest fiscal year with a September statement, in US dollars.
+- `state_local_spending`: `gold_census_govfin.spending_mix`. For the nation
+  and a state this is state and local governments (`asslgf`), every fiscal
+  year. For a county it is the local governments in the county area
+  (`cog_units`), in Census of Governments years only. Amounts are in
+  thousands of US dollars, and the shares add to 100.
+- `federal_awards_by_type` and `federal_awards_by_agency` (a state and a
+  county): `gold_usaspending.awards_by_award_type` and `awards_by_agency`,
+  for the newest federal fiscal year that ended more than a year ago, in US
+  dollars. Agencies keep reporting a year for months after it ends, so a
+  newer ended year is named in the layer's `notes`, not served. Obligations USAspending lists with no agency count in the total but in no
+  agency.
+
+A layer with nothing to serve has empty `lines`, a null `total` and an
+`unavailable_reason`. The layers are separate figures and are never added
+together. The response's `caveats` say so with every answer.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -1036,7 +1623,9 @@ source-scoped routes serve it; that is what they are for.
   happened to read.
 - `uncertainty` is `null` when the source publishes none, and otherwise
   carries only the fields that source publishes — the rest stay `null`.
-  Census ACS publishes `margin_of_error` and `margin_of_error_pct`; CDC
+  Census ACS publishes `margin_of_error` and `margin_of_error_pct`; Census
+  SAIPE and SAHIE publish `confidence_lower`, `confidence_upper`,
+  `margin_of_error` and `margin_of_error_pct`; CDC
   publishes `confidence_lower` and `confidence_upper`; USDA NASS publishes
   `cv_value` with `cv_status` and `cv_symbol`, which is how it says an
   estimate is unreliable; County Business Patterns publishes `noise_flag`
@@ -1117,9 +1706,14 @@ prevent:
 | HUD Fair Market Rents and income limits | the fiscal year and edition (`FY2026`, `FY2026-revised`) | HUD's own fiscal-year label; a reissued year is a second release beside the first |
 | FHFA House Price Index | the workbook's "Last updated" date | FHFA's own date in the file; a second file of the same date with different bytes is that date with `.2` |
 | FEMA National Risk Index | the NRI version (`December 2025`) | FEMA's own version label; declaration counts take the date of the OpenFEMA refresh the warehouse read |
+| Elections (MEDSL) | `MEDSL <file name>` (`MEDSL countypres_2000-2024.csv`) | MEDSL's own file, whose name carries the span it covers; a corrected file under the same name is a new read that replaces the old as current |
 | FCC broadband | `BDC <as-of> rev <revision> read <time>` | The FCC's vintage and its revision date from the file name, plus the read; a new revision is a new release |
 | EPA air quality | `AirData <year> read <time>` | **Not an EPA release identity.** EPA regenerates the annual files in place, so each read of a changed file is a new release |
 | NOAA climate normals | `Normals 1991-2020 <archive version> read <time>` | NCEI's archive version (`v1.0.1 (c20230404)`) plus the read; a new version is a new archive, registered before it is read |
+| NOAA Storm Events | `Storm Events <file name>` | The day NCEI created the year's file, in its name (`StormEvents_details-ftp_v1.0_d2024_c20260728.csv.gz`); a restamped year is recounted |
+| NOAA nClimDiv | `nClimDiv <file name>` | NCEI's release day and version in the file name (`climdiv-pcpncy-v1.0.0-20261105`); a month a later release changes is kept as replaced |
+| Monthly Treasury Statement | `MTS <statement month> read <date>` | Treasury's statement month plus the day the warehouse read it; Treasury restates a recent month in place, and a restated line read again is a second release |
+| USAspending | `USAspending FY<year> read <date>` | **Not a USAspending publication.** The search API names no release, so the identity is the fiscal year plus the day the warehouse read it; an amount a later read changes is kept as replaced |
 | Census LEHD LODES | the data vintage | The state's `version.txt` vintage; a corrected vintage is a new release beside the old one |
 | Census County Business Patterns | the time the warehouse read the file | **Not a Bureau publication.** The files name no release, so the identity is the read; a corrected file is a new release beside the old one, and one whose bytes match adds nothing |
 | Census SAIPE/SAHIE | the time the warehouse read the response | **Not a Bureau publication.** The timeseries API names no release, so the identity is the read; a read whose bytes differ from the one held is a new release, and one that matches adds nothing |
@@ -1305,6 +1899,7 @@ neither repeat a row nor skip one:
 | `/observations` | the source's own declared key for the scope you asked: its latest order for `scope=latest`, its as-released order for `scope=as_released`. Both end in a column no two rows of one metric share, which is why a reduction (`newest_per_geography`, `newest_release_per_period`) picks the same row every time |
 | `/observations/releases` | the release ordering the source declares, descending, then the release identity itself — the group key, so no two rows can tie |
 | `/observations/periods` | the served `period_start` descending, then `period_end` descending with null last — the pair is the group key, so paging is deterministic |
+| `/observations/derived` | the numerator's (or the provider rate's) own `/observations` order for the scope you asked; each row is matched to its denominator, never reordered; an `agency_rate` pairing's rows by period, county and release |
 | `/observations/latest` | `geo_id` — the three union sources publish one latest row per geography |
 | `/observations/timeseries` | `observation_date`, then the release identity the union carries: `as_of_date`, `dataset_code`, `vintage_year` |
 | `/{source}/observations/latest` | `geo_id`, then the source's own remaining key — for Census PEP that is `observation_date`, `vintage_year`, `capture_id`, because its latest publication is a series |
@@ -1434,6 +2029,12 @@ climate normals are declined because a 30-year normal is not the value of any
 one year, so aligning it by year with annual values would mislead. USDA ERS
 is declined because it publishes classifications -- rural-urban codes and
 typology flags -- that an analysis would average or correlate as quantities.
+The Monthly Treasury Statement (`TREASURY_MTS`) is declined because its years
+are federal fiscal years (October to September) for the nation only, which a
+year-aligned analysis would pair with other sources' calendar years.
+USAspending (`USASPENDING`) is declined for the same reason: its years are
+federal fiscal years, and its amounts are recorded where awarded work is
+performed, which an analysis would read as money received there.
 Query them through `/observations` with the appropriate stratum, domain, or
 subject filters.
 
@@ -1454,7 +2055,8 @@ identity. It takes no `limit` or `offset` — a coefficient over one page would
 describe a hundred geographies and be read as describing the country — and it
 inherits `/comparison`'s refusals exactly: `404` for an unknown code, `422`
 with the failed rules for an incompatible pair, `422` with the source's own
-restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals and USDA ERS.
+restriction for CDC, USDA NASS, FBI UCR, NOAA climate normals, USDA ERS, the
+Monthly Treasury Statement and USAspending.
 
 `pearson_r` is the linear coefficient; `spearman_rho` is the same computed
 over each side's ranks. Both are published because published economic and
@@ -1544,7 +2146,7 @@ each other the way you read `total` against `geographies_a` on `/comparison`.
 
 **Three things refuse the whole request**, and the line is deliberate. A
 measure whose source the analysis routes decline (CDC, USDA NASS, FBI UCR,
-NOAA climate normals, USDA ERS),
+NOAA climate normals, USDA ERS, the Monthly Treasury Statement, USAspending),
 or whose source the API has not registered at all, answers `422` naming that
 measure — a matrix with a row of holes labelled "stratified" invites exactly
 the reading the refusal exists to prevent. An unknown code answers `404`. And a request in which *every* pair is declined
@@ -1555,6 +2157,176 @@ Anything else about a *combination* is a cell.
 statistics are measured over the whole join, never over the page you asked
 for. `year` works as it does on `/comparison/correlation` — each side's own
 declared year filter — and pins every side.
+
+### One measure in two places, at any level
+
+`GET /api/v1/comparison/places?metric_code=…&geo_id_a=…&geo_id_b=…` answers
+the reader's question "how does Austin compare with Travis County?": one
+measure, two named places, which may sit at different levels (a city and its
+county, a county and its state, a metro and the nation). It follows
+[ADR-0010](../decisions/0010-cross-level-comparison.md).
+
+- **Whether it compares is the measure's kind.** `measure_kind` comes from the
+  metric's definition (`docs/semantics/metric_definitions.json`): a `median`,
+  `mean`, `rate`, `share` or `index` describes its population whatever its
+  size and compares across levels. A `count` does not, because a county has
+  more of everything than a city inside it, so a count across levels answers
+  `200` with `comparable: false` and `refusal.reason: counts_differ_in_size`,
+  listing in `refusal.alternatives` the served per-capita and share views of
+  that count (ADR-0009). Ask again with `ratio_id=` in place of `metric_code`
+  to compare one of them. A metric with no declared kind is a count;
+  `measure_kind_status` says whether the kind was reviewed (`draft` until the
+  owner approves it, `undeclared` when no kind is declared).
+- **One program and one period, or said otherwise.** `metric_code_b` puts a
+  different code on side b, and is refused unless it is the same measure from
+  the same program: `programs_differ` (the ACS 1-year beside the 5-year
+  estimates), `universes_differ`, `units_differ`, or `different_measures`
+  (use `/comparison` for two measures). Each side shows the newest period
+  both places publish (`period_basis: newest_common`); with no common period
+  each shows its own newest (`each_newest`) and the note `periods_differ`.
+  `period_start` asks for one period on both sides (a year matches the
+  periods starting in it). A side with no value has `published: false` (or
+  keeps its withheld status) and the note `not_published`; it is never zero,
+  and the comparison is refused with `refusal.reason: not_published` naming
+  the place ("there is no published value for United States in this series":
+  BLS LAUS publishes no national rate). The nation is named "United States".
+- **Margins decide "different".** Each side carries its 90 percent margin and
+  interval where one is published; `intervals_overlap` says whether they
+  overlap, and an overlap adds the note `intervals_overlap` ("not
+  distinguishable at 90 percent confidence"). A source with no margin adds
+  `no_margin_published`.
+- **Containment is disclosed.** `containment.relationship` is `contains` (b
+  lies inside a), `part_of`, `intersects` (a city and a county or metro that
+  overlap, with `share_of_smaller_inside_larger` from the reference's area
+  overlap), `adjacent` or `none_recorded`. The nation contains every place.
+- **No verdicts.** `difference` (`a - b`, named in `derivations`) is computed
+  only for two independent places in the same period with two published
+  values; never between a place and its container, across periods, or for a
+  refused comparison. Nothing is ranked.
+
+A refusal is `200` with `comparable: false`; an unknown geography, metric or
+`ratio_id` is `404` naming the parameter; asking for both or neither of
+`metric_code` and `ratio_id`, the same place twice, or a pairing that is not
+served is `422`.
+
+**Many measures for the same two places.**
+`GET /api/v1/comparison/places/batch?geo_id_a=…&geo_id_b=…&metric_codes=…&ratio_ids=…`
+takes comma-separated `metric_codes` and `ratio_ids` (at most 60 in all) and
+answers each in `items`, in the order asked with metric codes first, exactly as
+`/comparison/places` answers it alone. The two places, how they relate and the
+rows are read once for the batch rather than once per measure, which is what
+lets a compare page fill a chapter in one request. With `follow_alternatives`
+(the default) a total refused as `counts_differ_in_size` also carries
+`instead`: the answer for its first offered view. An item the single route
+would refuse carries that `status` and `detail` and no `answer`; an unknown
+place is `404` for the whole batch.
+
+### Who lives here, by age and sex
+
+`GET /api/v1/age-structure?geo_id=…[&dataset=acs5|acs1][&release=latest|YYYY][&compare_geo_ids=…]`
+answers a population pyramid ([ADR-0013](../decisions/0013-age-and-sex-structure.md)):
+the ACS sex-by-age table (B01001) added into eighteen five-year age groups
+per sex, by the reviewed scheme in `docs/semantics/age_bands.json` (each
+group names the published lines it sums). Each group's `count` and `share`
+(percent of the place's total, both sexes) carry 90 percent margins (a sum's
+margin is the root of the summed squares; a share uses the Bureau's
+proportion formula), a `cv_percent` and `reliable` (CV of 30 % or less). The
+answer also carries the provider's own median ages (B01002, `derived:
+false`), the broad groups (under 18, 18 to 64, 65 and over, 85 and over),
+the child, old-age and total dependency ratios (per 100 people aged 18 to
+64, the Bureau's S0101 definition) and the sex ratio (men per 100 women).
+
+`places` lists the place first, then **every level it sits in**, next level
+up first: a city or tract's county, state and nation; a county's state and
+nation; a state's nation; a metro's nation and, when it lies in one, its
+state. `default_reference_geo_id` names the first. A city's county is the
+county it lies in, or the one holding the largest share of its area
+(`overlap_weight`). Every place is read at the place's own release; a level
+that has no row for it is `unavailable_reason: "not_published"` with no
+groups, never another release. A group whose line is suppressed or missing
+has `count: null` and says which, and the rest are still served. Up to three
+`compare_geo_ids` are added after the levels with `role: "compare"`.
+
+`GET /api/v1/age-structure/history?geo_id=…[&periods=non_overlapping|all][&include_bands=true]`
+returns the same block per release, newest first, read as released. By
+default it keeps only releases that share no survey year (for the 5-year:
+2019–2023, 2014–2018, 2009–2013).
+
+`GET /api/v1/age-structure/cohorts?geo_id=…&from_release=YYYY&to_release=YYYY`
+puts each group in the earlier release beside the next group up in the later
+one (people 25 to 29 then, 30 to 34 now), with the change and its margin and
+whether the two intervals overlap. It is refused (`comparable: false`,
+`refusal.reason`) when the periods overlap (`overlapping_periods`), do not end
+five years apart (`period_gap_not_five_years`), a tract was redrawn between
+them (`boundary_changed`), or a release is missing (`not_published`). The
+`caveat` says what such a change mixes; the API draws no conclusion from it.
+
+`GET /api/v1/age-structure/map?indicator=…&geo_level=NATIONAL|STATE|METRO|COUNTY|PLACE|TRACT[&state_fips=NN][&release=YYYY][&dataset=acs5|acs1]`
+maps one age indicator, never a single age line: `under_18`, `age_18_64`,
+`age_65_plus` and `age_85_plus` (percent of everyone),
+`child_dependency_ratio`, `old_age_dependency_ratio` and
+`total_dependency_ratio` (per 100 people aged 18 to 64), `sex_ratio` (men per
+100 women), or `median_age`, `median_age_men` and `median_age_women` (the
+Bureau's own). Values come from a derived summary table built with the same
+arithmetic as the place block above, so a mapped value is the one the place
+page prints; `derived` is true. Cities and tracts are drawn one state at a
+time, so `state_fips` is required for `PLACE` and `TRACT`. Without `release`
+the grain's newest summary release is used. Each item is `geo_id`, `value`,
+`moe`, and `unavailable_reason` when the value is withheld (null, never
+zero).
+
+`GET /api/v1/age-structure/rates?geo_id=…&rate=poverty_by_age|uninsured_by_age|disability_by_age|moved_by_age|veterans_by_age[&release=YYYY][&dataset=acs5|acs1]`
+answers one by-age table as a rate per age group: people below the poverty
+level (B17001), without health insurance (B27010), with a disability
+(C18108), who moved in the past year (B07001) or who are veterans (B21001).
+Each rate is a percent of that age group's own universe, named in
+`rate.universe` (for poverty, the people of that age whose poverty status is
+determined), never of the whole population. Each group carries `all`, and
+`men` and `women` when `rate.by_sex` is true (null otherwise), each with
+`numerator`, `denominator`, their margins, `rate`, `rate_moe` (the Bureau's
+proportion formula), the numerator's `cv_percent` and `reliable`
+(CV 30 % or less); `total` is the table's own all-ages rate. A group's
+`label`, `age_start` and `age_end` are as the release labels them: B27010's
+first two groups are under 18 and 18 to 34 before 2017, under 19 and 19 to
+34 after, on the same lines. A release published in an older line layout
+the scheme does not map (veterans before 2010, moved in the 2005 1-year
+release) is `layout_not_mapped`, with no groups. `places` is the
+place and then each level it sits in, read at the place's release exactly as
+`/age-structure` reads them; a level without that release is
+`not_published`. A withheld line leaves its group null with
+`suppressed_input` (or `line_missing`), and a universe of nobody is
+`denominator_zero`, never a rate of zero. The schemes are `draft` until
+reviewed (`rate.status`); `scripts/check_age_rate_labels.py` checks each
+scheme's lines against the Bureau's labels in the warehouse.
+
+### One tract across the 2020 redraw
+
+`GET /api/v1/place/tract-history?geo_id=<tract>&metric_codes=<code>,…`
+answers, for one Census tract (up to 24 ACS 5-year `CENSUS_ACS:acs5:` codes),
+whether its code named the same area before the 2020 redraw and each
+measure's history on its 2020 boundary, in one request. `boundary.status`
+is read from the Bureau's relationship files (`gold_census.tract_decade_change`):
+`unchanged` (one 2010 tract, the same code, at least 99 % of both tracts'
+land), `split` (all of this tract was part of one larger 2010 tract;
+`also_became` names the other 2020 tracts it became), `merged` (several whole
+2010 tracts), `redrawn` (parts of several) or `not_recorded`. Parts under 1 %
+of this tract's land are boundary adjustments, counted in `slivers_ignored`.
+`boundary.sentence` says the same in words.
+
+Each series item has a `status`: `published` (the ACS estimate on this
+2020 boundary, with its margin of error), `unchanged` (published before 2020
+on the same area), `apportioned` (**derived**: earlier tracts' published
+counts split by the relationship files -- share of land area from 2010, share
+of 2010 population from 2000 -- and summed, from
+`gold_census.acs_tract_comparable`, rounded to a whole count, with
+`weight_basis` and `source_geo_ids` and no margin of error; the earliest is
+the 2009 release, since Census 2000 tract counts are not carried) or `incomplete` (a contributing estimate was not
+published, so no value). `derived` is true for the last two. A median or rate
+is never apportioned: on a redrawn tract its series starts in 2020 and `note`
+says why. A geography that is not a tract, a non-ACS-5-year code or more than
+24 codes is `422`; an unknown `geo_id` is `404`. A tract's web page is
+`/us/<state>/<county>/tract-<number>` (`tract-18-05` for tract 18.05), and
+`/catalog/geographies/locate` answers it as the tract's `page_path`.
 
 ## Signing in, and your account
 
@@ -1816,12 +2588,39 @@ own query rather than referencing a configuration that could later change.
 chunked body streams. Over the bound answers `413 {"detail": "..."}` before
 any parsing. Public analytical reads carry no body and are unaffected.
 
+## Admin: the warehouse pages
+
+Operator reads behind the web's `/admin/warehouse` page. They describe the
+warehouse rather than serve observations, so a client building on the
+analytical routes never needs them. Every response is `private, no-store`.
+
+- `GET /api/v1/admin/warehouse/sources` — every source the warehouse loads
+  (publisher, datasets, grains, declared years, schedule, credential, the
+  tables it lands in), each joined to what `gold_glossary.dim_metric_catalog`
+  holds for it now: metric counts, served grains, newest watermark.
+- `GET /api/v1/admin/warehouse/coverage/{source_code}` — the years held at
+  each grain and the rows behind them, measured from the source's as-released
+  relation (CDC, FBI UCR and USDA NASS: their newest-release relation),
+  grouped by raw grain and period values. Census PEP is measured on
+  POPESTIMATE, and Census ACS is read from its year partitions, not scanned.
+  Kept per API process until the source's catalog rows change, at most seven
+  days; `?refresh=true` measures now. A measurement that exceeds 20 s answers
+  `status: "timed_out"` instead of failing.
+- `GET /api/v1/admin/warehouse/schema` — every warehouse table and view with
+  its columns, keys, foreign keys and view dependencies, read from the
+  Postgres catalog (cached five minutes) and laid out as one diagram per
+  source.
+
+Access: `API_ADMIN_ACCOUNTS` lists operator labels or signed-in email
+addresses. Empty turns the routes off (`404` before any credential is read).
+Otherwise a missing token is `401` and an account not on the list is `403`.
+
 ## Errors
 
 | Status | Meaning |
 | --- | --- |
 | `401` | Missing, malformed, unknown, or revoked bearer token. Identical for every case by design |
-| `403` | Authenticated, and not authorized for this act. Only `DELETE /api/v1/account` answers it: deletion needs a sign-in completed in the last few minutes, and a long-lived session is not that. Sign in again and retry |
+| `403` | Authenticated, and not authorized for this act. `DELETE /api/v1/account` answers it when the sign-in is not recent (sign in again and retry); the admin warehouse routes answer it for an account not on the deployment's admin list |
 | `404` | Unknown identifier, or a configuration you do not own (indistinguishable on purpose) |
 | `409` | Version conflict, or a name you already use |
 | `413` | The request body is over the accepted size. Refused before parsing |
@@ -1925,8 +2724,12 @@ status code on the one class of error the API can explain.
 | `/catalog/metrics` | `metric_code` — the catalog's own unique key, so no two rows can tie |
 | `/catalog/geographies` | `geo_id` — the primary key of the published geography dimension |
 | `/catalog/geographies/{geo_id}/related` | `relationship`, then `geo_id` |
+| `/catalog/geographies/metros` | `geo_name`, then `geo_id` |
+| `/catalog/geographies/search` | Match tier (`exact`, `prefix`, `word_prefix`, `fuzzy` by closeness), then population (largest first, none last), then grain, then `geo_id`; each of the three best city matches followed by its county and metro. Not paged: `limit` caps it at 25 |
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
+| `/governor-terms` | Tenures by `start_date`, newest first, then `tenure_key`; each tenure's `fiscal` entries in the measures' display order; `tax_mix` property, general sales, income, other |
+| `/where-money-goes` | `layers` in a fixed order (federal outlays, state and local spending, awards by type, awards by agency); each layer's `lines` by amount, largest first, then `label`, a line with no amount last |
 | `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/crime/county-rollup` | `product_id`, `measure_id`, `geo_id`, `period_start`, then `release_key` — the roll-up's own grain, so no two rows can tie |

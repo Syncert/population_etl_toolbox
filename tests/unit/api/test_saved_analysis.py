@@ -1270,15 +1270,15 @@ def test_every_filter_a_source_declares_has_a_bound() -> None:
         # columns. Stored clean, replayed as a 422.
         (
             "distribution",
-            "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+            "CENSUS_BPS:units:total:annual",
             {"state_fips": "06"},
-            "filters not supported for source 'CENSUS_PEP': state_fips",
+            "filters not supported for source 'CENSUS_BPS': state_fips",
         ),
         (
             "comparison",
-            "CENSUS_PEP:pep_cty_alldata:POPESTIMATE",
+            "CENSUS_BPS:units:total:annual",
             {"state_fips": "06"},
-            "filters not supported for source 'CENSUS_PEP': state_fips",
+            "filters not supported for source 'CENSUS_BPS': state_fips",
         ),
         # The mirror: Census ACS declares `year_from` and `geo_id`, and the
         # analysis routes have no such parameter, so the replay is the
@@ -1360,13 +1360,13 @@ def test_a_stored_analysis_filter_written_before_the_check_is_reported_on_read(
     the same answer API-112 gives a cross-kind field and API-119 a retired
     measure. Repairing it would substitute a guess for the reader's intent.
     """
-    metric = "CENSUS_PEP:pep_cty_alldata:POPESTIMATE"
+    metric = "CENSUS_BPS:units:total:annual"
     warehouse = _WarehouseSession(
         {
             metric: {
                 **_FRED_METRIC,
                 "metric_code": metric,
-                "source_code": "CENSUS_PEP",
+                "source_code": "CENSUS_BPS",
             }
         }
     )
@@ -1399,7 +1399,7 @@ def test_a_stored_analysis_filter_written_before_the_check_is_reported_on_read(
     payload = read.json()
     assert payload["validation"]["valid"] is False
     assert (
-        "filters not supported for source 'CENSUS_PEP'"
+        "filters not supported for source 'CENSUS_BPS'"
         in (payload["validation"]["reason"])
     )
     assert payload["document"]["filters"] == {"state_fips": "06"}, (

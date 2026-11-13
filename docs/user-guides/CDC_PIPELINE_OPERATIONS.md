@@ -1,9 +1,57 @@
 # Operating the CDC pipeline
 
-The `cdc_ingest` DAG captures and publishes two registered CDC Open Data
-products: U.S. Chronic Disease Indicators (`hksd-2xuw`) and the PLACES 2025
-county distribution (`swc5-untb`). It runs weekly at 09:00 UTC Monday and skips
-observation downloads when the provider watermark is unchanged.
+The `cdc_ingest` DAG captures and publishes three registered CDC Open Data
+products: U.S. Chronic Disease Indicators (`hksd-2xuw`), the PLACES 2025
+county distribution (`swc5-untb`) and the PLACES 2025 tract distribution
+(`cwsq-ngmh`). It runs weekly at 09:00 UTC Monday and skips observation
+downloads when the provider watermark is unchanged.
+
+## The PLACES tract release
+
+The tract release holds about 3 million rows (every 2020 tract x 40 measures,
+crude prevalence only). It is a bulk asset:
+
+- read in 50,000-row pages (`CdcConfig.socrata_bulk_page_size`) under a
+  300-second timeout, about 61 pages a quarter-second apart, each page one
+  capture recorded in `control.cdc_release_page`;
+- a run that stops part way (task retry, restart) is resumed by the next run
+  of the same watermark: the full pages already captured are recorded again
+  for the new run with `resumed_from_run_id` and are not asked for again;
+- after the last page the run captures CDC's own `count(*)`; a paged total
+  that differs fails the run (`paged_total_differs`) and nothing replays;
+- replay reads one recorded page at a time and stores it before the next.
+
+First load after deploy: apply the manifest (`silver-cdc` changes), then
+trigger `cdc_ingest` (or wait for Monday). CDI and PLACES county answer
+`unchanged`. Expect about 15 to 30 minutes of reads and 20 to 40 minutes of
+replay and conformance; about 6 to 8 GB in all.
+
+```sql
+SELECT run_id, count(*), sum(row_count), bool_or(resumed_from_run_id IS NOT NULL)
+FROM control.cdc_release_page WHERE asset_id = 'places_tract'
+GROUP BY run_id ORDER BY max(created_at) DESC;
+
+SELECT captured_row_count, counted_row_count, status
+FROM control.cdc_dataset_release WHERE asset_id = 'places_tract'
+ORDER BY created_at DESC LIMIT 1;
+
+-- Dane County: 123 tracts x 40 measures.
+SELECT count(DISTINCT geo_id), count(DISTINCT measure_id), count(*)
+FROM gold_cdc.latest_release_observation
+WHERE asset_id = 'places_tract' AND geo_id LIKE 'state:55|county:025|tract:%';
+```
+
+Speed gate (under 500 ms for one county's tracts):
+
+```sql
+BEGIN;
+EXPLAIN ANALYZE
+SELECT geo_id, measure_id, value, confidence_lower, confidence_upper
+FROM gold_cdc.latest_release_observation
+WHERE asset_id = 'places_tract' AND measure_id = 'DIABETES'
+  AND geo_id LIKE 'state:55|county:025|tract:%';
+ROLLBACK;
+```
 
 ## Deployment prerequisites
 

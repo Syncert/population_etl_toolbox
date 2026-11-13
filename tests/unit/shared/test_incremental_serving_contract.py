@@ -128,7 +128,9 @@ def test_chunk_refreshes_emit_progress_and_row_count_logs() -> None:
         sql = _read(source["gold"])
         assert "RPT CHUNK" in sql
         assert "LATEST CHUNK" in sql
-        assert "GET DIAGNOSTICS v_inserted_rows = ROW_COUNT" in sql
+        # Each chunk reports the rows it wrote (BLS and FRED count only the
+        # rows that changed since the refresh-churn audit, 2026-11-06).
+        assert "inserted_rows=%" in sql
 
 
 def test_acs_latest_refresh_uses_bounded_indexed_key_lookups() -> None:

@@ -57,8 +57,20 @@ BASE_URL = "https://download.bls.gov/pub/time.series/"
 # List of programs from config
 programs = CONFIG.programs
 
-# HELPER, download.bls.gov will occasionally answer 403 forbidden to bot-looking clients despite the url working well in a browser.
-UA = "population_toolbox/1.0 (contact: your_email@example.com)"
+# download.bls.gov refuses anonymous clients; this names the project and
+# where to reach it, never a person. Its edge also refuses some reads for a
+# while (403) however the client names itself; `sync_or_keep_bls_series_metadata`
+# then keeps the series list already stored rather than fail the run.
+UA = "population_toolbox/1.0 (+https://github.com/Syncert/population_etl_toolbox)"
+
+#: Answers that mean "not now" from download.bls.gov, not "no such list".
+_REFUSED_FOR_NOW = frozenset({403, 429, 500, 502, 503, 504})
+
+#: BLS API v2, which answers a registered key's ``catalog=true`` request with
+#: each series' own catalog entry (title, survey, item). A curated program's
+#: series are known, so their entries are read here instead of downloading
+#: the program's whole list from download.bls.gov.
+API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
 
 def _safe_str(value) -> str:
@@ -82,6 +94,91 @@ def read_bls_tsv(url: str) -> pl.DataFrame:
         has_header=True,
         infer_schema=False,  # Published identifiers must remain exact strings.
     )
+
+
+#: Programs whose series list is far larger than what is requested, so only
+#: the configured series' rows are synced.
+CURATED_METADATA_PROGRAMS = frozenset({"cx"})
+
+
+def fetch_bls_api_catalog(series_ids: List[str]) -> Dict[str, Dict]:
+    """
+    Each series' catalog entry from BLS API v2, by series id.
+
+    One keyed request asks for the newest value only (``latest``) with the
+    catalog, so it costs one of the key's daily requests. A series the API
+    answers without a catalog is left out; the caller decides what that
+    means. The key travels in the request body and is never printed.
+    """
+    if not series_ids:
+        return {}
+    if not CONFIG.has_api_key:
+        raise RuntimeError("BLS_API_KEY is required to read the BLS API catalog")
+    response = requests.post(
+        API_URL,
+        json={
+            "seriesid": list(series_ids),
+            "catalog": True,
+            "latest": True,
+            "registrationkey": CONFIG.bls_api_key,
+        },
+        headers={"User-Agent": UA, "Accept": "application/json"},
+        timeout=60,
+    )
+    response.raise_for_status()
+    body = response.json()
+    if body.get("status") != "REQUEST_SUCCEEDED":
+        raise RuntimeError(
+            f"BLS API catalog request was not served: {body.get('status')}"
+        )
+    wanted = set(series_ids)
+    catalogs: Dict[str, Dict] = {}
+    for series in (body.get("Results") or {}).get("series") or []:
+        series_id = _safe_str(series.get("seriesID", ""))
+        catalog = series.get("catalog")
+        if series_id in wanted and isinstance(catalog, dict) and catalog:
+            catalogs[series_id] = catalog
+    return catalogs
+
+
+def _api_catalog_records(program: str) -> Optional[List[Dict]]:
+    """
+    A curated program's series records from the BLS API catalog.
+
+    ``None`` when the API cannot give every configured series a catalog
+    entry (no key, a refusal, a series without one): the caller then reads
+    the program's list from download.bls.gov as before. Each record is the
+    API's own catalog entry, stored as published in ``raw_metadata``; the
+    item code is the one the series id carries (``CXU<item>LB...``).
+    """
+    wanted = list(CONFIG.curated_by_program.get(program, []))
+    try:
+        catalogs = fetch_bls_api_catalog(wanted)
+    except Exception as error:  # noqa: BLE001 - any failure falls back
+        print(
+            f"BLS API catalog for {program!r} not read ({type(error).__name__}); "
+            "reading the series list from download.bls.gov"
+        )
+        return None
+    missing = [series_id for series_id in wanted if series_id not in catalogs]
+    if not wanted or missing:
+        print(
+            f"BLS API catalog for {program!r} lacks {len(missing)} series; "
+            "reading the series list from download.bls.gov"
+        )
+        return None
+    return [dict(catalogs[series_id]) for series_id in wanted]
+
+
+def _series_item_code(program: str, record: Dict) -> str:
+    """The item a price or spending series measures."""
+    item = _safe_str(record.get("item_code", ""))
+    if item or program != "cx":
+        return item
+    series_id = _safe_str(record.get("series_id", ""))
+    if series_id.startswith("CXU") and "LB" in series_id:
+        return series_id[3 : series_id.rindex("LB")]
+    return ""
 
 
 def fetch_bls_metadata(program: str) -> Tuple[Dict[str, any], Dict[str, any]]:
@@ -164,12 +261,35 @@ def sync_bls_series_metadata(program: str) -> int:
     """
     print(f"Syncing series metadata for program: {program}")
 
-    series_data, dataset_data = fetch_bls_metadata(program)
+    # A curated program's few series are read from the BLS API catalog, so
+    # its whole list is not downloaded; download.bls.gov stays the fallback.
+    api_records = (
+        _api_catalog_records(program) if program in CURATED_METADATA_PROGRAMS else None
+    )
+    if api_records is not None:
+        series_data, dataset_data = api_records, {}
+    else:
+        series_data, dataset_data = fetch_bls_metadata(program)
 
     if not series_data:
         raise RuntimeError(
             f"BLS returned no series metadata for configured program {program!r}"
         )
+
+    # The Consumer Expenditure list is about 32 MB of demographic tables of
+    # which a handful of series are requested: only those are kept, never
+    # the whole list (storage rule).
+    if program in CURATED_METADATA_PROGRAMS:
+        wanted = set(CONFIG.curated_by_program.get(program, []))
+        series_data = [
+            record
+            for record in series_data
+            if _safe_str(record.get("series_id", "")) in wanted
+        ]
+        if not series_data:
+            raise RuntimeError(
+                f"BLS series list for {program!r} holds none of the configured series"
+            )
 
     conn = _get_pg_connection()
     count = 0
@@ -190,7 +310,11 @@ def sync_bls_series_metadata(program: str) -> int:
                 measure = _safe_str(
                     record.get("measure_code")
                     or record.get("data_type_code")
-                    or (record.get("item_code") if program in {"cu", "ap"} else "")
+                    or (
+                        _series_item_code(program, record)
+                        if program in {"cu", "ap", "cx"}
+                        else ""
+                    )
                     or ""
                 )
                 area_code = (
@@ -219,7 +343,12 @@ def sync_bls_series_metadata(program: str) -> int:
                         area_code = EXCLUDED.area_code,
                         area_text = EXCLUDED.area_text,
                         raw_metadata = EXCLUDED.raw_metadata,
-                        last_checked_at = EXCLUDED.last_checked_at;
+                        last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_bls.bls_series.title, raw_bls.bls_series.seasonal, raw_bls.bls_series.measure, raw_bls.bls_series.area_code, raw_bls.bls_series.area_text, raw_bls.bls_series.raw_metadata)
+                      IS DISTINCT FROM
+                      (EXCLUDED.title, EXCLUDED.seasonal, EXCLUDED.measure, EXCLUDED.area_code, EXCLUDED.area_text, EXCLUDED.raw_metadata);
                 """
 
                 now = datetime.now(timezone.utc)
@@ -260,6 +389,63 @@ def sync_bls_series_metadata(program: str) -> int:
         _sync_laus_area_metadata(dataset_data)
 
     return count
+
+
+def _stored_series_count(program: str) -> int:
+    """How many of the program's series lists rows are already stored."""
+    conn = _get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            if program in CURATED_METADATA_PROGRAMS:
+                cur.execute(
+                    "SELECT COUNT(*) FROM raw_bls.bls_series"
+                    " WHERE program = %s AND series_id = ANY(%s)",
+                    (program, list(CONFIG.curated_by_program.get(program, []))),
+                )
+            else:
+                cur.execute(
+                    "SELECT COUNT(*) FROM raw_bls.bls_series WHERE program = %s",
+                    (program,),
+                )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
+def _refused_for_now(error: Exception) -> bool:
+    if isinstance(error, requests.HTTPError):
+        status = getattr(error.response, "status_code", None)
+        return status in _REFUSED_FOR_NOW
+    return isinstance(error, (requests.ConnectionError, requests.Timeout))
+
+
+def sync_or_keep_bls_series_metadata(program: str) -> int:
+    """
+    Sync a program's series list, or keep the one already stored.
+
+    download.bls.gov's edge refuses some reads for a while (403, 429, 5xx, a
+    dropped connection) and answers them again later. A program whose list
+    was stored by an earlier run keeps that list and the run goes on with
+    it; a program never synced has nothing to fall back on and fails, so a
+    new program is never planned without its series (LOADER RULE).
+    """
+    try:
+        return sync_bls_series_metadata(program)
+    except Exception as error:
+        if not _refused_for_now(error):
+            raise
+        stored = _stored_series_count(program)
+        if stored <= 0:
+            raise RuntimeError(
+                f"download.bls.gov refused the {program!r} series list ({error}) "
+                "and none is stored yet; retry the run later"
+            ) from error
+        print(
+            f"download.bls.gov refused the {program!r} series list ({error}); "
+            f"keeping the {stored} series already stored"
+        )
+        return stored
 
 
 def _sync_laus_area_metadata(dataset_data: Dict):
@@ -316,7 +502,12 @@ def sync_bls_datasets_table() -> int:
                     DO UPDATE SET
                         title = EXCLUDED.title,
                         is_available = EXCLUDED.is_available,
-                        last_checked_at = EXCLUDED.last_checked_at;
+                        last_checked_at = EXCLUDED.last_checked_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (raw_bls.bls_datasets.title, raw_bls.bls_datasets.is_available)
+                      IS DISTINCT FROM
+                      (EXCLUDED.title, EXCLUDED.is_available);
                 """
 
                 cur.execute(sql, (program, year, title, True, now, now))

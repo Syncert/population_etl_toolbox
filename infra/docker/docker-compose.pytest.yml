@@ -48,6 +48,7 @@ services:
       - ../../dags:/opt/population_etl_toolbox/dags:ro
       - ../../tests:/opt/population_etl_toolbox/tests:ro
       - ../../sql:/opt/population_etl_toolbox/sql:ro
+      - ../../scripts:/opt/population_etl_toolbox/scripts:ro
       - ../../apps:/opt/population_etl_toolbox/apps:ro
       - ../../docs:/opt/population_etl_toolbox/docs:ro
       - ../../pyproject.toml:/opt/population_etl_toolbox/pyproject.toml:ro

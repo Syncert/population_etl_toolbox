@@ -20,6 +20,21 @@ DO $$
 DECLARE
     _constraint RECORD;
 BEGIN
+    -- `036_acs_metro_grain.sql` widens both checks again to admit metros.
+    -- On a warehouse that already took 036, leave the later widening alone,
+    -- or the re-added narrower checks fail on the first metro row.
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_census.observation_revision'::regclass
+          AND conname = 'observation_revision_geo_level_metro_check'
+    ) AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.acs_ingestion_slices'::regclass
+          AND conname = 'acs_ingestion_slices_geo_level_metro_check'
+    ) THEN
+        RETURN;
+    END IF;
+
     FOR _constraint IN
         SELECT con.conname
         FROM pg_constraint AS con
