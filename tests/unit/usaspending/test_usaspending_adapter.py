@@ -234,6 +234,34 @@ def test_the_reviewed_agency_list_parses_all_78_agencies() -> None:
     assert ("DOD", "Department of Defense") in names
 
 
+def test_an_amount_with_no_agency_keeps_the_page_and_is_set_aside_with_its_amount() -> (
+    None
+):
+    """Covers: ETL-132 — the agency list's nameless amount (FY2026 page 1) is kept as published.
+
+    USAspending answered fiscal 2026 page 1 with 77 agencies and one row
+    holding only ``amount`` and ``total_outlays``; the page is captured
+    whole, its agencies are read, and that row is set aside with its amount.
+    """
+    body = json.loads(AGENCIES.read_bytes())
+    body["results"].append({"amount": 57284285.65, "total_outlays": None})
+    raw = json.dumps(body).encode()
+    assert check_agencies(raw) == (79, False)
+    assert len(agencies_of(raw)) == 78
+    parsed = parse_agencies(raw)
+    assert len(parsed.rows) == 78
+    assert [
+        (item.source_row_index, item.error_code) for item in parsed.quarantined
+    ] == [(79, "unattributed_agency")]
+    assert parsed.quarantined[0].error_summary.endswith("as published: 57284285.65")
+    with pytest.raises(UsaspendingPayloadError, match="unregistered_fields"):
+        check_agencies(
+            json.dumps(
+                {"results": [{"code": "DOD"}], "page_metadata": {"hasNext": False}}
+            ).encode()
+        )
+
+
 def test_the_transport_checks_layer_scope_fields_and_paging() -> None:
     """Covers: ETL-132 — only the expected answer is kept."""
     assert check_geography(STATE_ALL.read_bytes(), geo_layer="state") == 57

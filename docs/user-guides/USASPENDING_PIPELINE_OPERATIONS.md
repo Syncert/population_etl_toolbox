@@ -46,6 +46,11 @@ $97 million.
   change it). Trigger it again to continue: it resumes from the requests
   still never captured, not from fiscal 2008.
 
+A retry of the same scheduled or triggered run (Airflow's task retries)
+skips the refresh-year requests its earlier attempts captured after the run
+started; those captures are replayed first. Only each year's agency list is
+read again, because it decides the year's agency reads.
+
 Requests are spaced one second apart through the one-slot `usaspending_api`
 pool. A `429` or a server error is retried with backoff (up to four
 attempts) and logged with its rate headers only; any other client error
@@ -59,6 +64,11 @@ fails the run at once with the path and status.
   layer's the postal abbreviation; `geo_id` follows from the code alone.
   An empty code (awards with no recorded place) or one that names no state
   or county is kept `unsupported` and is never served.
+- The agency list can hold a row with an amount and no agency code or name
+  (fiscal 2026 page 1: 77 agencies and one such row of 57,284,285.65). The
+  page is captured and its agencies are read; that row is quarantined alone
+  as `unattributed_agency` with its amount as published, so no agency cut
+  is made for it and the agency shares of a place need not add to 100%.
 - A row is quarantined alone (`silver_usaspending.quarantine`) when it lacks
   a registered field, its amount is not a number, or it repeats a code
   already read from the answer. An answer for another layer is refused

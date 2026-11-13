@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -19,8 +20,12 @@ from data_ingestion_toolbox.quality.sources import (
     usaspending_request_reconciliation,
 )
 from data_ingestion_toolbox.usaspending.capture import capture_awards
+from data_ingestion_toolbox.usaspending.client import UsaspendingFetchError
 from data_ingestion_toolbox.usaspending.config import UsaspendingConfig
-from data_ingestion_toolbox.usaspending.registry import GEOGRAPHY_PATH
+from data_ingestion_toolbox.usaspending.registry import (
+    GEOGRAPHY_PATH,
+    fiscal_year_period,
+)
 from data_ingestion_toolbox.usaspending.schema import (
     REQUIRED_RELATIONS,
     ensure_usaspending_schema,
@@ -283,6 +288,60 @@ def test_a_history_load_resumes_from_the_requests_never_captured(
         """,
         (str(second),),
     ) == [(2,)]
+
+
+def test_a_retry_of_the_same_run_skips_what_its_failed_attempt_captured(
+    usaspending_warehouse,
+) -> None:
+    """Covers: ETL-132 — a retry continues a refresh year where the failed attempt stopped.
+
+    The first attempt fails on fiscal 2024's county all-award read after 23
+    captured requests; the retry, given the run's start, reads only each
+    year's agency list again and fiscal 2024's nine county reads.
+    """
+    factory = usaspending_warehouse
+    started = datetime.now(UTC)
+
+    def refuse_county(path: str, body: dict[str, Any]) -> tuple[int, bytes] | None:
+        filters = body.get("filters", {})
+        if (
+            path == GEOGRAPHY_PATH
+            and body.get("geo_layer") == "county"
+            and filters.get("time_period") == [fiscal_year_period(2024)]
+            and "award_type_codes" not in filters
+            and "agencies" not in filters
+        ):
+            return 400, b"{}"
+        return None
+
+    with pytest.raises(UsaspendingFetchError, match="HTTP 400"):
+        capture_awards(
+            factory,
+            config=UsaspendingConfig(min_spacing_seconds=0, max_attempts=1),
+            client=usa.FixtureClient(agency_limit=3, answers=refuse_county),
+            today=usa.TODAY,
+            sleep=lambda _seconds: None,
+        )
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM control.usaspending_request WHERE created_at >= %s",
+        (started,),
+    ) == [(23,)]
+    settle_unreplayed_runs(factory)
+    _run, requests, _written, _published = usa.run_to_gold(
+        factory, refresh_since=started
+    )
+    assert requests == 1 + 1 + 9
+    assert _rows(
+        factory,
+        """
+        SELECT COUNT(DISTINCT (fiscal_year, geo_layer, cut_kind, cut_key))
+          FROM control.usaspending_request
+        """,
+    ) == [(ORDINARY_RUN_REQUESTS,)]
+    # A new scheduled run (no earlier attempt) reads both years in full.
+    _run, requests, _written, _published = usa.run_to_gold(factory)
+    assert requests == ORDINARY_RUN_REQUESTS
 
 
 def test_an_unreplayed_run_is_settled_by_the_next_attempt(

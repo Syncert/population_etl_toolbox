@@ -149,8 +149,13 @@ def parse_agencies(payload: bytes) -> ParsedAnswer:
         code = str(row.get("code") or "").strip() if isinstance(row, dict) else ""
         name = str(row.get("name") or "").strip() if isinstance(row, dict) else ""
         if not code or not name:
+            published = _text(row.get("amount")) if isinstance(row, dict) else "null"
             parsed.quarantined.append(
-                Quarantined(index, "unregistered_fields", "agency without code or name")
+                Quarantined(
+                    index,
+                    "unattributed_agency",
+                    f"amount with no agency code or name, as published: {published}",
+                )
             )
             continue
         if code in seen:
