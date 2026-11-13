@@ -2552,12 +2552,23 @@ def cms_ltc_unplaced_facilities(
     offenders, offenders_total = _offenders(
         cursor,
         """
-        WITH quarter AS (
-            SELECT run_id FROM control.cms_ltc_file
+        WITH newest_period AS (
+            SELECT MAX(period_start) AS period_start FROM control.cms_ltc_file
              WHERE status = 'published' AND series_id = 'characteristics'
-               AND period_start = (
-                   SELECT MAX(period_start) FROM control.cms_ltc_file
-                    WHERE status = 'published' AND series_id = 'characteristics'
+        ),
+        quarter AS (
+            -- The newest published read of the newest quarter only: a
+            -- quarter read again (a parser contract change, a corrected
+            -- file) has several published runs, and counting each would
+            -- list every facility once per read.
+            SELECT file.run_id FROM control.cms_ltc_file AS file
+              JOIN newest_period ON newest_period.period_start = file.period_start
+             WHERE file.status = 'published' AND file.series_id = 'characteristics'
+               AND file.published_at = (
+                   SELECT MAX(again.published_at) FROM control.cms_ltc_file AS again
+                    WHERE again.status = 'published'
+                      AND again.series_id = 'characteristics'
+                      AND again.period_start = newest_period.period_start
                )
         )
         SELECT CASE WHEN EXISTS (
