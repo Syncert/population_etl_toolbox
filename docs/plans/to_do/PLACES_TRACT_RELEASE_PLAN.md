@@ -14,8 +14,25 @@ verify:
 
 ## Status
 
-To do. Step 7 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
-The county release is loaded; the tract release is not.
+Built 2026-11-12; the load follows the deploy. Step 7 of
+[`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+
+As built:
+
+- `places_tract` is a third `CdcAsset`, marked bulk: 50,000-row pages
+  (probe 6 showed data.cdc.gov answers a limit above 1,000 to the plain
+  client), each recorded in `control.cdc_release_page` for resume, and the
+  paged total checked against a captured `count(*)`.
+- Replay streams page by page (a whole-release replay would hold about 3
+  million rows in memory); older runs without page rows replay as before.
+- Tracts resolve on 2020 tracts (`geography_vintage = 2020`); an 11-digit
+  code is the only tract shape.
+- The tract release publishes crude prevalence only (no age-adjusted) and
+  carries no footnotes on the rows read.
+- Not built here: tract map tiles and a per-tract completeness DQ rule; the
+  count check guards completeness of the read.
+- Dane County: 4,920 rows, 123 tracts x 40 measures; 2023 measure year for
+  35 measures, 2022 for 5.
 
 ## Source
 

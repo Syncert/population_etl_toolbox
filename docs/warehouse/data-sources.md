@@ -52,7 +52,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Monthly Treasury Statement, federal receipts and outlays](#treasury_mts) | U.S. Treasury, Bureau of the Fiscal Service | ● |  |  |  |  |  |  | 2015–2026 | Monthly | Not loaded yet |
 | [Federal award money by place of performance](#usaspending) | USAspending.gov (U.S. Treasury) |  | ● | ● |  |  |  |  | 2008–2026 | Monthly | Not loaded yet |
 | [Election results and seat holders](#elections) | MIT Election Data and Science Lab; congress-legislators; Wikidata |  | ● | ● |  |  |  | ● | 1969–2024 | Monthly + daily lean groups | Loaded |
-| [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  |  |  |  | 2019–2023 | Weekly | Loaded |
+| [Chronic Disease Indicators and PLACES](#cdc) | CDC | ● | ● | ● |  | ● |  |  | 2019–2023 | Weekly | Loaded (tracts not loaded yet) |
 | [AirData annual monitor concentrations](#epa_aqs) | EPA |  |  | ◐ |  |  |  |  | 2020–2024 | Monthly | Loaded |
 | [U.S. Climate Normals 1991-2020](#noaa_normals) | NOAA NCEI |  |  | ◐ |  |  |  |  | 2020 | Quarterly | Loaded |
 | [nClimDiv county monthly temperature and precipitation](#noaa_climdiv) | NOAA NCEI |  |  | ● |  |  |  |  | 1895–2026 | Monthly | Not loaded yet |
@@ -517,10 +517,10 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Code:** `src/data_ingestion_toolbox/cdc` · DAG `cdc_ingest` · Weekly, Monday 09:00 UTC
 - **Publisher releases:** CDI irregular; PLACES annual
 - **Credential:** CDC_SOCRATA_APP_TOKEN (optional)
-- **Years:** CDI multi-year indicators (nation, state); PLACES 2025 release (nation, county)
-- **Datasets:** U.S. Chronic Disease Indicators (hksd-2xuw); PLACES county 2025 (swc5-untb)
+- **Years:** CDI multi-year indicators (nation, state); PLACES 2025 release (nation, county; tracts, BRFSS 2022 and 2023 measure years)
+- **Datasets:** U.S. Chronic Disease Indicators (hksd-2xuw); PLACES county 2025 (swc5-untb); PLACES tract 2025 (cwsq-ngmh, about 3 million rows: every 2020 tract x 40 measures, crude prevalence, read in 50,000-row pages with per-page resume and checked against CDC's own `count(*)`)
 - **Measures:** Indicator-specific surveillance measures with strata (CDI); model-based adult health measures (PLACES).
-- **Capture and control:** `control.cdc_dataset_release`
+- **Capture and control:** `control.cdc_dataset_release`, `control.cdc_release_page`
 - **Silver:** `silver_cdc.observation_revision`, `silver_cdc.fact_health_observation`, `silver_cdc.dim_measure`, `silver_cdc.dim_stratum`, `silver_cdc.dim_dataset_release`
 - **Gold:** `gold_cdc.health_observation`, `gold_cdc.latest_release_observation`
 - **Status (live count 2026-10-31):** Loaded. Nation and state 2015–2023, county 2022–2023. The catalog watermark is the publisher's last-update time (2026-06-04 UTC), stored as Unix seconds.

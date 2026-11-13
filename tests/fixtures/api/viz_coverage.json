@@ -23,7 +23,8 @@
     "CDC": [
       "COUNTY",
       "NATIONAL",
-      "STATE"
+      "STATE",
+      "TRACT"
     ],
     "CENSUS_ACS": [
       "COUNTY",
@@ -603,7 +604,8 @@
     {
       "datasets": [
         "cdi",
-        "places_county"
+        "places_county",
+        "places_tract"
       ],
       "display_name": "Centers for Disease Control and Prevention",
       "observation_dimensions": [

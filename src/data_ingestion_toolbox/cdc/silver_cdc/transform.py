@@ -114,7 +114,7 @@ def transform_release(
                 """,
                 (str(run_id),),
             )
-            geography_vintage = 2020 if asset.asset_id == "places_county" else None
+            geography_vintage = asset.geography_vintage
             cursor.execute(
                 """
                 INSERT INTO silver_ref.geography_resolution (
