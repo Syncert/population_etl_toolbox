@@ -7,7 +7,8 @@ read first, page by page). Every request is one committed capture before
 anything parses it, recorded in ``control.usaspending_request``.
 
 An ordinary run reads the current and prior fiscal years again (agencies are
-still reporting them). ``{"history": true}`` also reads, oldest year first,
+still reporting them); a retry of the same scheduled run skips what its
+earlier attempts already captured. ``{"history": true}`` also reads, oldest year first,
 every request of fiscal 2008 onward never captured before; a run stops at
 ``max_requests_per_run`` and the next history run continues from the
 requests still never captured, so an interrupted load resumes rather than
@@ -145,17 +146,25 @@ def agencies_of(raw_bytes: bytes) -> list[tuple[str, str]]:
 
 
 def captured_identities(
-    connection_factory: Callable[[], Any], fiscal_year: int
+    connection_factory: Callable[[], Any],
+    fiscal_year: int,
+    *,
+    since: datetime | None = None,
 ) -> set[tuple[int, str, str, str]]:
-    """The request keys of a year some run already captured and did not refuse."""
+    """The request keys of a year some run captured and did not refuse.
+
+    ``since`` keeps only captures recorded at or after that time.
+    """
     rows = _execute(
         connection_factory,
         """
         SELECT DISTINCT fiscal_year, geo_layer, cut_kind, cut_key
           FROM control.usaspending_request
-         WHERE fiscal_year = %s AND status IN ('captured', 'silver_ready', 'published')
+         WHERE fiscal_year = %s
+           AND status IN ('captured', 'silver_ready', 'published')
+           AND (%s::timestamptz IS NULL OR created_at >= %s::timestamptz)
         """,
-        (fiscal_year,),
+        (fiscal_year, since, since),
     )
     return {(int(row[0]), row[1], row[2], row[3]) for row in rows}
 
@@ -168,12 +177,19 @@ def capture_awards(
     client: Any | None = None,
     control: CaptureControl | None = None,
     today: date | None = None,
+    refresh_since: datetime | None = None,
     sleep: Callable[[float], None] = time.sleep,
     persist_capture: Callable[
         [Callable[[], Any], ResponseCapture], CaptureReceipt
     ] = persist_response_capture,
 ) -> tuple[UUID, int]:
-    """Capture the run's requests; return (run_id, requests captured)."""
+    """Capture the run's requests; return (run_id, requests captured).
+
+    A refresh year is read again in full, except the requests captured at or
+    after ``refresh_since``: the DAG passes its run's start, so a retry of the
+    same scheduled run continues where the failed attempt stopped instead of
+    reading the year again.
+    """
     runtime = config or UsaspendingConfig()
     settings = conf or {}
     history = bool(settings.get("history"))
@@ -212,11 +228,14 @@ def capture_awards(
         for fiscal_year in years:
             if made >= budget:
                 break
-            done = (
-                set()
-                if fiscal_year in refresh
-                else captured_identities(connection_factory, fiscal_year)
-            )
+            if fiscal_year not in refresh:
+                done = captured_identities(connection_factory, fiscal_year)
+            elif refresh_since is not None:
+                done = captured_identities(
+                    connection_factory, fiscal_year, since=refresh_since
+                )
+            else:
+                done = set()
             # The year's agency list decides its agency reads, so it is read
             # whenever any read of the year is still owed.
             agencies: list[tuple[str, str]] = []
