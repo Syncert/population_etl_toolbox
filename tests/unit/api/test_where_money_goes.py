@@ -65,6 +65,13 @@ class _Session:
         if sql.lstrip().startswith("SELECT MAX("):
             for relation, value in self.newest.items():
                 if f"FROM {relation}" in sql:
+                    if isinstance(value, list):
+                        # The years held; the read's bound picks the newest below it.
+                        bound = next(
+                            v for k, v in (params or {}).items() if k != "geo_id"
+                        )
+                        below = [year for year in value if year < bound]
+                        return _Result([], max(below) if below else None)
                     return _Result([], value)
             return _Result([], None)
         for name, rows in self.tables.items():
@@ -148,7 +155,7 @@ def _county_session() -> _Session:
         },
         {
             "gold_census_govfin.observation_latest": 2022,
-            "gold_usaspending.observation_latest": 2025,
+            "gold_usaspending.observation_latest": [2024, 2025],
         },
     )
 
@@ -189,14 +196,18 @@ def test_a_county_gets_its_local_governments_and_federal_awards_as_separate_laye
         "suppressed_input",
     )
     assert "178 local governments reported in fiscal 2022." in local.notes
-    # Fiscal 2025 ended September 30, 2025; agencies may still report it.
-    assert (by_type.fiscal_year, by_type.total) == (2025, "100")
+    # Fiscal 2025 ended September 30, 2025, less than a year ago: it is
+    # named, and fiscal 2024 is served.
+    assert (by_type.fiscal_year, by_type.total) == (2024, "100")
     assert [(line.label, line.amount) for line in by_type.lines] == [
         ("Grants", "70"),
         ("Contracts", "20"),
         ("Loans", "-5"),
     ]
-    assert by_type.notes[0].startswith("Agencies are still reporting fiscal 2025")
+    assert by_type.notes[0].startswith(
+        "Fiscal 2025 has ended, but agencies are still reporting it"
+    )
+    assert by_agency.notes[0].startswith("Fiscal 2025 has ended")
     assert [line.key for line in by_agency.lines] == ["HHS", "DOD"]
     assert any("no awarding agency" in note for note in by_agency.notes)
     assert SEPARATE_FIGURES in answer.caveats
@@ -213,19 +224,26 @@ def test_a_county_gets_its_local_governments_and_federal_awards_as_separate_laye
     }
 
 
-def test_the_award_year_is_the_newest_federal_fiscal_year_that_has_ended() -> None:
-    """Covers: API-196 — October starts the next fiscal year; the running year is never served."""
+def test_the_award_year_is_the_newest_fiscal_year_ended_more_than_a_year_ago() -> None:
+    """Covers: API-196 — October starts the next fiscal year; a year still being reported is named, not served."""
     assert current_fiscal_year(date(2026, 9, 30)) == 2026
     assert current_fiscal_year(date(2026, 10, 1)) == 2027
     session = _county_session()
-    where_money_goes(session, DANE, today=date(2026, 11, 13))
-    sql, params = next(
-        call
-        for call in session.calls
-        if "FROM gold_usaspending.observation_latest" in call[0]
-    )
-    assert "year < :current" in sql
-    assert params == {"geo_id": DANE, "current": 2027}
+    answer = where_money_goes(session, DANE, today=date(2026, 11, 13))
+    reads = [
+        (sql, params)
+        for sql, params in session.calls
+        if sql.lstrip().startswith("SELECT MAX(")
+        and "gold_usaspending.observation_latest" in sql
+    ]
+    assert [params for _sql, params in reads] == [
+        {"geo_id": DANE, "current": 2027},
+        {"geo_id": DANE, "reported": 2026},
+    ]
+    by_type = answer.layers[1]
+    # Fiscal 2025 ended more than a year before; nothing newer is held.
+    assert by_type.fiscal_year == 2025
+    assert not any("still reporting" in note for note in by_type.notes)
 
 
 def test_the_nation_reads_treasury_outlays_and_state_and_local_spending_but_no_awards() -> (

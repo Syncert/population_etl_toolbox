@@ -68,7 +68,9 @@ def test_dane_county_grants_are_served_as_usaspending_published_them(
     """Covers: API-196 — fiscal 2024 awards recorded in Dane County, with no share where no total is published."""
     factory = usa.reviewed_warehouse(postgres_connection_factory, request)
     usa.run_to_gold(factory)
-    answer = where_money_goes(warehouse_session, usa.DANE, today=usa.TODAY)
+    # Fiscal 2024 is served once it ended more than a year before.
+    served_on = date(2025, 11, 1)
+    answer = where_money_goes(warehouse_session, usa.DANE, today=served_on)
     by_type = next(
         layer for layer in answer.layers if layer.layer == "federal_awards_by_type"
     )
@@ -83,7 +85,7 @@ def test_dane_county_grants_are_served_as_usaspending_published_them(
         == "all-award total not published for this place and year"
     )
 
-    state = where_money_goes(warehouse_session, usa.WISCONSIN, today=usa.TODAY)
+    state = where_money_goes(warehouse_session, usa.WISCONSIN, today=served_on)
     state_types = next(
         layer for layer in state.layers if layer.layer == "federal_awards_by_type"
     )
