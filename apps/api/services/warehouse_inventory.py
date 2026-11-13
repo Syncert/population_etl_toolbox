@@ -580,6 +580,47 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="NCES_IPEDS",
     ),
     WarehouseSource(
+        code="HHS_HOSPITAL_CAPACITY",
+        name="Hospital beds and occupancy by week (HHS)",
+        publisher="U.S. Department of Health and Human Services",
+        topic="Health",
+        module="hhs_hospital_capacity",
+        dag="hhs_hospital_capacity_ingest",
+        cadence="Operator-triggered (the dataset is frozen)",
+        release="One frozen file, 2020-03-29 to 2024-04-21, last updated 2024-05-03",
+        grains={"nation": "d", "state": "d", "county": "d"},
+        years=[(2020, 2024)],
+        years_note="Weekly from the week of 2020-03-29 to the week of 2024-04-21",
+        datasets=[
+            "anag-cw7u (COVID-19 Reported Patient Impact and Hospital Capacity by Facility)",
+        ],
+        measures=(
+            "Per hospital and week: inpatient and ICU beds, beds occupied, staffed adult ICU "
+            "beds and occupancy, beds occupied by COVID-19 patients and patients with "
+            "influenza, each HHS's weekly average of daily reports; summed by county (HHS's "
+            "published county FIPS code), state and nation with reporting, suppressed and "
+            "missing counts."
+        ),
+        raw=[],
+        control=[
+            "control.hhs_hospital_capacity_snapshot",
+            "control.hhs_hospital_capacity_page",
+        ],
+        silver=[
+            "silver_hhs_hospital_capacity.facility",
+            "silver_hhs_hospital_capacity.facility_week_value",
+            "silver_hhs_hospital_capacity.area_week",
+        ],
+        gold=[
+            "gold_hhs_hospital_capacity.area_revision",
+            "gold_hhs_hospital_capacity.area_latest",
+            "gold_hhs_hospital_capacity.facility_latest",
+            "gold_hhs_hospital_capacity.facility_week",
+        ],
+        credential="none",
+        catalog_source_code="HHS_HOSPITAL_CAPACITY",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

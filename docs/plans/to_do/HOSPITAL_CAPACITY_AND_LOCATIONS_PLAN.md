@@ -14,7 +14,23 @@ verify:
 
 ## Status
 
-To do. Step 6 of [`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+Built 2026-11-12; the load follows the deploy. Step 6 of
+[`outbreak-model-inputs`](OUTBREAK_MODEL_INPUTS_PLAN.md).
+
+As built:
+
+- Eight figures, each a seven-day average with its coverage days: inpatient
+  beds, inpatient beds used, total ICU beds, ICU beds used, staffed adult
+  ICU beds, staffed adult ICU beds occupied, inpatient beds used by COVID-19
+  patients, hospitalised influenza patients. `is_corrected` is not read.
+- Stored long (one row per hospital, week and figure) so each figure keeps
+  its own status and capture lineage.
+- Pages of 50,000 rows ordered by hospital, week and row id; about 21 pages.
+- DQ: `DQ-HHS-001` one row per hospital, week and figure, enforced; `-002`
+  a suppressed or missing figure carries no number, enforced; `-003` (WARN)
+  hospitals on no county of the shared geography.
+- Dane County: 5 hospitals, 1,044 hospital weeks; inpatient beds 1,302.1
+  for the week of 2020-08-23 and 1,335.7 for 2024-04-21, all five reporting.
 
 ## Sources
 

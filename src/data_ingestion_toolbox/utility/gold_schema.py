@@ -181,6 +181,7 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "CENSUS_DECENNIAL": "gold_ddl_census_decennial",
     "CMS_LTC": "gold_ddl_cms_ltc",
     "NCES_IPEDS": "gold_ddl_nces_ipeds",
+    "HHS_HOSPITAL_CAPACITY": "gold_ddl_hhs_hospital_capacity",
     "CENSUS_GOVFIN": "gold_ddl_census_govfin",
     "FBI_UCR": "gold_ddl_fbi",
     "FRED": "gold_ddl_fred",

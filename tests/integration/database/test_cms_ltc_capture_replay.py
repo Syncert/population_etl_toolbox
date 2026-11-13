@@ -6,12 +6,14 @@ Covers: ETL-130
 from __future__ import annotations
 
 import csv
+import dataclasses
 import io
 from collections.abc import Callable
 
 import pytest
 from psycopg2.extensions import connection
 
+from data_ingestion_toolbox.cms_ltc import registry as cms_registry
 from tests.support import cms_ltc
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
@@ -177,3 +179,122 @@ def test_rerun_reads_nothing_new_and_the_facility_list_names_dane_current_homes(
         cms_warehouse,
         "SELECT COUNT(*) FROM control.cms_ltc_file WHERE text_encoding IS NULL",
     ) == [(0,)]
+
+
+def test_a_release_published_under_an_earlier_contract_is_read_again_once(
+    cms_warehouse: Callable[[], connection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-130 -- a parser-contract change replays every release once.
+
+    The warehouse as #372 found it: every release published under the v1
+    contracts, no facility placements, no file encodings. A plain run reads
+    every release again under v2, places the facilities and records the
+    encodings; the next plain run reads nothing.
+    """
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            cms_registry,
+            "SERIES",
+            tuple(
+                dataclasses.replace(
+                    series,
+                    parser_contract_version=series.parser_contract_version.replace(
+                        ":v2", ":v1"
+                    ),
+                )
+                for series in cms_registry.SERIES
+            ),
+        )
+        cms_ltc.load_releases(cms_warehouse)
+    writer = cms_warehouse()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute("DELETE FROM silver_cms_ltc.facility_place")
+            cursor.execute("UPDATE control.cms_ltc_file SET text_encoding = NULL")
+        writer.commit()
+    finally:
+        writer.close()
+    assert _rows(
+        cms_warehouse,
+        "SELECT COUNT(*) FROM gold_cms_ltc.facility_latest WHERE county_geo_id = %s",
+        (cms_ltc.DANE,),
+    ) == [(0,)]
+
+    again = cms_ltc.run_planned(cms_warehouse)
+    assert [
+        (series, status, published) for series, status, _stored, published in again
+    ] == [
+        ("cost_report", "captured", 1),
+        ("characteristics", "captured", 1),
+        ("characteristics", "captured", 1),
+    ]
+    assert _rows(
+        cms_warehouse,
+        """
+        SELECT COUNT(*), SUM(number_of_beds), SUM(total_residents)
+        FROM gold_cms_ltc.facility_latest WHERE county_geo_id = %s
+        """,
+        (cms_ltc.DANE,),
+    ) == [(16, 1456, 883)]
+    assert _rows(
+        cms_warehouse,
+        """
+        SELECT COUNT(*) FROM control.cms_ltc_file AS file
+        JOIN raw_capture.response_capture AS capture ON capture.capture_id = file.capture_id
+        WHERE file.text_encoding IS NULL AND capture.payload_schema_version LIKE '%%:v2'
+        """,
+    ) == [(0,)]
+    assert cms_ltc.run_planned(cms_warehouse) == []
+
+
+def test_the_unplaced_rule_counts_each_facility_once_after_a_reread(
+    cms_warehouse: Callable[[], connection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Covers: ETL-130 -- DQ-CMSLTC-003 reads the newest quarter's newest run only.
+
+    After a parser-contract reread the newest quarter has two published runs;
+    the rule must list each unplaced facility once, not once per run.
+    """
+    from data_ingestion_toolbox.quality.sources import cms_ltc_unplaced_facilities
+
+    def outcome() -> tuple[int, list]:
+        reader = cms_warehouse()
+        try:
+            with reader.cursor() as cursor:
+                (result,) = cms_ltc_unplaced_facilities(cursor, {})
+        finally:
+            reader.close()
+        return result.observed_count, result.evidence
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            cms_registry,
+            "SERIES",
+            tuple(
+                dataclasses.replace(
+                    series,
+                    parser_contract_version=series.parser_contract_version.replace(
+                        ":v2", ":v1"
+                    ),
+                )
+                for series in cms_registry.SERIES
+            ),
+        )
+        cms_ltc.load_releases(cms_warehouse)
+    once, _evidence = outcome()
+    assert once > 0
+    cms_ltc.run_planned(cms_warehouse)
+    assert _rows(
+        cms_warehouse,
+        """
+        SELECT COUNT(*) FROM control.cms_ltc_file
+        WHERE status = 'published' AND series_id = 'characteristics'
+          AND period_start = (SELECT MAX(period_start) FROM control.cms_ltc_file
+                              WHERE series_id = 'characteristics')
+        """,
+    ) == [(2,)]
+    count, evidence = outcome()
+    assert count == once
+    assert len(evidence) == len({tuple(row) for row in evidence})

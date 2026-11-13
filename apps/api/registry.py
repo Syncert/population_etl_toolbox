@@ -1330,6 +1330,52 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="HHS_HOSPITAL_CAPACITY",
+            latest_relation="gold_hhs_hospital_capacity.area_latest",
+            released_relation="gold_hhs_hospital_capacity.area_revision",
+            lineage_schema="gold_hhs_hospital_capacity",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `hospital:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: HHS's weekly average of the hospital's
+                # daily reports.
+                ("basis", "basis"),
+                # A sum of HHS's facility figures, never an estimate.
+                ("derivation", "derivation"),
+                ("facility_count", "facility_count::TEXT"),
+                ("reporting_facility_count", "reporting_facility_count::TEXT"),
+                # Cells HHS suppressed (-999999) and cells the file omits:
+                # the sum leaves both out.
+                ("suppressed_count", "suppressed_count::TEXT"),
+                ("missing_count", "missing_count::TEXT"),
+                ("unplaced_facility_count", "unplaced_facility_count::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_start >= make_date(:year_from, 1, 1)"),
+                ("year_to", "period_start <= make_date(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="IRS_MIGRATION",
             latest_relation="gold_irs_migration.total_observation_latest",
             released_relation="gold_irs_migration.total_observation_revision",
@@ -2358,6 +2404,12 @@ def _nces_ipeds_datasets() -> tuple[str, ...]:
     return tuple(component.component_id for component in COMPONENTS)
 
 
+def _hhs_hospital_capacity_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.hhs_hospital_capacity.config import DATASET_ID
+
+    return (DATASET_ID,)
+
+
 def _cms_ltc_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.cms_ltc.registry import SERIES
 
@@ -2477,6 +2529,15 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_nces_ipeds_datasets,
+        ),
+        SourceDiscovery(
+            source_code="HHS_HOSPITAL_CAPACITY",
+            display_name=(
+                "HHS COVID-19 reported patient impact and hospital capacity by facility"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_hhs_hospital_capacity_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,

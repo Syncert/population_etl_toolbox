@@ -2552,12 +2552,23 @@ def cms_ltc_unplaced_facilities(
     offenders, offenders_total = _offenders(
         cursor,
         """
-        WITH quarter AS (
-            SELECT run_id FROM control.cms_ltc_file
+        WITH newest_period AS (
+            SELECT MAX(period_start) AS period_start FROM control.cms_ltc_file
              WHERE status = 'published' AND series_id = 'characteristics'
-               AND period_start = (
-                   SELECT MAX(period_start) FROM control.cms_ltc_file
-                    WHERE status = 'published' AND series_id = 'characteristics'
+        ),
+        quarter AS (
+            -- The newest published read of the newest quarter only: a
+            -- quarter read again (a parser contract change, a corrected
+            -- file) has several published runs, and counting each would
+            -- list every facility once per read.
+            SELECT file.run_id FROM control.cms_ltc_file AS file
+              JOIN newest_period ON newest_period.period_start = file.period_start
+             WHERE file.status = 'published' AND file.series_id = 'characteristics'
+               AND file.published_at = (
+                   SELECT MAX(again.published_at) FROM control.cms_ltc_file AS again
+                    WHERE again.status = 'published'
+                      AND again.series_id = 'characteristics'
+                      AND again.period_start = newest_period.period_start
                )
         )
         SELECT CASE WHEN EXISTS (
@@ -2587,6 +2598,43 @@ def cms_ltc_unplaced_facilities(
     return [
         RuleOutcome(
             "silver_cms_ltc.facility_report",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
+def hhs_unplaced_hospitals(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
+    """DQ-HHS-003 — hospitals of the newest published snapshot on no county."""
+    del scope
+    published = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.hhs_hospital_capacity_snapshot WHERE status = 'published'",
+    )
+    if published == 0:
+        return [RuleOutcome("silver_hhs_hospital_capacity.facility", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT facility.county_status, facility.state_code, facility.hospital_pk,
+               COALESCE(facility.fips_code, '') AS fips_code
+          FROM silver_hhs_hospital_capacity.facility AS facility
+          JOIN control.hhs_hospital_capacity_snapshot AS snapshot
+            ON snapshot.snapshot_id = facility.snapshot_id
+         WHERE facility.county_status <> 'resolved'
+           AND snapshot.status = 'published'
+           AND snapshot.published_at = (
+               SELECT MAX(published_at) FROM control.hhs_hospital_capacity_snapshot
+                WHERE status = 'published'
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_hhs_hospital_capacity.facility",
             "warn" if offenders else "pass",
             observed_count=offenders_total,
             expected_count=0,
@@ -5586,6 +5634,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-TREASURY-004": treasury_mts_function_total,
     "DQ-CMSLTC-003": cms_ltc_unplaced_facilities,
     "DQ-IPEDS-003": nces_ipeds_point_outside_county,
+    "DQ-HHS-003": hhs_unplaced_hospitals,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,

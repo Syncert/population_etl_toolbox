@@ -23,6 +23,7 @@ from psycopg2.extensions import connection
 
 from data_ingestion_toolbox.cms_ltc.capture import capture_catalog, capture_release
 from data_ingestion_toolbox.cms_ltc.catalog import Release
+from data_ingestion_toolbox.cms_ltc.plan import answered, releases_to_capture
 from data_ingestion_toolbox.cms_ltc.config import (
     CATALOG_URL,
     SOURCE_CODE,
@@ -183,6 +184,37 @@ def load_releases(
         published = publish_run(connection_factory, run_id=run_id)
         results.append((run_id, status, stored, published))
     return found, results
+
+
+def run_planned(
+    connection_factory: Callable[[], connection],
+    *,
+    client: FixtureClient | None = None,
+    conf: dict[str, Any] | None = None,
+) -> list[tuple[str, str, int, int]]:
+    """Read what the DAG would read: (series, status, rows stored, published) per release."""
+    active = client or FixtureClient()
+    catalog_capture, found, _skipped = capture_catalog(
+        connection_factory, config=config(), client=active
+    )
+    reader = connection_factory()
+    try:
+        done = answered(reader)
+    finally:
+        reader.close()
+    results = []
+    for release in releases_to_capture(found, done, conf):
+        run_id, status = capture_release(
+            connection_factory,
+            release,
+            catalog_capture_id=catalog_capture,
+            config=config(),
+            client=active,
+        )
+        stored = replay_run(connection_factory, run_id=run_id)
+        published = publish_run(connection_factory, run_id=run_id)
+        results.append((release.series_id, status, stored, published))
+    return results
 
 
 def _seed_arguments() -> tuple[dict[str, Any], ...]:

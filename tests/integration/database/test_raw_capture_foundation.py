@@ -145,6 +145,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "census_decennial_slice"),
         ("control", "cms_ltc_file"),
         ("control", "nces_ipeds_file"),
+        ("control", "hhs_hospital_capacity_snapshot"),
+        ("control", "hhs_hospital_capacity_page"),
         ("control", "census_bps_slice"),
         ("control", "bls_qcew_slice"),
         ("control", "bea_table_capture"),

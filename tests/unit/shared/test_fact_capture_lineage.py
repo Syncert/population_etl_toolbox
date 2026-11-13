@@ -259,6 +259,13 @@ FACTS = [
         "silver_nces_ipeds.institution_value",
         "valid",
     ),
+    # An HHS weekly figure HHS suppressed (-999999) or left blank has no number.
+    FactContract(
+        "HHS_HOSPITAL_CAPACITY",
+        SRC / "hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql",
+        "silver_hhs_hospital_capacity.facility_week_value",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

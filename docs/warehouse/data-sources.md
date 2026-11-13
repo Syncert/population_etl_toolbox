@@ -38,6 +38,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [2020 Census counts](#census_decennial) | U.S. Census Bureau | ● | ● | ● |  |  | ● |  | 2020 | On demand | Not loaded yet |
 | [Nursing home residents and beds](#cms_ltc) | Centers for Medicare & Medicaid Services | ◐ | ◐ | ◐ |  |  |  |  | 2011–2026 | Monthly | Not loaded yet |
 | [College housing capacity and enrolment](#nces_ipeds) | National Center for Education Statistics | ◐ | ◐ | ◐ |  |  |  |  | 2012–2024 | Monthly | Not loaded yet |
+| [Hospital beds and occupancy by week](#hhs_hospital_capacity) | U.S. Department of Health and Human Services | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -276,6 +277,22 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Silver:** `silver_nces_ipeds.institution`, `silver_nces_ipeds.institution_value`, `silver_nces_ipeds.area_total`, `silver_nces_ipeds.dim_measure`, `silver_nces_ipeds.quarantine`
 - **Gold:** `gold_nces_ipeds.area_revision`, `gold_nces_ipeds.area_latest`, `gold_nces_ipeds.institution_year`
 - **Status:** Not loaded yet (added 2026-11-12, plan `college-housing-capacity`).
+
+<a id="hhs_hospital_capacity"></a>
+### Hospital beds and occupancy by week (`HHS_HOSPITAL_CAPACITY`)
+
+- **Publisher:** U.S. Department of Health and Human Services
+- **Code:** `src/data_ingestion_toolbox/hhs_hospital_capacity` · DAG `hhs_hospital_capacity_ingest` · Operator-triggered (the dataset has not changed since 2024-05-03)
+- **Publisher releases:** "COVID-19 Reported Patient Impact and Hospital Capacity by Facility", healthdata.gov Socrata dataset `anag-cw7u` (`https://healthdata.gov/resource/anag-cw7u.json`), Public Domain U.S. Government; one row per hospital and collection week.
+- **Credential:** none
+- **Weeks:** 2020-03-29 to 2024-04-21, every collection week the dataset holds.
+- **Measures:** Seven-day averages of inpatient beds and beds used, ICU beds and beds used, staffed adult ICU beds and occupied, inpatient beds used by COVID-19 patients, and hospitalised influenza patients, as each hospital reported them. HHS's -999999 is `suppressed` and an omitted cell `missing`, never zero. Area figures are sums of the reporting hospitals' figures (◐), with the reporting, suppressed and missing counts beside each; a sum is never scaled for hospitals that did not report.
+- **Placement:** By the county FIPS code (`fips_code`) HHS publishes for the hospital; HHS's published geocode is kept as the point and no address is geocoded by a third party. A hospital whose code the shared geography does not hold counts in its state and the nation (DQ-HHS-003, WARN).
+- **Hospital list:** CMS Hospital General Information sits on the Provider Data path that refuses the toolbox's client, so the HHS file's own hospital fields stand in for it; a hospital opened after May 2024 is not listed.
+- **Capture and control:** `control.hhs_hospital_capacity_snapshot`, `control.hhs_hospital_capacity_page` (one capture per page; an interrupted run resumes at the next page)
+- **Silver:** `silver_hhs_hospital_capacity.facility`, `silver_hhs_hospital_capacity.facility_week_value`, `silver_hhs_hospital_capacity.area_week`, `silver_hhs_hospital_capacity.dim_measure`, `silver_hhs_hospital_capacity.quarantine`
+- **Gold:** `gold_hhs_hospital_capacity.area_revision`, `gold_hhs_hospital_capacity.area_latest`, `gold_hhs_hospital_capacity.facility_latest`, `gold_hhs_hospital_capacity.facility_week`
+- **Status:** Not loaded yet (added 2026-11-12, plan `hospital-capacity-and-locations`).
 
 <a id="census_lodes"></a>
 ### LEHD Origin-Destination Employment Statistics (`CENSUS_LODES`)
