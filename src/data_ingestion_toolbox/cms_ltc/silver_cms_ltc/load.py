@@ -16,7 +16,7 @@ from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
 from ..registry import get_series
-from .parse import parse_file, place_county
+from .parse import parse_file, place_county_with_match
 
 PUBLISHER_SCHEMA = "gold_cms_ltc"
 
@@ -165,11 +165,18 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             count_rows = []
             for row in parsed.rows:
                 if series.county_column:
-                    county_status, geo_id, geo_sk = place_county(
-                        row.county_name, row.state_fips, counties
+                    county_status, geo_id, geo_sk, county_match = (
+                        place_county_with_match(
+                            row.county_name, row.state_fips, counties
+                        )
                     )
                 else:
-                    county_status, geo_id, geo_sk = "not_listed", None, None
+                    county_status, geo_id, geo_sk, county_match = (
+                        "not_listed",
+                        None,
+                        None,
+                        None,
+                    )
                 report_rows.append(
                     (
                         str(run_id),
@@ -193,6 +200,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                         geo_id,
                         geo_sk,
                         county_status,
+                        county_match,
                     )
                 )
                 for measure_id, (published, value) in row.counts.items():
@@ -216,7 +224,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                         facility_name, street_address, city, state_code, state_fips,
                         zip_code, county_name, fiscal_year_begin, fiscal_year_end,
                         ownership_type, hospital_based, certification_date,
-                        county_geo_id, county_geo_sk, county_status
+                        county_geo_id, county_geo_sk, county_status, county_match
                     ) VALUES %s
                     ON CONFLICT (run_id, report_key) DO NOTHING
                     """,
@@ -337,6 +345,43 @@ def _quarantine(cursor: Any, run_id: UUID, capture_id: str, items: Any) -> None:
     )
 
 
+#: A published cost report file's newest report per facility, recorded as
+#: the facility's placement when it is the newest period seen or the same
+#: period read again with a different placement; otherwise left as it is.
+_PLACE_SQL = """
+    INSERT INTO silver_cms_ltc.facility_place (
+        ccn, run_id, report_key, period_start, fiscal_year_end, state_fips,
+        county_geo_id, county_geo_sk, county_status
+    )
+    SELECT DISTINCT ON (report.ccn)
+           report.ccn, report.run_id, report.report_key, file.period_start,
+           report.fiscal_year_end, report.state_fips, report.county_geo_id,
+           report.county_geo_sk, report.county_status
+    FROM silver_cms_ltc.facility_report AS report
+    JOIN control.cms_ltc_file AS file ON file.run_id = report.run_id
+    WHERE report.run_id = %(run_id)s AND file.series_id = 'cost_report'
+    ORDER BY report.ccn, report.fiscal_year_end DESC NULLS LAST,
+             LENGTH(report.report_key) DESC, report.report_key DESC
+    ON CONFLICT (ccn) DO UPDATE SET
+        run_id = EXCLUDED.run_id,
+        report_key = EXCLUDED.report_key,
+        period_start = EXCLUDED.period_start,
+        fiscal_year_end = EXCLUDED.fiscal_year_end,
+        state_fips = EXCLUDED.state_fips,
+        county_geo_id = EXCLUDED.county_geo_id,
+        county_geo_sk = EXCLUDED.county_geo_sk,
+        county_status = EXCLUDED.county_status,
+        updated_at = NOW()
+    WHERE EXCLUDED.period_start > silver_cms_ltc.facility_place.period_start
+       OR (EXCLUDED.period_start = silver_cms_ltc.facility_place.period_start
+           AND (EXCLUDED.report_key, EXCLUDED.county_geo_id, EXCLUDED.county_status)
+               IS DISTINCT FROM
+               (silver_cms_ltc.facility_place.report_key,
+                silver_cms_ltc.facility_place.county_geo_id,
+                silver_cms_ltc.facility_place.county_status))
+"""
+
+
 def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
     """Expose a reconciled file through the gold views; return 1 if published."""
     connection = connection_factory()
@@ -352,6 +397,7 @@ def publish_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             )
             published = cursor.rowcount
             if published:
+                cursor.execute(_PLACE_SQL, {"run_id": str(run_id)})
                 cursor.execute("ANALYZE silver_cms_ltc.area_total")
         connection.commit()
     except BaseException:

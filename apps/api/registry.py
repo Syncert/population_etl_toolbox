@@ -1270,6 +1270,9 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("derivation", "derivation"),
                 ("facility_count", "facility_count::TEXT"),
                 ("unplaced_facility_count", "unplaced_facility_count::TEXT"),
+                # What a county sum leaves out: facilities CMS places on no
+                # county are in the state and national sums only.
+                ("coverage_note", "coverage_note"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",

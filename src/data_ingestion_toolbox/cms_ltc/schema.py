@@ -30,9 +30,11 @@ REQUIRED_RELATIONS = (
     "silver_cms_ltc.facility_report",
     "silver_cms_ltc.facility_count",
     "silver_cms_ltc.area_total",
+    "silver_cms_ltc.facility_place",
     "gold_cms_ltc.area_revision",
     "gold_cms_ltc.area_latest",
     "gold_cms_ltc.facility_latest",
+    "gold_cms_ltc.facility_history",
     "gold_cms_ltc.measure_export",
     "gold_cms_ltc.metric_publisher",
 )

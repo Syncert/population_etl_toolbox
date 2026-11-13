@@ -56,6 +56,7 @@ FIXTURE_FILES: dict[tuple[str, date], str] = {
 
 SILVER_TABLES: tuple[str, ...] = (
     "silver_cms_ltc.area_total",
+    "silver_cms_ltc.facility_place",
     "silver_cms_ltc.facility_count",
     "silver_cms_ltc.facility_report",
     "silver_cms_ltc.quarantine",

@@ -23,7 +23,7 @@ from data_ingestion_toolbox.capture import (
 from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .catalog import Release, Skipped, releases
-from .client import fetch_catalog, fetch_file
+from .client import decode_csv, fetch_catalog, fetch_file
 from .config import SOURCE_CODE, CmsLtcConfig
 from .registry import get_series
 
@@ -173,8 +173,8 @@ def capture_release(
                     INSERT INTO control.cms_ltc_file (
                         run_id, series_id, period_start, period_end, release_title,
                         catalog_modified, download_url, catalog_capture_id,
-                        capture_id, payload_checksum, status
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        capture_id, payload_checksum, status, text_encoding
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         str(run_id),
@@ -188,6 +188,7 @@ def capture_release(
                         str(receipt.capture_id),
                         receipt.payload_checksum,
                         status,
+                        decode_csv(response.raw_bytes)[1],
                     ),
                 )
             connection.commit()
