@@ -1553,6 +1553,29 @@ year is unpublished says `end_year_not_published` and is never moved to a
 nearby year. `tax_mix` holds the shares of state and local taxes from
 property, general sales, income and other taxes in the window's last year.
 
+`GET /api/v1/where-money-goes?geo_id=` serves where public money goes for
+the nation (`us:1`), a state or a county. There is one `layers` entry for each
+government level, each read from its own gold view for one year, with
+`lines` ordered by amount, largest first, and each line's `share_pct` of that
+layer's own `total`:
+
+- `federal_outlays` (the nation only): `gold_treasury_mts.outlays_by_function`,
+  the newest fiscal year with a September statement, in US dollars.
+- `state_local_spending`: `gold_census_govfin.spending_mix`. For the nation
+  and a state this is state and local governments (`asslgf`), every fiscal
+  year. For a county it is the local governments in the county area
+  (`cog_units`), in Census of Governments years only. Amounts are in
+  thousands of US dollars, and the shares add to 100.
+- `federal_awards_by_type` and `federal_awards_by_agency` (a state and a
+  county): `gold_usaspending.awards_by_award_type` and `awards_by_agency`,
+  for the newest federal fiscal year that has ended, in US dollars.
+  Obligations USAspending lists with no agency count in the total but in no
+  agency.
+
+A layer with nothing to serve has empty `lines`, a null `total` and an
+`unavailable_reason`. The layers are separate figures and are never added
+together. The response's `caveats` say so with every answer.
+
 ### Reading a row honestly
 
 Each row carries typed core fields plus the source's **declared** published
@@ -2705,6 +2728,7 @@ status code on the one class of error the API can explain.
 | `/comparison` | `geo_id`. Each side is reduced to one row per geography before the join, so the joined answer holds one row per geography and the key is the whole order |
 | `/comparison/matrix` | `geo_level, geo_id`. The rows are the union of the geographies the measures published, one row each, so `geo_id` closes the order on its own; the grain leads it so a mixed-grain answer reads in grain order |
 | `/governor-terms` | Tenures by `start_date`, newest first, then `tenure_key`; each tenure's `fiscal` entries in the measures' display order; `tax_mix` property, general sales, income, other |
+| `/where-money-goes` | `layers` in a fixed order (federal outlays, state and local spending, awards by type, awards by agency); each layer's `lines` by amount, largest first, then `label`, a line with no amount last |
 | `/migration-flows` | `items` by the chosen measure, largest first, then `counterpart_geo_id`; `totals` in SOI's header order; `categories` by SOI's counterpart code |
 | `/usda-nass/series` | `product_id`, `short_desc`, `geo_id`, then `series_id` — a digest over the exact tuple the series view groups by, unique per row by construction, which closes the order where one `short_desc` spans several domain categories |
 | `/crime/county-rollup` | `product_id`, `measure_id`, `geo_id`, `period_start`, then `release_key` — the roll-up's own grain, so no two rows can tie |

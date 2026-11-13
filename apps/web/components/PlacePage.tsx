@@ -125,6 +125,8 @@ const ClimateNormals = dynamic(() => import("./ClimateNormals"));
 // page carries none of it until the Work and Money chapter renders.
 const PublicMoney = dynamic(() => import("./PublicMoney"));
 const GovernorTerms = dynamic(() => import("./GovernorTerms"));
+// Where the money goes (where-public-money-goes slice 5): its own chunk too.
+const WhereMoneyGoes = dynamic(() => import("./WhereMoneyGoes"));
 
 /**
  * Said where the catalog serves no row of a chapter's measure. Every measure
@@ -1347,6 +1349,11 @@ function Chapter({
           its state and the nation; only once the page's own place resolved. */}
       {chapter.id === "work-money" && own && own.level === pageLevel && own.role === "this place" && PUBLIC_MONEY_LEVELS.has(pageLevel) ? (
         <PublicMoney geoId={own.geoId} names={levelNames(levels)} />
+      ) : null}
+      {/* Each government level's spending for the same place, one card each,
+          never added together; the same grains as the group above. */}
+      {chapter.id === "work-money" && own && own.level === pageLevel && own.role === "this place" && PUBLIC_MONEY_LEVELS.has(pageLevel) ? (
+        <WhereMoneyGoes geoId={own.geoId} />
       ) : null}
       {chapter.id === "work-money" && pageLevel === "STATE" && own && own.level === "STATE" && own.role === "this place" ? (
         <GovernorTerms geoId={own.geoId} stateName={own.name} />
