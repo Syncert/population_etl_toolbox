@@ -266,18 +266,44 @@ def _state_local(db: Session, geo_id: str) -> SpendingLayer:
     )
 
 
-def _award_year(db: Session, geo_id: str, today: date) -> Optional[int]:
-    """The newest ended federal fiscal year with any award amount served for the place."""
-    year = db.execute(
+def _award_years(
+    db: Session, geo_id: str, today: date
+) -> tuple[int | None, int | None]:
+    """The fiscal year to serve for the place, and a newer ended one still being reported.
+
+    A fiscal year is served once it ended more than a year ago: agencies keep
+    reporting a year for months after September (Defense publishes 90 days
+    behind), and shares read from half-reported lines mislead. The newest
+    ended year, when it is newer than the served one, is only named.
+    """
+    current = current_fiscal_year(today)
+    newest = db.execute(
         text(
             """
         SELECT MAX(year) FROM gold_usaspending.observation_latest
         WHERE geo_id = :geo_id AND year < :current
         """
         ),
-        {"geo_id": geo_id, "current": current_fiscal_year(today)},
+        {"geo_id": geo_id, "current": current},
     ).scalar()
-    return None if year is None else int(year)
+    served = db.execute(
+        text(
+            """
+        SELECT MAX(year) FROM gold_usaspending.observation_latest
+        WHERE geo_id = :geo_id AND year < :reported
+        """
+        ),
+        {"geo_id": geo_id, "reported": current - 1},
+    ).scalar()
+    served_year = None if served is None else int(served)
+    newest_year = None if newest is None else int(newest)
+    newer = (
+        newest_year
+        if newest_year is not None
+        and (served_year is None or newest_year > served_year)
+        else None
+    )
+    return served_year, newer
 
 
 def _awards(db: Session, geo_id: str, today: date) -> list[SpendingLayer]:
@@ -312,7 +338,7 @@ def _awards(db: Session, geo_id: str, today: date) -> list[SpendingLayer]:
         "gold_usaspending.awards_by_agency",
     ):
         return [_empty(by_type, NOT_LOADED), _empty(by_agency, NOT_LOADED)]
-    year = _award_year(db, geo_id, today)
+    year, newer = _award_years(db, geo_id, today)
     if year is None:
         return [_empty(by_type, NOT_LOADED), _empty(by_agency, NOT_LOADED)]
     params = {"geo_id": geo_id, "year": year}
@@ -332,12 +358,14 @@ def _awards(db: Session, geo_id: str, today: date) -> list[SpendingLayer]:
         .all()
     )
     place_total = totals[0]["total"] if totals else None
-    reporting = current_fiscal_year(today) - year == 1
     still = (
         [
-            f"Agencies are still reporting fiscal {year}; later reads can change these figures."
+            (
+                f"Fiscal {newer} has ended, but agencies are still reporting it; "
+                f"its figures are not shown until a year after it ends."
+            )
         ]
-        if reporting
+        if newer is not None
         else []
     )
     type_rows = (
