@@ -87,6 +87,7 @@ SOURCES: tuple[str, ...] = (
     "CENSUS_DECENNIAL",
     "CMS_LTC",
     "NCES_IPEDS",
+    "HHS_HOSPITAL_CAPACITY",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -2806,6 +2807,143 @@ _NCES_IPEDS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published file",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# HHS COVID-19 hospital capacity by facility (healthdata.gov anag-cw7u).
+# ---------------------------------------------------------------------------
+
+_HHS_HOSPITAL_CAPACITY_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.hhs_hospital_capacity_snapshot",
+        "control",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id (one complete read of the frozen dataset)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered dataset; history runs only",
+        cadence="operator-triggered; never read again once published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.hhs_hospital_capacity_page",
+        "control",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="run_id (one page of one snapshot)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every page of a snapshot, in order; resumes at the next page",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.dim_measure",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="measure_id",
+        scope_method="registered figures in hhs_hospital_capacity/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.quarantine",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.facility",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, hospital_pk",
+        lineage="silver_hhs_hospital_capacity.facility_week_value, silver_ref.dim_geo_entity",
+        scope_method="every hospital of a snapshot as its newest week describes it; county by published FIPS code",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.facility_week_value",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, hospital_pk, collection_week, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="registered figures of every hospital week of a snapshot",
+        cadence="per replay",
+        empty_behavior="a suppressed (-999999) or omitted figure is retained with its status, never zero",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.area_week",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, measure_id, geo_id, collection_week",
+        lineage="silver_hhs_hospital_capacity.facility_week_value, silver_hhs_hospital_capacity.facility",
+        scope_method="sums of published hospital figures by county, state and nation, with reporting, suppressed and missing counts",
+        cadence="per replay",
+        empty_behavior="an area week with no hospital has no row",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.area_revision",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, measure_id, geo_id, period_start (published snapshots only)",
+        lineage="silver_hhs_hospital_capacity.area_week, control.hhs_hospital_capacity_snapshot",
+        scope_method="published snapshots",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.area_latest",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="metric_key, geo_id, period_start (newest published snapshot)",
+        lineage="gold_hhs_hospital_capacity.area_revision",
+        scope_method="newest-snapshot projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.facility_latest",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="hospital_pk",
+        lineage="silver_hhs_hospital_capacity.facility",
+        scope_method="every hospital of the newest published snapshot",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.facility_week",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="hospital_pk, period_start",
+        lineage="silver_hhs_hospital_capacity.facility_week_value",
+        scope_method="every hospital week of the newest published snapshot, figures with their status",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.measure_export",
+        "publisher",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_hhs_hospital_capacity.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.metric_publisher",
+        "publisher",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="source_object_key (hospital:measure)",
+        lineage="silver_hhs_hospital_capacity.area_week, silver_hhs_hospital_capacity.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published snapshot",
     ),
 )
 
@@ -5595,6 +5733,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _DECENNIAL_OBJECTS
     + _CMS_LTC_OBJECTS
     + _NCES_IPEDS_OBJECTS
+    + _HHS_HOSPITAL_CAPACITY_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -5986,6 +6125,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_decennial.metric_publisher",
             "gold_cms_ltc.metric_publisher",
             "gold_nces_ipeds.metric_publisher",
+            "gold_hhs_hospital_capacity.metric_publisher",
             "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
@@ -7986,6 +8126,85 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_nces_ipeds.institution",
             "silver_ref.dim_geo_geometry_version",
+        ),
+    ),
+    # -- HHS hospital capacity ------------------------------------------------
+    _rule(
+        "DQ-HHS-001",
+        "BLOCK",
+        "uniqueness",
+        "An HHS snapshot holds one row per hospital, week and figure, and one "
+        "area sum per figure, area and week; a second read is a second "
+        "snapshot beside the first, never an overwrite.",
+        (
+            "silver_hhs_hospital_capacity.facility",
+            "silver_hhs_hospital_capacity.facility_week_value",
+            "silver_hhs_hospital_capacity.area_week",
+            "gold_hhs_hospital_capacity.area_revision",
+            "gold_hhs_hospital_capacity.area_latest",
+            "gold_hhs_hospital_capacity.facility_latest",
+            "gold_hhs_hospital_capacity.facility_week",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated hospital week aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility", ("snapshot_id", "hospital_pk")
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("snapshot_id", "hospital_pk", "collection_week", "measure_id"),
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.area_week",
+                ("snapshot_id", "measure_id", "geo_id", "collection_week"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HHS-002",
+        "BLOCK",
+        "conformance",
+        "A valid HHS figure carries a value; a suppressed (-999999) or omitted "
+        "one carries none: neither is stored as zero.",
+        (
+            "silver_hhs_hospital_capacity.facility_week_value",
+            "gold_hhs_hospital_capacity.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hhs_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hhs_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HHS-003",
+        "WARN",
+        "completeness",
+        "Hospitals of the newest published snapshot that HHS's published "
+        "county FIPS code places on no county (no code, or a code the shared "
+        "geography does not hold for the hospital's state) are counted. They "
+        "are in their state's and the nation's sums and in no county's.",
+        (
+            "silver_hhs_hospital_capacity.facility",
+            "control.hhs_hospital_capacity_snapshot",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

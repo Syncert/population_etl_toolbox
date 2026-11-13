@@ -215,6 +215,7 @@ def test_registry_declares_readiness_and_restrictions_coherently() -> None:
         "CENSUS_DECENNIAL",
         "CMS_LTC",
         "NCES_IPEDS",
+        "HHS_HOSPITAL_CAPACITY",
         "IRS_MIGRATION",
         "IRS_SOI",
         "EIA",

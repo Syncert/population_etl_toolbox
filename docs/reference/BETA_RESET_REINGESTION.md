@@ -501,7 +501,10 @@ run loads every CMS nursing home release the catalog lists, cost reports
 first ([operations](../user-guides/CMS_LTC_PIPELINE_OPERATIONS.md)). Unpause and
 trigger `nces_ipeds_ingest` once after the shared geography loads: a plain
 run reads every registered IPEDS year from 2012
-([operations](../user-guides/NCES_IPEDS_PIPELINE_OPERATIONS.md)). Trigger
+([operations](../user-guides/NCES_IPEDS_PIPELINE_OPERATIONS.md)). Unpause and
+trigger `hhs_hospital_capacity_ingest` once after the shared geography loads:
+it has no schedule, and a plain run reads the frozen HHS weekly hospital file
+once ([operations](../user-guides/HHS_HOSPITAL_CAPACITY_PIPELINE_OPERATIONS.md)). Trigger
 `census_govfin_ingest` once after BEA loads: a plain run captures every
 registered annual finance year, QTAX year and Census of Governments edition
 not yet answered, so there is no history run

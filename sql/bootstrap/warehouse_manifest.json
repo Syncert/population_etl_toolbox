@@ -142,6 +142,11 @@
       "path": "src/data_ingestion_toolbox/nces_ipeds/DDL/silver_nces_ipeds.sql"
     },
     {
+      "id": "silver-hhs-hospital-capacity",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -372,6 +377,11 @@
       "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/gold_nces_ipeds.sql"
     },
     {
+      "id": "gold-hhs-hospital-capacity",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/gold_hhs_hospital_capacity.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -555,6 +565,11 @@
       "id": "publisher-nces-ipeds",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/nces_ipeds/gold_nces_ipeds/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-hhs-hospital-capacity",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",

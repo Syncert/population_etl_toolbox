@@ -1114,6 +1114,27 @@ def stub_nces_ipeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ipeds_capture, "pause_between_files", lambda _config: None)
 
 
+def stub_hhs_hospital_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the Dane County hospital weeks and the view document, unpaced."""
+    from data_ingestion_toolbox.hhs_hospital_capacity import capture as hhs_capture
+    from data_ingestion_toolbox.hhs_hospital_capacity.client import (
+        fetch_metadata,
+        fetch_page,
+    )
+    from tests.support.hhs_hospital_capacity import FixtureClient
+
+    def page(offset: int, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_page(offset, **kwargs)
+
+    def metadata(**kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_metadata(**kwargs)
+
+    monkeypatch.setattr(hhs_capture, "fetch_page", page)
+    monkeypatch.setattr(hhs_capture, "fetch_metadata", metadata)
+
+
 def stub_census_govfin(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the reviewed government finance answers; other periods answer 204.
 
@@ -2072,6 +2093,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("census_decennial", stub_census_decennial),
         ("cms_ltc", stub_cms_ltc),
         ("nces_ipeds", stub_nces_ipeds),
+        ("hhs_hospital_capacity", stub_hhs_hospital_capacity),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

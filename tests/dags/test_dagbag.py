@@ -48,6 +48,7 @@ EXPECTED_DAG_IDS = {
     "census_decennial_ingest",
     "cms_ltc_ingest",
     "nces_ipeds_ingest",
+    "hhs_hospital_capacity_ingest",
     "census_govfin_ingest",
     "irs_migration_ingest",
     "irs_soi_ingest",
@@ -109,6 +110,8 @@ EXPECTED_SCHEDULES = {
     # Monthly: NCES posts IPEDS files on no fixed calendar; a run asks only for
     # years not yet answered and the year after the newest published.
     "nces_ipeds_ingest": "0 17 25 * *",
+    # Operator-triggered: HHS froze the weekly hospital file on 2024-05-03.
+    "hhs_hospital_capacity_ingest": None,
     # Monthly: annual finances publish each autumn, QTAX a quarter after the
     # quarter, the unit files every five years; a run captures its revision
     # window and every registered period never answered.
@@ -202,6 +205,7 @@ EXPECTED_DEFAULT_RETRIES = {
     "census_decennial_ingest": 2,
     "cms_ltc_ingest": 2,
     "nces_ipeds_ingest": 2,
+    "hhs_hospital_capacity_ingest": 2,
     "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
     "irs_soi_ingest": 2,
