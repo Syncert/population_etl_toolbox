@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_dane_county_is_the_configured_focus_county() -> None:
-    """Covers: ETL-085 — Dane's tracts carry the joint race x sex x age tables."""
+    """Covers: ETL-085 — Dane's tracts carry race x sex x age, occupation and building age."""
     (dane,) = CONFIG.focus_counties
     assert (dane.county_fips, dane.state_fips, dane.county_code) == (
         "55025",
@@ -29,7 +29,12 @@ def test_dane_county_is_the_configured_focus_county() -> None:
         "025",
     )
     assert RACE_ITERATED_SEX_BY_AGE == tuple(f"B01001{c}" for c in "ABCDEFGHI")
-    assert set(dane.tables) == {*RACE_ITERATED_SEX_BY_AGE, "B03002", "B24010"}
+    assert set(dane.tables) == {
+        *RACE_ITERATED_SEX_BY_AGE,
+        "B03002",
+        "B24010",
+        "B25034",
+    }
 
 
 def test_focus_tables_are_synced_but_never_widen_the_other_slices() -> None:

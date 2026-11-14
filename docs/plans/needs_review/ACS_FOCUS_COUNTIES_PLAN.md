@@ -28,7 +28,8 @@ by race/ethnicity x sex x age band, and its clothing by occupation. Race and
 age are on the tract slices only separately today, and multiplying them
 assumes every group has the same age profile, which is false (Madison's
 Asian and Hispanic residents skew younger). The joint tables are the Bureau's
-sex-by-age-by-race tables B01001A-I; with B03002 and B24010 that is 11 tables.
+sex-by-age-by-race tables B01001A-I; with B03002, B24010 and B25034 (year structure built, for
+facade aging) that is 12 tables.
 At every tract they would be about 24 million estimates a year; at Dane's
 ~107 tracts, about 35,000. The owner asked to keep disk use small and to stay
 at tract grain.
@@ -36,7 +37,7 @@ at tract grain.
 ## What changed
 
 - `AcsConfig.focus_counties`: a list of `FocusCounty(county_fips, label,
-  tables)`; Dane (55025) with B01001A-I, B03002, B24010 by default. Validated:
+  tables)`; Dane (55025) with B01001A-I, B03002, B24010, B25034 by default. Validated:
   five digits, a state that publishes tracts, at least one table, no repeats,
   each county once.
 - Variable metadata is synced for curated and focus tables

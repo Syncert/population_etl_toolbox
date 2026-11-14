@@ -236,14 +236,15 @@ class AcsConfig(BaseModel):
     # requested in a slice of their own for the same newest tract years.
     # Dane County, Wisconsin is the survival game's pilot county: its
     # characters are drawn from sex by age for each race group, Hispanic or
-    # Latino by race, and occupation by sex. Dane's ~107 tracts on these 11
-    # tables are about 35,000 estimates a year, against ~24 million for the
-    # same tables on every tract. Another county is one more entry.
+    # Latino by race, and occupation by sex; its buildings are aged by year
+    # structure built (B25034). Dane's ~107 tracts on these 12 tables are
+    # about 36,000 estimates a year, against ~25 million for the same tables
+    # on every tract. Another county is one more entry.
     focus_counties: List[FocusCounty] = [
         FocusCounty(
             county_fips="55025",
             label="Dane County, WI",
-            tables=[*RACE_ITERATED_SEX_BY_AGE, "B03002", "B24010"],
+            tables=[*RACE_ITERATED_SEX_BY_AGE, "B03002", "B24010", "B25034"],
         )
     ]
     # Place years beyond the newest `place_full_table_years` are requested
