@@ -19,8 +19,10 @@ r control.acs_ingestion_slices
     column finished_at timestamp with time zone
     column variables_hash_seen_at timestamp with time zone
     column last_error text
+    column county_fips text
     constraint acs_ingestion_slices_check CHECK (((finished_at IS NULL) OR ((started_at IS NOT NULL) AND (started_at <= finished_at))))
     constraint acs_ingestion_slices_dataset_check CHECK ((dataset = ANY (ARRAY['acs1'::text, 'acs5'::text])))
+    constraint acs_ingestion_slices_focus_county_check CHECK (((county_fips IS NULL) OR ((geo_level = 'tract'::text) AND (county_fips ~ '^[0-9]{3}$'::text))))
     constraint acs_ingestion_slices_geo_level_tract_check CHECK ((geo_level = ANY (ARRAY['us'::text, 'state'::text, 'county'::text, 'place'::text, 'tract'::text])))
     constraint acs_ingestion_slices_pkey PRIMARY KEY (id)
     constraint acs_ingestion_slices_rows_loaded_check CHECK ((rows_loaded >= 0))
@@ -31,7 +33,7 @@ r control.acs_ingestion_slices
     index acs_ingestion_slices_pkey CREATE UNIQUE INDEX acs_ingestion_slices_pkey ON control.acs_ingestion_slices USING btree (id)
     index acs_ingestion_slices_status_idx CREATE INDEX acs_ingestion_slices_status_idx ON control.acs_ingestion_slices USING btree (status)
     index acs_ingestion_slices_uniq_nostate CREATE UNIQUE INDEX acs_ingestion_slices_uniq_nostate ON control.acs_ingestion_slices USING btree (dataset, year, geo_level) WHERE (state_fips IS NULL)
-    index acs_ingestion_slices_uniq_state CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state ON control.acs_ingestion_slices USING btree (dataset, year, geo_level, state_fips) WHERE (state_fips IS NOT NULL)
+    index acs_ingestion_slices_uniq_state_county CREATE UNIQUE INDEX acs_ingestion_slices_uniq_state_county ON control.acs_ingestion_slices USING btree (dataset, year, geo_level, state_fips, COALESCE(county_fips, ''::text)) WHERE (state_fips IS NOT NULL)
 
 r control.bea_table_capture
     column run_id uuid NOT NULL
