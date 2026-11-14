@@ -475,8 +475,14 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "tract",
         }
         # us + state + 52 county parents + 52 place parents (ETL-055) + 52
-        # tract parents (ETL-061).
-        assert len(work_units) == 158
+        # tract parents (ETL-061) + one focus county (ETL-085).
+        assert len(work_units) == 159
+        (focus,) = [unit for unit in work_units if unit.get("county_fips")]
+        assert (focus["geo_level"], focus["state_fips"], focus["county_fips"]) == (
+            "tract",
+            "55",
+            "025",
+        )
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
@@ -493,7 +499,7 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
         tract_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
-            if work_unit["geo_level"] == "tract"
+            if work_unit["geo_level"] == "tract" and not work_unit.get("county_fips")
         }
         assert tract_parent_fips == county_parent_fips
 

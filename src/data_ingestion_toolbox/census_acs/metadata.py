@@ -210,7 +210,9 @@ def sync_variable_metadata_for_year(year: int, dataset: str) -> None:
         conn.autocommit = False
         cur = conn.cursor()
 
-        curated = set(CONFIG.curated_tables)
+        # Focus-county tables are synced too, so their slices can ask for
+        # them; the other slices still read `curated_tables` only.
+        curated = CONFIG.metadata_tables()
 
         # We'll accumulate table metadata (concept) from variables.
         seen_tables: Dict[str, Dict] = {}
