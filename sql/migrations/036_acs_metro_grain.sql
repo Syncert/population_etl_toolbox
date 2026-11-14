@@ -54,7 +54,9 @@ BEGIN
           AND pg_get_constraintdef(con.oid) LIKE '%geo_level%'
           AND con.conname NOT IN (
               'acs_ingestion_slices_geo_level_metro_check',
-              'acs_ingestion_slices_state_scope_metro_check'
+              'acs_ingestion_slices_state_scope_metro_check',
+              -- 043's focus-county check names geo_level too; a re-run keeps it.
+              'acs_ingestion_slices_focus_county_check'
           )
     LOOP
         EXECUTE format(

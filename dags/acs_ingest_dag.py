@@ -158,6 +158,8 @@ def _run_one_work_unit(work_unit: dict) -> int:
     year: int = int(work_unit["year"])
     geo_level: str = work_unit["geo_level"]
     state_fips: Optional[str] = work_unit.get("state_fips")
+    # A focus-county tract slice names its county (focus-counties).
+    county_fips: Optional[str] = work_unit.get("county_fips")
 
     variables_hash: Optional[str] = work_unit.get("variables_hash")
     variables_count: int = int(work_unit.get("variables_count", 0))
@@ -180,17 +182,18 @@ def _run_one_work_unit(work_unit: dict) -> int:
         WHERE dataset = %s
         AND year = %s
         AND geo_level = %s
-        AND state_fips IS NOT DISTINCT FROM %s;
+        AND state_fips IS NOT DISTINCT FROM %s
+              AND county_fips IS NOT DISTINCT FROM %s;
     """
 
     sql_running_insert = """
         INSERT INTO control.acs_ingestion_slices (
-            dataset, year, geo_level, state_fips,
+            dataset, year, geo_level, state_fips, county_fips,
             status, rows_loaded,
             started_at, finished_at, last_error,
             variables_hash, variables_count, variables_hash_seen_at
         )
-        VALUES (%s, %s, %s, %s,
+        VALUES (%s, %s, %s, %s, %s,
                 'running', 0,
                 %s, NULL, NULL,
                 %s, %s, %s)
@@ -209,6 +212,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                 year,
                 geo_level,
                 state_fips,
+                county_fips,
             ),
         )
 
@@ -220,6 +224,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                     year,
                     geo_level,
                     state_fips,
+                    county_fips,
                     started,
                     running_hash,
                     variables_count,
@@ -233,6 +238,8 @@ def _run_one_work_unit(work_unit: dict) -> int:
         slice_scope = {}
         if work_unit.get("tables") is not None:
             slice_scope["tables"] = work_unit["tables"]
+        if county_fips is not None:
+            slice_scope["county_fips"] = county_fips
         rows_loaded = ingest_slice(
             year=year,
             dataset=dataset,
@@ -255,7 +262,8 @@ def _run_one_work_unit(work_unit: dict) -> int:
             WHERE dataset = %s
               AND year = %s
               AND geo_level = %s
-              AND state_fips IS NOT DISTINCT FROM %s;
+              AND state_fips IS NOT DISTINCT FROM %s
+              AND county_fips IS NOT DISTINCT FROM %s;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
@@ -270,6 +278,7 @@ def _run_one_work_unit(work_unit: dict) -> int:
                     year,
                     geo_level,
                     state_fips,
+                    county_fips,
                 ),
             )
             conn.commit()
@@ -288,11 +297,13 @@ def _run_one_work_unit(work_unit: dict) -> int:
             WHERE dataset = %s
               AND year = %s
               AND geo_level = %s
-              AND state_fips IS NOT DISTINCT FROM %s;
+              AND state_fips IS NOT DISTINCT FROM %s
+              AND county_fips IS NOT DISTINCT FROM %s;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
             cur.execute(
-                sql_failed, (finished, err_txt, dataset, year, geo_level, state_fips)
+                sql_failed,
+                (finished, err_txt, dataset, year, geo_level, state_fips, county_fips),
             )
             conn.commit()
 
@@ -455,13 +466,17 @@ def acs_ingest():
 
         # Load all slices that are already done (success/empty) along with their variables_hash.
         # We'll only skip if the stored hash matches the current hash.
+        # A slice is (dataset, year, level, state, variable-set hash); a
+        # focus-county slice's level is "tract:<county>" here, so it is never
+        # mistaken for its state's ordinary tract slice.
         completed: set[tuple[str, int, str, Optional[str], Optional[str]]] = set()
         # Every slice's ledger row, done or not, for the added-tables check
         # below (`census_acs/table_additions.py`).
         ledger: dict[tuple[str, int, str, Optional[str]], tuple[str, str]] = {}
 
         sql_completed = """
-            SELECT dataset, year, geo_level, state_fips, variables_hash, status
+            SELECT dataset, year, geo_level, state_fips, variables_hash, status,
+                   county_fips
             FROM control.acs_ingestion_slices;
         """
         with hook.get_conn() as conn, conn.cursor() as cur:
@@ -469,10 +484,13 @@ def acs_ingest():
             for row in cur.fetchall():
                 dataset, year, geo_level, state_fips, variables_hash = row[:5]
                 status = row[5] if len(row) > 5 else "success"
+                county_fips = row[6] if len(row) > 6 else None
                 key = (
                     str(dataset),
                     int(year),
-                    str(geo_level),
+                    str(geo_level)
+                    if county_fips is None
+                    else f"{geo_level}:{county_fips}",
                     state_fips if state_fips is not None else None,
                 )
                 ledger[key] = (variables_hash, status)
@@ -675,6 +693,34 @@ def acs_ingest():
                         }
                     )
 
+            # FOCUS-COUNTY tract slices (focus-counties): one county's
+            # tracts, for that county's tables, in the same tract years of
+            # the ACS 5-year (the census datasets' tracts lack these tables).
+            if dataset == "acs5" and year in tract_years_by_dataset.get(dataset, set()):
+                for focus in CONFIG.focus_counties:
+                    if focus.state_fips not in tract_parent_fips(dataset):
+                        continue
+                    fhash, fcount = _variables_fingerprint(year, dataset, focus.tables)
+                    if (
+                        dataset,
+                        year,
+                        f"tract:{focus.county_code}",
+                        focus.state_fips,
+                        fhash,
+                    ) in completed:
+                        continue
+                    plan.append(
+                        {
+                            "dataset": dataset,
+                            "year": year,
+                            "geo_level": "tract",
+                            "state_fips": focus.state_fips,
+                            "county_fips": focus.county_code,
+                            "variables_hash": fhash,
+                            "variables_count": fcount,
+                        }
+                    )
+
         # A slice finished before a table was added to its list is asked for
         # the added tables only (`AcsConfig.added_tables`): its other cells
         # are held already, and asking again would store each a second time.
@@ -688,6 +734,10 @@ def acs_ingest():
             return fingerprints[key]
 
         for unit in plan:
+            # A focus-county slice asks for its county's tables as a whole
+            # (`AcsConfig.focus_counties`); it has no added tables.
+            if unit.get("county_fips") is not None:
+                continue
             stored = ledger.get(
                 (unit["dataset"], unit["year"], unit["geo_level"], unit["state_fips"])
             )
@@ -781,17 +831,18 @@ def acs_ingest():
             WHERE dataset = %s
             AND year = %s
             AND geo_level = %s
-            AND state_fips IS NOT DISTINCT FROM %s;
+            AND state_fips IS NOT DISTINCT FROM %s
+              AND county_fips IS NOT DISTINCT FROM %s;
         """
 
         sql_planned_insert = """
             INSERT INTO control.acs_ingestion_slices (
-                dataset, year, geo_level, state_fips,
+                dataset, year, geo_level, state_fips, county_fips,
                 status, rows_loaded,
                 started_at, finished_at, last_error,
                 variables_hash, variables_count, variables_hash_seen_at
             )
-            VALUES (%s, %s, %s, %s,
+            VALUES (%s, %s, %s, %s, %s,
                     'planned', 0,
                     NULL, NULL, NULL,
                     %s, %s, %s)
@@ -805,6 +856,7 @@ def acs_ingest():
                     year = int(w["year"])
                     geo_level = w["geo_level"]
                     state_fips = w.get("state_fips")
+                    county_fips = w.get("county_fips")
                     vhash = w.get("variables_hash")
                     vcount = int(w.get("variables_count", 0))
                     # An added-tables request holds its pending mark until
@@ -823,6 +875,7 @@ def acs_ingest():
                             year,
                             geo_level,
                             state_fips,
+                            county_fips,
                         ),
                     )
 
@@ -834,6 +887,7 @@ def acs_ingest():
                                 year,
                                 geo_level,
                                 state_fips,
+                                county_fips,
                                 vhash,
                                 vcount,
                                 now,

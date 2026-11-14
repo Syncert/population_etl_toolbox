@@ -583,8 +583,15 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
             "metro",
         }
         # us + state + 52 county parents + 52 place parents (ETL-055) + 52
-        # tract parents (ETL-061) + one metro slice of every CBSA (ETL-091).
-        assert len(work_units) == 159
+        # tract parents (ETL-061) + one metro slice of every CBSA (ETL-091)
+        # + one focus county (ETL-137).
+        assert len(work_units) == 160
+        (focus,) = [unit for unit in work_units if unit.get("county_fips")]
+        assert (focus["geo_level"], focus["state_fips"], focus["county_fips"]) == (
+            "tract",
+            "55",
+            "025",
+        )
         county_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
@@ -601,7 +608,7 @@ def test_planning_task_builds_historical_and_rolling_or_geography_scopes(
         tract_parent_fips = {
             work_unit["state_fips"]
             for work_unit in work_units
-            if work_unit["geo_level"] == "tract"
+            if work_unit["geo_level"] == "tract" and not work_unit.get("county_fips")
         }
         assert tract_parent_fips == county_parent_fips
 
@@ -904,9 +911,14 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
     callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
     config = callable_.__globals__["CONFIG"]
 
+    focus_tables = [list(county.tables) for county in config.focus_counties]
+
     def fingerprint(year, dataset, tables=None):
         if tables is None:
             return ("whole-list", 30)
+        if list(tables) in focus_tables:
+            # A focus county's own slice (ETL-137) has its own fingerprint.
+            return ("focus-list", 11)
         if list(tables) != list(config.tract_tables):
             # The planner's added-tables check (ETL-114) digests the tract
             # list as it stood before each addition; nothing was loaded so.
@@ -946,8 +958,13 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
 
     replanned = plan("whole-list")
     assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
-    assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
-    assert plan("tract-list") == []
+    state_wide = [unit for unit in replanned if unit.get("county_fips") is None]
+    assert state_wide
+    assert {unit["variables_hash"] for unit in state_wide} == {"tract-list"}
+    # The focus county's slice is not in the ledger, so it is planned either
+    # way, on its own fingerprint (ETL-137).
+    (focus,) = [unit for unit in plan("tract-list")]
+    assert (focus["county_fips"], focus["variables_hash"]) == ("025", "focus-list")
 
 
 def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_loaded(
@@ -998,10 +1015,14 @@ def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_
         _patch_callable_global(
             monkeypatch, callable_, "_get_postgres_hook", lambda: database
         )
+        # A focus county's slice (ETL-137) asks for its own tables as a
+        # whole and is never an added-tables request; the state-wide slices
+        # are this test's subject.
         return {
             unit["state_fips"]: unit
             for batch in callable_(targets, dag_run=Run())
             for unit in batch
+            if unit.get("county_fips") is None
         }
 
     def ledger(stored: str, status: str) -> list[tuple]:
