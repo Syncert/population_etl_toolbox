@@ -1298,7 +1298,10 @@ def stub_census_acs(monkeypatch: pytest.MonkeyPatch) -> None:
         variables: list[str],
         geo_level: str,
         state_fips: str | None = None,
+        county_fips: str | None = None,
     ) -> list[list[str]]:
+        # A focus-county tract slice (ETL-085) names its county; the sample
+        # answers it with the same seeded tract, as every tract request is.
         # The provider returns list-of-lists whose geography columns depend on
         # the requested level, and silver replay rejects a payload missing its
         # level's columns, so the sample is generated per request rather than

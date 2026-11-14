@@ -540,7 +540,9 @@ def _ingest_capture_chunks(
                     variables=variable_chunk,
                     geo_level=geo_level,
                     state_fips=state_fips,
-                    county_fips=county_fips,
+                    # Only a focus-county slice names its county, so every
+                    # other request keeps the call it always made.
+                    **({"county_fips": county_fips} if county_fips is not None else {}),
                 )
                 payload = getattr(raw, "payload", None)
                 if payload is None:

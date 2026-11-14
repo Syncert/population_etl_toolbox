@@ -634,6 +634,8 @@ def acs_ingest():
             # tracts, for that county's tables, in the same tract years.
             if year in tract_years_by_dataset.get(dataset, set()):
                 for focus in CONFIG.focus_counties:
+                    if focus.state_fips not in tract_parent_fips(dataset):
+                        continue
                     fhash, fcount = _variables_fingerprint(year, dataset, focus.tables)
                     if (
                         dataset,
