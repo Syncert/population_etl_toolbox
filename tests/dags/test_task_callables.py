@@ -911,9 +911,14 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
     callable_ = _callable(dagbag, "acs_ingest", "build_ingestion_plan")
     config = callable_.__globals__["CONFIG"]
 
+    focus_tables = [list(county.tables) for county in config.focus_counties]
+
     def fingerprint(year, dataset, tables=None):
         if tables is None:
             return ("whole-list", 30)
+        if list(tables) in focus_tables:
+            # A focus county's own slice (ETL-137) has its own fingerprint.
+            return ("focus-list", 11)
         if list(tables) != list(config.tract_tables):
             # The planner's added-tables check (ETL-114) digests the tract
             # list as it stood before each addition; nothing was loaded so.
@@ -953,8 +958,13 @@ def test_a_wider_tract_table_list_replans_tract_slices_already_loaded(
 
     replanned = plan("whole-list")
     assert replanned and {unit["geo_level"] for unit in replanned} == {"tract"}
-    assert {unit["variables_hash"] for unit in replanned} == {"tract-list"}
-    assert plan("tract-list") == []
+    state_wide = [unit for unit in replanned if unit.get("county_fips") is None]
+    assert state_wide
+    assert {unit["variables_hash"] for unit in state_wide} == {"tract-list"}
+    # The focus county's slice is not in the ledger, so it is planned either
+    # way, on its own fingerprint (ETL-137).
+    (focus,) = [unit for unit in plan("tract-list")]
+    assert (focus["county_fips"], focus["variables_hash"]) == ("025", "focus-list")
 
 
 def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_loaded(
@@ -1005,10 +1015,14 @@ def test_a_table_added_to_the_curated_list_is_asked_for_alone_in_slices_already_
         _patch_callable_global(
             monkeypatch, callable_, "_get_postgres_hook", lambda: database
         )
+        # A focus county's slice (ETL-137) asks for its own tables as a
+        # whole and is never an added-tables request; the state-wide slices
+        # are this test's subject.
         return {
             unit["state_fips"]: unit
             for batch in callable_(targets, dag_run=Run())
             for unit in batch
+            if unit.get("county_fips") is None
         }
 
     def ledger(stored: str, status: str) -> list[tuple]:
