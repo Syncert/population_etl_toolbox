@@ -96,6 +96,54 @@ def tract_parent_fips(dataset: str) -> tuple[str, ...]:
     return ACS_TRACT_PARENT_FIPS.get(dataset, ())
 
 
+#: The Bureau's sex-by-age tables for each race group: A White alone, B Black
+#: alone, C American Indian and Alaska Native alone, D Asian alone, E Native
+#: Hawaiian and Pacific Islander alone, F some other race alone, G two or more
+#: races, H White alone not Hispanic, I Hispanic or Latino (focus-counties).
+RACE_ITERATED_SEX_BY_AGE: tuple[str, ...] = tuple(f"B01001{c}" for c in "ABCDEFGHI")
+
+
+class FocusCounty(BaseModel):
+    """One county whose tracts are requested for extra tables (focus-counties).
+
+    The tract slice of every state carries ``tract_tables`` only. A focus
+    county is asked, in one more 5-year slice of its own
+    (``for=tract:*&in=state:SS county:CCC``), for ``tables`` as well: a few
+    tables at tract grain for the one place that needs them, instead of for
+    every tract in the country.
+    """
+
+    county_fips: str
+    label: str = ""
+    tables: List[str]
+
+    @field_validator("county_fips")
+    @classmethod
+    def validate_county_fips(cls, value: str) -> str:
+        if len(value) != 5 or not value.isdigit():
+            raise ValueError("county_fips must be the five-digit state+county code")
+        if value[:2] not in tract_parent_fips("acs5"):
+            raise ValueError(f"state {value[:2]} publishes no tracts")
+        return value
+
+    @field_validator("tables")
+    @classmethod
+    def validate_tables(cls, value: List[str]) -> List[str]:
+        if not value:
+            raise ValueError("a focus county must name at least one table")
+        if len(set(value)) != len(value):
+            raise ValueError("a focus county names each table once")
+        return value
+
+    @property
+    def state_fips(self) -> str:
+        return self.county_fips[:2]
+
+    @property
+    def county_code(self) -> str:
+        return self.county_fips[2:]
+
+
 class AcsConfig(BaseModel):
     census_api_key: str = Field(
         default_factory=lambda: os.environ.get("CENSUS_API_KEY", "")
@@ -184,6 +232,20 @@ class AcsConfig(BaseModel):
     # How many of the 5-year dataset's newest years are requested at tract
     # grain; the default is the newest, which is what a county page reads.
     tract_recent_years: int = 1
+    # Counties whose tracts also carry a few more tables (focus-counties),
+    # requested in a slice of their own for the same newest tract years.
+    # Dane County, Wisconsin is the survival game's pilot county: its
+    # characters are drawn from sex by age for each race group, Hispanic or
+    # Latino by race, and occupation by sex. Dane's ~107 tracts on these 11
+    # tables are about 35,000 estimates a year, against ~24 million for the
+    # same tables on every tract. Another county is one more entry.
+    focus_counties: List[FocusCounty] = [
+        FocusCounty(
+            county_fips="55025",
+            label="Dane County, WI",
+            tables=[*RACE_ITERATED_SEX_BY_AGE, "B03002", "B24010"],
+        )
+    ]
     # Place years beyond the newest `place_full_table_years` are requested
     # for `place_history_tables` only (acs-place-tract-history-backfill). A
     # place year on the whole curated list measured about 136 GB on the
@@ -249,6 +311,38 @@ class AcsConfig(BaseModel):
         if value < 0:
             raise ValueError("tract_recent_years must not be negative")
         return value
+
+    @field_validator("focus_counties")
+    @classmethod
+    def validate_focus_counties(cls, value: List[FocusCounty]) -> List[FocusCounty]:
+        codes = [county.county_fips for county in value]
+        if len(set(codes)) != len(codes):
+            raise ValueError("each focus county is named once")
+        return value
+
+    def metadata_tables(self) -> set[str]:
+        """Every table whose variable metadata is synced: curated and focus."""
+        tables = set(self.curated_tables)
+        for county in self.focus_counties:
+            tables.update(county.tables)
+        return tables
+
+    def focus_county(self, county_fips: str) -> FocusCounty:
+        """The configured focus county ``county_fips``; refuses any other."""
+        for county in self.focus_counties:
+            if county.county_fips == county_fips:
+                return county
+        raise ValueError(f"{county_fips} is not a configured focus county")
+
+    def focus_slices(
+        self, dataset: str, years: List[int]
+    ) -> list[tuple[int, FocusCounty]]:
+        """The focus-county slices of ``dataset``: each county, each tract year."""
+        return [
+            (year, county)
+            for year in sorted(self.tract_years(dataset, years))
+            for county in self.focus_counties
+        ]
 
     def tract_years(self, dataset: str, years: List[int]) -> set[int]:
         """The years of ``dataset`` requested at tract grain: the newest ones."""

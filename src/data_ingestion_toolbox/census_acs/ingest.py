@@ -136,6 +136,7 @@ def build_geo_params(
     geo_level: str,
     state_fips: Optional[str] = None,
     dataset: Optional[str] = None,
+    county_fips: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Build the 'for' and 'in' query params for the ACS API, given geo_level.
@@ -143,7 +144,12 @@ def build_geo_params(
     A place request is sliced by state, as counties are, and is refused for a
     state outside the dataset's declared place scope (``ACS_PLACE_PARENT_FIPS``)
     rather than sent and answered empty.
+
+    ``county_fips`` (three digits, tract grain only) narrows a tract request
+    to one county's tracts: a focus-county slice (focus-counties).
     """
+    if county_fips is not None and geo_level != "tract":
+        raise ValueError("county_fips narrows tract-level requests only")
     if geo_level == "us":
         return {"for": "us:1"}
     elif geo_level == "state":
@@ -169,6 +175,10 @@ def build_geo_params(
             raise ValueError(
                 f"{dataset or 'unknown dataset'} publishes no tracts for state {state_fips}"
             )
+        if county_fips is not None:
+            if len(county_fips) != 3 or not county_fips.isdigit():
+                raise ValueError("county_fips must be the three-digit county code")
+            return {"for": "tract:*", "in": f"state:{state_fips} county:{county_fips}"}
         return {"for": "tract:*", "in": f"state:{state_fips} county:*"}
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -192,6 +202,7 @@ def fetch_acs_api(
     variables: List[str],
     geo_level: str,
     state_fips: Optional[str] = None,
+    county_fips: Optional[str] = None,
 ) -> List[List[str]]:
     """
     Call the Census API and return the raw JSON (list-of-lists).
@@ -203,7 +214,7 @@ def fetch_acs_api(
         "get": ",".join(variables),
         "key": CONFIG.require_api_key(),
     }
-    params.update(build_geo_params(geo_level, state_fips, dataset))
+    params.update(build_geo_params(geo_level, state_fips, dataset, county_fips))
 
     # Small jitter even under lock to avoid rhythmic bursts on retries
     time.sleep(0.2 + random.random() * 0.4)
@@ -428,13 +439,17 @@ def ingest_slice(
     geo_level: str,
     state_fips: Optional[str] = None,
     tables: Optional[List[str]] = None,
+    county_fips: Optional[str] = None,
 ) -> int:
     """
     Ingest one slice: (year, dataset, geo_level[, state_fips]).
 
     ``tables`` narrows the request to those curated tables, as the planner
     does for an older place year (`AcsConfig.place_tables`); ``None`` keeps
-    the level's own scope.
+    the level's own scope. ``county_fips`` (three digits) makes a tract
+    slice one focus county's (`AcsConfig.focus_counties`): it asks for that
+    county's tracts and that county's tables, and ``tables`` is refused
+    beside it.
 
     For example:
         (2022, 'acs5', 'us')
@@ -443,7 +458,14 @@ def ingest_slice(
     """
     # A tract slice asks for the tract tables only; every other level for
     # the whole curated list.
-    if tables is not None:
+    if county_fips is not None:
+        if geo_level != "tract" or not state_fips:
+            raise ValueError("a focus-county slice is a tract slice of one state")
+        if tables is not None:
+            raise ValueError("a focus-county slice asks for its county's tables")
+        focus = CONFIG.focus_county(f"{state_fips}{county_fips}")
+        variables = get_curated_variables(year, dataset, focus.tables)
+    elif tables is not None:
         variables = get_curated_variables(year, dataset, tables)
     elif geo_level == "tract":
         variables = get_curated_variables(year, dataset, CONFIG.tract_tables)
@@ -461,6 +483,7 @@ def ingest_slice(
             "year": year,
             "geo_level": geo_level,
             "state_fips": state_fips,
+            **({"county_fips": county_fips} if county_fips is not None else {}),
         }
     )
     endpoint = f"https://api.census.gov/data/{year}/acs/{dataset}"
@@ -472,6 +495,7 @@ def ingest_slice(
         dataset=dataset,
         geo_level=geo_level,
         state_fips=state_fips,
+        county_fips=county_fips,
         control=control,
         run_id=run_id,
         endpoint=endpoint,
@@ -487,6 +511,7 @@ def _ingest_capture_chunks(
     geo_level: str,
     state_fips: str | None,
     control: CaptureControl,
+    county_fips: str | None = None,
     run_id: uuid.UUID,
     endpoint: str,
     total_rows: int,
@@ -499,7 +524,9 @@ def _ingest_capture_chunks(
                 "year": year,
                 "geo_level": geo_level,
             }
-            parameters.update(build_geo_params(geo_level, state_fips, dataset))
+            parameters.update(
+                build_geo_params(geo_level, state_fips, dataset, county_fips)
+            )
             request = control.start_request(
                 run_id=run_id,
                 endpoint=endpoint,
@@ -513,6 +540,7 @@ def _ingest_capture_chunks(
                     variables=variable_chunk,
                     geo_level=geo_level,
                     state_fips=state_fips,
+                    county_fips=county_fips,
                 )
                 payload = getattr(raw, "payload", None)
                 if payload is None:
