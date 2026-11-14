@@ -15,9 +15,49 @@ The counterpart code says what a row is. A real state and county is a flow
 between two counties; every other code is one of SOI's own categories,
 labelled here and never redistributed into counties.
 
-Files from 2018-2019 follow the rules above; before that, small flows were
-moved into another county's category and the files carried state totals,
-so earlier years are not registered.
+Files from 2011-2012 to 2017-2018 have the same columns and counterpart
+codes (SOI users guides 2011-2012 and 2017-2018, read 2026-11-05), with
+three differences the parser and the gold views keep:
+
+* each state's block opens with five rows whose subject county is ``000``:
+  the state's own totals. They are not a county, so they are counted and
+  not loaded (:data:`STATE_SUMMARY_COUNTY`);
+* ``n2`` counts exemptions, not individuals: personal exemptions ended
+  with tax year 2018, so the 2018-2019 file is the first whose year-2
+  returns count people directly (:func:`people_basis`);
+* the 2011-2012 guide shows a county-to-county flow from 10 returns, the
+  2017-2018 guide from 20; either way a smaller flow is in an "Other flows"
+  row and nothing is moved into a county.
+
+Before 2011-2012 SOI matched returns on the primary filer only and counted
+returns processed by late September (95 to 98 percent of a year's
+returns), and it published each pair as a zip, not one CSV per direction
+(read 2026-11-05 from every zip, 1990-1991 to 2010-2011):
+
+* 1992-1993 to 2010-2011 (:data:`WORKBOOKS`): one Excel workbook per state
+  and direction, in the CSV's nine columns. Member names follow no single
+  pattern (``co0304OH0.xls`` beside ``co0304OHo.xls``; ``co1011ohi.xls`` is
+  Hawaii's outflow), so a workbook's direction is read from its title row.
+* 1990-1991 and 1991-1992 (:data:`TEXT`): one fixed-width text file per
+  state and direction, without a money column.
+* Before 1995-1996 a subject county's total is counterpart ``00 001``, its
+  remaining flows are four "Region" rows (``63 011`` to ``63 014``),
+  foreign remainder ``63 015`` and non-migrants ``63 050``; the text files
+  write the same rows as labelled lines. The workbooks' third measure is
+  "aggregate total money income", not adjusted gross income, so no AGI is
+  loaded for those years (:data:`FIRST_AGI_YEAR1`); the stored figure stays
+  in ``value_source``.
+* Before 1995-1996 a county's remaining flows are grouped one of three
+  ways (read 2026-11-05 from the 1990-1991 to 1994-1995 files): "Same
+  State" (``63 010``) beside the four regions; "Same State" (``63 020``),
+  "Same Region, Diff. State" (``63 021``) and "Different Region"
+  (``63 022``); or one "Suppress All Flows" row (``63 030``) when every
+  smaller group would disclose a taxpayer. The text files write the same
+  rows as labelled lines ("All Migration Flows" for ``63 030``).
+
+A file whose parser changed after it was published carries a newer parser
+contract (:data:`PARSE_REVISIONS`); a scheduled run captures it again, and
+the bytes replay under the new contract (``irs_migration.plan``).
 """
 
 from __future__ import annotations
@@ -30,12 +70,41 @@ DIRECTIONS = (INFLOW, OUTFLOW)
 
 #: (year 1, year 2): returns filed in calendar year 1 matched to year 2.
 YEAR_PAIRS: tuple[tuple[int, int], ...] = (
+    *((year, year + 1) for year in range(1990, 2011)),
+    (2011, 2012),
+    (2012, 2013),
+    (2013, 2014),
+    (2014, 2015),
+    (2015, 2016),
+    (2016, 2017),
+    (2017, 2018),
     (2018, 2019),
     (2019, 2020),
     (2020, 2021),
     (2021, 2022),
     (2022, 2023),
 )
+
+#: How many of the newest pairs a scheduled run captures again, answered or
+#: not: SOI publishes one pair a year and seldom revises an older one.
+REVISION_WINDOW_PAIRS = 2
+
+#: The first year 2 whose returns count individuals; before it ``n2`` counts
+#: exemptions (personal exemptions ended with tax year 2018).
+FIRST_INDIVIDUALS_YEAR2 = 2019
+
+#: File layouts: one CSV per direction, a zip of per-state workbooks, or a
+#: zip of per-state fixed-width text files.
+CSV = "csv"
+WORKBOOKS = "workbooks"
+TEXT = "text"
+
+#: The first year 1 whose files carry adjusted gross income.
+FIRST_AGI_YEAR1 = 1995
+
+#: The subject county code of a state's own summary rows (files before
+#: 2018-2019): counted, never loaded as a county.
+STATE_SUMMARY_COUNTY = "000"
 
 #: Counterpart (state code, county code) -> category, for SOI's own rows.
 CATEGORY_CODES: dict[tuple[str, str], str] = {
@@ -55,6 +124,22 @@ CATEGORY_CODES: dict[tuple[str, str], str] = {
     ("59", "003"): "other_flows_midwest",
     ("59", "005"): "other_flows_south",
     ("59", "007"): "other_flows_west",
+}
+
+#: The codes files before 1995-1996 use for the same categories.
+EARLY_CATEGORY_CODES: dict[tuple[str, str], str] = {
+    ("00", "001"): "total_us_and_foreign",
+    ("63", "011"): "other_flows_northeast",
+    ("63", "012"): "other_flows_midwest",
+    ("63", "013"): "other_flows_south",
+    ("63", "014"): "other_flows_west",
+    ("63", "015"): "foreign_other_flows",
+    ("63", "010"): "other_flows_same_state",
+    ("63", "020"): "other_flows_same_state",
+    ("63", "021"): "other_flows_same_region_different_state",
+    ("63", "022"): "other_flows_different_region",
+    ("63", "030"): "other_flows_all",
+    ("63", "050"): "non_migrants",
 }
 
 #: SOI's labels, as its documentation names them.
@@ -77,6 +162,11 @@ CATEGORY_LABELS: dict[str, str] = {
     "other_flows_midwest": "Other flows, Midwest",
     "other_flows_south": "Other flows, South",
     "other_flows_west": "Other flows, West",
+    "other_flows_same_region_different_state": (
+        "Other flows, same region, different state"
+    ),
+    "other_flows_different_region": "Other flows, different region",
+    "other_flows_all": "Other flows, all combined",
 }
 
 #: The six header rows: the file's own totals for its subject county.
@@ -97,6 +187,35 @@ MEASURES: tuple[tuple[str, str, str], ...] = (
 )
 
 
+#: Each layout's parser contract, stored with every capture as its
+#: ``payload_schema_version``.
+PARSER_CONTRACTS = {
+    CSV: "irs_soi_county_migration_csv",
+    WORKBOOKS: "irs_soi_county_migration_state_workbooks",
+    TEXT: "irs_soi_county_migration_state_text",
+}
+
+#: Pairs whose published rows the parser now reads differently, and the
+#: contract version that reads them (every other file is ``v1``):
+#:
+#: * 1990-1991, 1991-1992: a subject's total line is any unindented line
+#:   (the truncated "...Borough T" labels were read as the previous
+#:   county's flows), and the "Same State", "Same Region, Diff. State",
+#:   "Different Region", "All Migration Flows" and "Foreign" lines load;
+#: * 1992-1993 to 1994-1995: counterparts ``63 010`` to ``63 030`` load;
+#: * 1995-1996, 2002-2003: a row followed by a stray state name in a later
+#:   column loads (the North Dakota workbook's first county total).
+PARSE_REVISIONS: dict[str, int] = {
+    "1990-1991": 2,
+    "1991-1992": 2,
+    "1992-1993": 2,
+    "1993-1994": 2,
+    "1994-1995": 2,
+    "1995-1996": 2,
+    "2002-2003": 2,
+}
+
+
 @dataclass(frozen=True)
 class MigrationFile:
     direction: str
@@ -109,10 +228,33 @@ class MigrationFile:
         return f"{self.year1}-{self.year2}"
 
     @property
+    def people_basis(self) -> str:
+        return people_basis(self.year2)
+
+    @property
+    def layout(self) -> str:
+        if self.year1 >= 2011:
+            return CSV
+        return TEXT if self.year1 <= 1991 else WORKBOOKS
+
+    @property
+    def parser_contract(self) -> str:
+        """The contract this file's capture is parsed under."""
+        version = PARSE_REVISIONS.get(self.year_pair, 1)
+        return f"{PARSER_CONTRACTS[self.layout]}:v{version}"
+
+    @property
+    def has_agi(self) -> bool:
+        return self.year1 >= FIRST_AGI_YEAR1
+
+    @property
     def path(self) -> str:
-        return (
-            f"/county{self.direction}{self.year1 % 100:02d}{self.year2 % 100:02d}.csv"
-        )
+        short = f"{self.year1 % 100:02d}{self.year2 % 100:02d}"
+        if self.layout == CSV:
+            return f"/county{self.direction}{short}.csv"
+        if self.year1 >= 2004:
+            return f"/county{short}.zip"
+        return f"/{self.year1}to{self.year2}countymigration.zip"
 
     @property
     def subject_prefix(self) -> str:
@@ -129,6 +271,18 @@ def registered_files() -> tuple[MigrationFile, ...]:
         MigrationFile(direction, year1, year2)
         for year1, year2 in YEAR_PAIRS
         for direction in DIRECTIONS
+    )
+
+
+def people_basis(year2: int) -> str:
+    """What ``n2`` counts in a pair ending ``year2``: exemptions or individuals."""
+    return "individuals" if year2 >= FIRST_INDIVIDUALS_YEAR2 else "exemptions"
+
+
+def recent_year_pairs() -> tuple[str, ...]:
+    """The pairs every scheduled run captures again: the newest registered."""
+    return tuple(
+        f"{year1}-{year2}" for year1, year2 in YEAR_PAIRS[-REVISION_WINDOW_PAIRS:]
     )
 
 

@@ -1,0 +1,495 @@
+# Operating the elections pipeline
+
+The `elections_ingest` DAG captures and publishes who held each U.S. House,
+U.S. Senate and governor seat, and when, and the MIT Election Data and
+Science Lab's (MEDSL) certified results for president, Senate and House. It
+is the source step (E-2) of
+[the elections plan](../plans/in_progress/ELECTIONS_AND_ECONOMIC_PERFORMANCE_PLAN.md)
+and follows [ADR-0014](../decisions/0014-economic-performance-by-party-and-seat.md):
+seats are facts with dates and sources, a two-party margin is the Republican
+share minus the Democratic share of their combined vote, and nothing here
+scores, ranks or adds measures together.
+
+## What is read
+
+`src/data_ingestion_toolbox/elections/registry.py` names every stream. Only
+`house_county_share` takes a credential: the Census API key in
+`CENSUS_API_KEY` (the one the Census sources use), added to each request when
+it is sent and never captured.
+
+| Stream | Provider | What |
+| --- | --- | --- |
+| `legislators` | `raw.githubusercontent.com/unitedstates/congress-legislators/gh-pages` | `legislators-current.json` and `legislators-historical.json` (CC0 1.0) |
+| `governors` | `query.wikidata.org/sparql` | one SPARQL query: holders of each state's governor position (P39), with start, end and party (CC0 1.0) |
+| `county_president` | Harvard Dataverse `doi:10.7910/DVN/VOQCHQ` | the file matching `countypres_2000-20NN` |
+| `state_president` | `doi:10.7910/DVN/42MVDX` | `1976-20NN-president` |
+| `senate` | `doi:10.7910/DVN/PEJ5QU` | `1976-20NN-senate-state` (or `1976-20NN-senate`) |
+| `house` | `doi:10.7910/DVN/IG0UN2` | `1976-20NN-house` |
+| `county_president_history` | Algara & Amlani, `doi:10.7910/DVN/DGUMFI` (CC0 1.0, no guestbook) | `dataverse_shareable_presidential_county_returns_1868_20NN.Rdata`, data frame `pres_elections_release` |
+| `county_senate_history` | the same dataset | `dataverse_shareable_us_senate_county_returns_1908_20NN.Rdata`, data frame `senate_elections_release` |
+| `county_senate` | MEDSL `doi:10.7910/DVN/YB60EJ` | `senate_20NN` (the 2022 county file) |
+| `county_senate_precinct` | MEDSL `doi:10.7910/DVN/ZCM3BN` (no guestbook) | `SENATE_precinct_general.csv` (2024 by precinct, 166 MB, summed into counties) |
+| `house_county_share` | Census Bureau API (public domain) | per registered plan, each state's district list, then each district's `county (or part)` pieces with their census population |
+
+For each MEDSL stream the run first captures the dataset's file list, then
+the one file whose name matches the registered pattern, in its original
+format (`?format=original`). A second matching file (a new edition beside the
+old) is refused rather than guessed between; update the pattern deliberately.
+Every capture is committed before parsing, so a replay never needs the
+network.
+
+### County returns before 2000 (Algara & Amlani)
+
+MEDSL's county presidential file starts in 2000 and MEDSL publishes county
+Senate results only from 2022 (2024 only by precinct). Algara & Amlani's
+county dataset (version 1.1, 2022-09-04) fills county presidential results
+for 1992 and 1996 and county Senate results for 1990 to 2020. Its files are
+R `save()` files; `data_ingestion_toolbox.utility.rdata` reads them with the
+standard library (pyreadr is AGPL-3.0 and needs pandas). Each row is one
+county and contest with the Democratic and Republican nominees' votes and the
+county's total, read as one row per nominee plus "(other candidates
+combined)" for what is left, so a county's rows still add to its total.
+
+- Only election years from 1990 are read.
+- A Senate special in the same state and year (Minnesota 2018, Georgia 2020)
+  is its own contest, told apart by seat class.
+- An absent nominee is no row. A county with neither party's votes is
+  quarantined `no_major_party_votes`; an identical repeated row keeps one
+  copy (`repeated_row`); two copies that disagree are both quarantined
+  (`conflicting_row`).
+- Retired county codes read as their successor (`registry.COUNTY_SUCCESSOR`):
+  Dade (12025) as Miami-Dade (12086), Shannon SD as Oglala Lakota, Wade
+  Hampton AK as Kusilvak, and South Boston, Clifton Forge and Bedford cities
+  added into Halifax, Alleghany and Bedford counties. Votes are summed, never
+  apportioned. Broomfield, CO did not exist before 2001 and has no earlier
+  rows. A MEDSL county row with a retired code (Bedford city before 2013,
+  for example) is read the same way; its own total is dropped, so the
+  county's total is the sum of its candidates' votes.
+- Algara & Amlani's presidential rows from 2000 to 2020 are MEDSL's years.
+  They stay in silver for `DQ-ELEC-007` and are never served, so a contest
+  has one provider. The release key names the provider and file.
+
+MEDSL's county Senate 2022 file repeats the statewide total in `totalvotes`
+on every county row, so a county's total there is the sum of its candidates.
+
+### County Senate 2024 from MEDSL's precinct file
+
+MEDSL publishes 2024 Senate returns only by precinct (994,635 rows, 34 states
+and DC, read on OFFICE_LAB 2026-11-08). Stream `county_senate_precinct` reads
+the file once (an unchanged file is an unchanged read) and sums it into
+counties on replay, under reading rules `medsl-precinct-reading-3`:
+
+- A candidate line's count in a precinct is its TOTAL row where the precinct
+  prints one (New Jersey, Connecticut, Delaware, Rhode Island and New York
+  print both a TOTAL and the modes), else the sum of its modes.
+- Total lines ("TOTAL VOTES CAST", Maine's "TOTAL BALLOTS CAST", New
+  Jersey's "CONTEST TOTAL") are not votes; a county's total is its
+  candidates' sum. Undervote, overvote, blank, void and invalid lines are
+  quarantined `not_a_vote`.
+- A suppressed count (`*`: about 19,300 small-precinct rows in California,
+  Nevada and New Mexico) is quarantined `suppressed_count`, never zero.
+- A precinct whose every line equals the sum of the precincts named after it
+  (New Jersey prints each town's total, "Alpine", beside "Alpine 1") is a
+  subtotal, quarantined `subtotal_row`, so no vote is counted twice. A town
+  whose name begins with another's ("Englewood Cliffs" under "Englewood",
+  "Ridgefield Park" under "Ridgefield") is not counted as part of it, and a
+  town total one vote off its precincts (Rockleigh, 63 beside 62) is still a
+  subtotal.
+- A county whose every line has one row that equals the sum of all its other
+  precincts, within one vote, holds a county total printed as a precinct
+  (Indiana's Hendricks County): that row is quarantined `county_total_row`
+  and only the precincts are summed. It needs ten rows and a count of at
+  least 100 per line, so a small town's lone precinct is never taken for one.
+- A precinct named after another precinct with words before it ("PENN TWP 4
+  110004" beside "110004", in Indiana's St Joseph County) whose votes are the
+  same on every line is a renamed copy, quarantined `repeated_precinct`.
+- A candidate line printed with no party takes the one party its candidate
+  carries elsewhere in the same state's contest (six New Jersey counties,
+  Mercer among them, leave Kim's and Bashaw's party blank); a candidate with
+  no party or with several keeps the blank.
+- A row with no county code, or a code that is not a county of its state
+  (Missouri's Kansas City board, `36000`, which counts parts of four
+  counties), is quarantined; nothing is apportioned. The counties such a
+  board spans (Cass, Clay, Jackson and Platte; `SPANNING_UNITS`) are not
+  served while the file carries it, quarantined `county_split_by_unit`:
+  summed without Kansas City, Jackson County would read as if the city had
+  not voted. The District of Columbia's shadow senator is
+  `not_a_senate_seat`.
+- A party label is read as the precinct file prints it, even where it
+  conflicts with the ballot: the file labels Nebraska's regular-seat
+  independent, Dan Osborn, DEMOCRAT, where MEDSL's statewide file has him
+  "BY PETITION", so Nebraska's regular-race county margins read Fischer
+  against Osborn as Republican against Democrat (Nick, 2026-11-10: "pull
+  them even though they're misrepresented"; withheld under
+  `medsl-precinct-reading-2`). `DQ-ELEC-009` flags the state, since its
+  county Democratic sum has no statewide Democratic count to match.
+- In the statewide files, party text "GOP" is Republican (`medsl-reading-4`):
+  Washington's 2024 Senate line for Raul Garcia was read as Other, which made
+  Washington's precinct county sums look 100% off; they agree within 0.07%.
+
+**The state count is a check, not a gate.** The county rows are served as
+MEDSL published them (Nick, 2026-11-08: "display the data as is and accept
+the discrepancy, stay true to source"). Each state's county sums of each
+major party's votes are compared with the same contest in MEDSL's statewide
+Senate file (`gold_elections.precinct_county_check`), and `DQ-ELEC-009`
+warns with both counts for a state that misses by more than 1% (or 100
+votes), or has no statewide row yet. New Jersey is expected there: checked
+against the state's official county list (12/05/2024), 19 of its 21 counties
+sum exactly (Atlantic is 0.6% short), but the file has no early votes for
+Mercer County (Kim 80,007 of 105,685, Bashaw 33,332 of 46,932) and no
+provisional rows for Union County (about 3% short), so the state is 1.4%
+short for Kim. Mercer and Union are served short, as published; nothing is
+estimated in their place. MEDSL takes error reports as issues on
+`github.com/MEDSL/2024-elections-official`, and a corrected file is read on
+the next scheduled run.
+
+Every run re-reads each stream whole. A Congress, a governor or an election
+year the warehouse never loaded is loaded by the next scheduled run; there is
+no separate history run (the loader rule).
+
+### Which House districts cover each county
+
+House members represent districts, not counties, and no free file counts
+House votes by county before about 2016. A county page instead shows the
+House districts covering it, each district's own result, and the county's
+share of its people in each district. The shares come from the Census
+Bureau's congressional district summary files on its API
+(`registry.DISTRICT_PLANS`, read on OFFICE_LAB 2026-11-07):
+
+| Plan | Congress | Census | API dataset | House elections |
+| --- | --- | --- | --- | --- |
+| `cd110` | 110th | 2000 | `2000/dec/cd110h` | 2006 |
+| `cd111` | 111th | 2010 | `2010/dec/sf1` | 2008, 2010 |
+| `cd113` | 113th | 2010 | `2010/dec/cd113` | 2012, 2014 |
+| `cd115` | 115th | 2010 | `2010/dec/cd115` | 2016 |
+| `cd116` | 116th | 2010 | `2010/dec/cd116` | 2018, 2020 (not North Carolina) |
+| `cd118` | 118th | 2020 | `2020/dec/cd118` | 2022 |
+| `cd119` | 119th | 2020 | `2020/dec/cd119` | 2024 |
+
+A Congress with no tabulation of its own uses the one before it
+(`registry.HOUSE_PLAN_YEARS`), which is the same plan except where a state
+redrew in between: North Carolina's 2019 court-ordered map was used in 2020,
+so North Carolina 2020 has no county view. The API serves nothing for the
+103rd to 109th Congresses (1992 to 2004) and Census's relationship files give
+land area only, so those years (and 1990) are House by district only. Nick
+decided on 2026-11-08 to keep them that way: no county view is built from
+district maps weighted by land area, because that would spread a district's
+votes by area rather than by people. A county page reads "House results
+before 2006 are shown by district only" for those years.
+
+Each plan is a frozen tabulation: the stream reads only the plans no
+published read holds, about 490 small requests per plan, and is `unchanged`
+once every registered plan is held. A plan added to the registry is read by
+the next scheduled run.
+
+## What is served
+
+| Relation | Rows |
+| --- | --- |
+| `gold_elections.seat_term` | one row per span a person held a seat with one party: `seat_label` (`WI Senate class 1`, `WI-02`, `VT-AL`, `WI governor`), `party_code`, `caucus_code` (an independent's caucus), `start_date`, `end_date` (NULL is serving), `source_label` |
+| `gold_elections.contest_result` | one row per contest and area: Republican and Democratic votes, total, leading party and candidate; read from `contest_result_store`, which `publish_run` fills once per published read (`gold_elections.sync_contest_result()`) |
+| `gold_elections.contest_tally` | the same contest rows computed from silver for any published read; read it for one `run_id` only |
+| `gold_elections.candidate_total` | one row per candidate and area, every ballot line combined |
+| `gold_elections.county_house_district` | one row per county, House general election from 2006 and covering district: `district_label` (`WI-02`, `WY-AL`), `county_population_share` (percent of the county's people in that district, from the plan's census), the district's `leading_party_code`, votes and `district_two_party_margin`; `missing_reason = 'no_district_result'` where MEDSL has no result for the district that year. The margin is the district's, never the county's own vote |
+| `gold_elections.district_county_share` | the county pieces of the newest published read of each plan, with `county_population` (the county's whole population in that census) |
+| `gold_elections.observation_revision`, `observation_latest` | the presidential general-election measures below, in the neutral observation shape |
+
+| Measure | Unit | Grains |
+| --- | --- | --- |
+| `president_two_party_republican_share` | percent | state, county |
+| `president_two_party_margin` | percentage points (positive leans Republican) | state, county |
+| `president_total_votes` | votes | state, county |
+| `senate_two_party_republican_share` | percent | state, county |
+| `senate_two_party_margin` | percentage points (positive leans Republican) | state, county |
+| `senate_total_votes` | votes | state, county |
+
+The Senate measures are the regularly scheduled race; a special held the same
+year is in `contest_result` but not in the measures, so a place has one Senate
+value a year.
+
+Each observation is dated on election day and its release is the MEDSL file
+it was read from (`MEDSL countypres_2000-2024.csv`).
+
+### How a county's total is counted
+
+MEDSL publishes some counties as one `TOTAL` line and others by vote mode
+(`ELECTION DAY`, `ABSENTEE`, `EARLY VOTING`, `PROVISIONAL`, `ONE STOP`,
+`FAILSAFE`, ...). A candidate's votes are the `TOTAL` line when there is one,
+otherwise the sum of their mode rows. The county's `totalvotes` is counted
+once: in the county presidential file MEDSL repeats the county-wide total on
+every mode's rows, so a mode total that already covers all the county's
+candidate votes is the county total. Only when each mode carries its own part
+are the parts added. Before this rule the repeated total was added once per
+mode, which served `president_total_votes` at two to six times the real
+count in about 17 state-years (Wisconsin, Texas, South Carolina and West
+Virginia 2024; Georgia, North Carolina, Maryland, Virginia and others 2020).
+Party votes, shares and margins were not affected.
+
+A change to the totalling reaches the stored contests when the gold DDL is
+next applied: `gold_elections.reconcile_contest_result()` totals every
+current read afresh and rewrites only the stored rows that differ; an
+identical row is left alone.
+
+How the source's shapes are read:
+
+- **Party switches.** congress-legislators records a change of party inside
+  a term (`party_affiliations`); the term is split there, so Jefferson Van
+  Drew's 2019 term is a Democratic span and a Republican span.
+- **Independents.** Bernie Sanders is `IND` with `caucus_code = DEM`; the
+  party is never rewritten to the caucus.
+- **Governors.** A governor carries the party they took office in: the
+  Wikidata party statement whose dates cover the start, else the newest
+  before it, else an undated one.
+- **Party codes (decision L-2).** `REP`, `DEM`, `IND`, `OTH`. Fusion and
+  state variants of a major party (Democratic-Farmer-Labor, Democrat-Liberal,
+  Republican-Conservative) are that party; an "Ind. Democrat" is `OTH`. The
+  source's text is kept beside the code.
+- **Modes.** Where an area publishes a `TOTAL` line it is read alone; where it
+  publishes only modes (election day, absentee, early) they are summed.
+- **Fusion lines.** New York's candidates appear on several lines; they are
+  one candidate, with the major party among their lines.
+- **House districts** are contests, not observations: districts are redrawn
+  after each census and are not yet a shared geography. A county sees them
+  through `county_house_district`, and nothing adds district margins into a
+  county figure.
+
+Quarantined, never served as zero: a county row with no county code (Maine's
+UOCAVA rows, for example), an `NA` vote count, a duplicate row, a row with no
+state.
+
+## The Dataverse guestbook on the county and House files
+
+MEDSL's county presidential and House files sit behind a Dataverse
+guestbook (guestbook 458 on the county file, 2026-11-04); any results file
+that answers this way is handled the same. Dataverse 6.10 and later answer a plain
+download with HTTP 400 "required Guestbook response". The client then:
+
+1. reads the guestbook (`GET /api/guestbooks/{id}`); a guestbook with a
+   required custom question fails the run as `guestbook_questions_unanswered`,
+   because this pipeline answers only the four standard fields;
+2. POSTs the same download URL with
+   `{"guestbookResponse": {"name", "email", "institution", "position", "answers": []}}`;
+3. keeps the answer if it is the file, or follows the signed URL it returns.
+
+The four answers are the operator's, set in `infra/docker/stack.env`:
+`ELECTIONS_GUESTBOOK_NAME`, `ELECTIONS_GUESTBOOK_EMAIL`,
+`ELECTIONS_GUESTBOOK_INSTITUTION`, `ELECTIONS_GUESTBOOK_POSITION`, and
+`DATAVERSE_API_TOKEN` if Harvard's installation requires a signed-in user.
+They are sent only to Dataverse, with each download (once a month), and are
+never written to a capture or the repository. With none set, the county
+and House streams fail as `guestbook_required` and the other streams
+still load. The Algara & Amlani files have no guestbook.
+Answering the guestbook records a download in MEDSL's guestbook log; read the
+dataset's terms on its Dataverse page before setting them.
+
+## Not yet verified against the live services
+
+The build container could not reach Wikidata or Dataverse, so:
+
+- The governor fixture's Wikidata identifiers are invented; the query's
+  properties (P39, P5087, P1001, P580, P582, P102) are the documented ones.
+  `tests/external/test_elections_source_contracts.py` (EXT-031) is the check
+  that confirms them; run it before the first deploy.
+- MEDSL's file names are taken from its published datasets; EXT-031 confirms
+  each pattern matches exactly one file.
+- MEDSL publishes its data for research use under the licence stated on each
+  Dataverse dataset; confirm the terms on each dataset page before serving
+  results outside the warehouse.
+- The guestbook POST's answer shape (the file itself or a signed URL) is
+  taken from Dataverse's guide, which does not show it; EXT-031 exercises it.
+- The House file's header is unchecked until a guestbook answer lets it
+  download.
+
+State legislatures are not read; that waits on decision L-1 in the plan.
+
+## Deployment prerequisites
+
+Apply `sql/bootstrap/warehouse_manifest.json`. The DAG's first task,
+`ensure_elections_schema`, re-applies the package's DDL before any capture,
+and `require_shared_geography` refuses to run before the shared geography is
+loaded. Create the pool if deployment automation has not:
+
+```text
+airflow pools set elections_files 1 'Elections files (serialized)'
+```
+
+## Schedule
+
+Monthly, on the 3rd at 07:00 UTC: members change between elections (deaths,
+resignations, appointments) and MEDSL republishes after certification. A read
+whose files are byte-for-byte the last published read's is recorded
+`unchanged` and replays nothing.
+
+## Checks after a run
+
+```sql
+SELECT stream, status, source_file, record_count, published_at
+FROM control.elections_run ORDER BY created_at DESC LIMIT 6;
+
+SELECT office, COUNT(*) FILTER (WHERE end_date IS NULL OR end_date > CURRENT_DATE) AS serving
+FROM gold_elections.seat_term GROUP BY office;
+
+SELECT metric_key, geo_type, COUNT(*), MIN(year), MAX(year)
+FROM gold_elections.observation_latest GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+## Quality rules
+
+- `DQ-ELEC-001` (uniqueness) is enforced by the silver keys.
+- `DQ-ELEC-002` fails on a read left unreplayed or a replayed read that
+  reached no row, and runs in the daily sweep.
+- `DQ-ELEC-003` fails when two current spans hold one seat on one day.
+- `DQ-ELEC-007` warns where Algara & Amlani's county presidential margin
+  differs from MEDSL's by more than half a point in a year both publish
+  (2000 to 2020). Review its count before trusting the 1992 and 1996 maps.
+- `DQ-ELEC-008` warns where a House district result from 2006 has no county
+  piece in its year's plan (the registered plan is not the one the election
+  used), or a district with county pieces has no result that year (an
+  unopposed seat some states leave off the ballot).
+- `DQ-ELEC-004` warns when a state's county presidential or Senate sums disagree with
+  its state total by more than 0.5%, or a place does not resolve.
+
+- `DQ-ELEC-005` fails when a lean-group county row is not its change minus
+  the nation's, sits in a band its window-start margin does not name, or the
+  all-county groups do not count exactly the county rows.
+
+### Known county shortfalls under `DQ-ELEC-004`
+
+About 46 presidential state-years warn because the counties add up to 0.5%
+to 7% *less* than the state's total, steadily, year after year. These are
+votes the state counts but does not assign to a county, not a loading
+fault: overseas and military (UOCAVA) and federal-only ballots, Kansas City
+reported apart from its four counties (Missouri, about 5% every year), and
+New England returns kept by town (Maine, Massachusetts, Vermont). Seen on
+2026-11-07: Missouri 2004-2020, Maine 2004-2024, Massachusetts 2000-2024,
+New York 2000-2024, Hawaii 2008-2024, Washington 2016 (-3.3%), Iowa 2000
+(-2.8%), Mississippi 2004, Wyoming 2012/2016 and single years in Alaska,
+Colorado, Idaho, Nebraska, New Hampshire, New Jersey, Pennsylvania and South
+Dakota. A few years run 0.5% to 2.2% *over* (Arizona 2016/2024, Montana
+2008/2016, Georgia 2000, Iowa 2024, Wyoming 2000), from county files that
+include write-ins the state file leaves out.
+
+Read a warning this way: a county sum that is a whole multiple of the state,
+or more than a few percent over it, is a counting fault to fix; a steady
+shortfall in the states above is expected. The proposed treatment (not yet
+built) is to keep these as warnings and serve the difference on state pages
+as "votes not assigned to a county", so county numbers stay the published
+ones and nothing is invented.
+
+### Senate and history state-years that cannot match (proposed handling)
+
+Seen on 2026-11-07, after the counting fixes. None is a counting fault in
+this pipeline; each is a difference in what the two files hold. The proposed
+handling is to list them in `DQ-ELEC-004` as known (warn with the reason, not
+as new offenders) rather than change any vote:
+
+| State-years | County sum against state | Reason | Proposal |
+| --- | --- | --- | --- |
+| LA Senate 1990, 1992 | state total 1 | Louisiana's open primary decided the race in October; the state file has no November general | Known: no general to compare |
+| LA Senate 2002, 2014, 2016 | -50% to -64% | November open primary against a December runoff: the two files hold different rounds | Known: compare only the same round |
+| IN Senate 2022 | -40.6% before reading version 3 | MEDSL's county file is precinct rows under their county's name and code (Lake County 18089 has hundreds of rows per candidate, checked 2026-11-07). Reading version 2 set the repeats aside as `conflicting_row` and kept 75 of 92 counties; version 3 adds the precinct rows into their county | Fixed in `medsl-reading-3`; recheck DQ-ELEC-004 after the replay |
+| MO president 1992, 1996 (Algara & Amlani) | +13%, +18% | No Kansas City row and no repeated county in the frame (checked 2026-11-07); cause not found | Investigate before serving 1992/1996 Missouri maps |
+| MO Senate 2022 | -18% | One county missing (114 of 115 codes) and Kansas City reported apart | Known shortfall |
+| MO president 2024 | small | MEDSL adds a Kansas City line coded `36000`, which does not resolve | Known: unmapped line |
+| WV Senate 2006 | +122.6% | MEDSL's state Senate file holds only part of the state (Byrd 159,154 of about 296,000); the county rows are right | Known: state file short |
+| ME Senate 2012, CO Senate 2020, GA Senate 2020 special | -16%, -13.6%, -8.8% | Town-kept returns (Maine) and votes not assigned to a county | Known shortfall |
+
+### Lines that are not candidates
+
+MEDSL publishes, beside the candidates, lines that are not votes for anyone
+(reading version `medsl-reading-3`, `registry.MEDSL_READING_VERSION`):
+
+- **Total lines.** The 2024 county presidential file adds a `TOTAL VOTES
+  CAST` line to every county in four states, and the 2022 county Senate file
+  a `TOTAL` line per mode. Each is read as the county's total for its mode,
+  never as a candidate. Counted as a candidate it doubled the county total
+  (Wisconsin, Texas, South Carolina and West Virginia 2024; Georgia 2022
+  Senate) and could be served as the leading candidate.
+- **Ballot counts.** `OVERVOTES`, `UNDERVOTES`, `BLANK`, `SPOILED` and their
+  spellings are quarantined as `not_a_vote`. `SCATTERING` is write-ins and is
+  kept; a mixed `BLANK VOTE/SCATTERING` line is kept as Other.
+- **Repeated rows are parts.** A candidate repeated in one contest, area and
+  mode is a part of that candidate's count and the parts are added: Indiana
+  2022 county Senate is precinct rows under each county, North Carolina 2024
+  county president has four unlabelled mode rows per candidate, and the
+  `OTHER`, `UNDERVOTES` and write-in lines of AZ, CA, CT, SC and the House
+  and Senate files fold several lines into one name. A repeated `TOTAL` line
+  is added the same way. Reading version 2 set these aside as
+  `conflicting_row`, which dropped real votes (Indiana 2022 kept 75 of 92
+  counties); version 3 restores them.
+- **Louisiana is the exception.** Its November open primary and December
+  runoff share one key in MEDSL's files (Senate 2002), so there an identical
+  repeat keeps one copy (`duplicate_row`) and copies that disagree are all
+  set aside (`conflicting_row`).
+- **Runoff column.** The House file marks a runoff in a `runoff` column; such
+  a row's stage reads `GEN RUNOFF`, its own contest, not a part of the
+  general election.
+- **Where a quarantined row was.** `silver_elections.quarantine` records the
+  row's `state_code` and `county_fips` when the row has readable ones, so
+  quarantine can be counted by state and county.
+- **Alaska.** MEDSL's Alaska "counties" are its 40 state House districts
+  (02001-02040) and an overseas line (02099) in every year; three of those
+  codes are also real boroughs' (02013 Aleutians East, 02016 Aleutians West,
+  02020 Anchorage), so they were served as those boroughs. They are
+  quarantined as `not_a_county`; Alaska has no county results.
+
+A run's checksum includes the reading version, so after a deploy that
+changes it the next scheduled run of each MEDSL stream replays its unchanged
+file once as a new read, and runs after that are `unchanged` again.
+
+Georgia's 2022 December runoff is its own contest (stage `GEN RUNOFF`); it is
+in `contest_result` but not in the measures, which read `GEN` only.
+
+## Lean groups (ADR-0014)
+
+`gold_elections.lean_place_change` holds, for each window between two
+presidential election years from 1992, each county's change in five measures
+against the nation's change over the same window, with the county's lean from
+the vote in the window's first year. `gold_elections.lean_group_change` holds
+each lean band within each peer group: the count of counties and the median
+and quartiles of their change net of the nation. Nothing combines measures.
+A measure the source does not publish by county at both ends of a window has no
+rows for that window: county GDP starts in 2001, the QCEW load in 2014, and
+SAIPE has no county poverty for 1992 or 1996, so the 1992–1996 and 1996–2000
+windows carry income and unemployment only.
+
+| Measure | Source | Change |
+| --- | --- | --- |
+| `real_income_per_person` | BEA CAINC1 line 3, deflated to the window's last year with the annual mean of FRED `PCEPI` | percent growth |
+| `real_gdp` | BEA CAGDP1 line 1 (chained 2017 dollars; county GDP starts in 2001) | percent growth |
+| `jobs` | QCEW annual average employment, all industries, total covered | percent growth |
+| `unemployment_rate` | LAUS annual averages; the nation is the 51 states' unemployed over their labor force | points |
+| `poverty_rate` | SAIPE, all ages | points |
+
+Lean bands from the two-party margin (Republican minus Democratic share, in
+points): `R20_plus` (20 or more), `R0_20`, `D0_20`, `D20_plus` (20 or more the
+other way). An exact tie is in no band. Peer groups: `all`, `state`,
+`rural_urban` (RUCC 2023 as large metro, other metro, nonmetro next to a
+metro, remote nonmetro), `starting_level` (quarter of counties by the
+window's first-year value) and `industry` (ERS 2025 industry dependence).
+The RUCC and typology editions are the newest loaded, used for every window.
+
+Inputs are read only for presidential election years, since a window starts
+and ends on one; with fewer than two election years loaded the rebuild reads
+nothing else and writes no rows.
+
+A county appears only where every input names it by the same county code at
+both ends of a window, so Connecticut's planning regions (2022 onward),
+Alaska's election districts and BEA's combined Virginia areas drop out. The
+annual PCE level deflates only; it is never served.
+
+The `elections_lean_groups` DAG runs daily at 13:00 UTC and rebuilds only
+when an input published since the last rebuild (`gold_elections.lean_refresh`
+records `rebuilt` or `unchanged`). It is separate from `elections_ingest`,
+which stays monthly because each MEDSL county or House download answers the
+Dataverse guestbook with the operator's identity. To rebuild by hand:
+
+```sql
+SELECT * FROM gold_elections.refresh_lean_groups(TRUE);
+
+SELECT measure, window_start_year, window_end_year, lean_band, place_count,
+       net_change_p25, net_change_median, net_change_p75, nation_change
+FROM gold_elections.lean_group_change
+WHERE peer_type = 'all' AND window_start_year = 2000 AND window_end_year = 2024
+ORDER BY measure, lean_band;
+```

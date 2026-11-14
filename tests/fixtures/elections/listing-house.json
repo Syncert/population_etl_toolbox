@@ -1,0 +1,25 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "1976-2024-house.tab",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 11384761,
+    "filename": "1976-2024-house.tab",
+    "contentType": "text/tab-separated-values"
+   }
+  },
+  {
+   "label": "codebook-us-house-1976-2024.md",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 11384762,
+    "filename": "codebook-us-house-1976-2024.md",
+    "contentType": "application/octet-stream"
+   }
+  }
+ ]
+}

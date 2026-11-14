@@ -40,9 +40,8 @@ from .config import CONFIG
 
 logger = logging.getLogger(__name__)
 # FRED authenticates with a query parameter. httpx's INFO access log renders the
-# complete request URL, so keep that third-party logger above INFO to prevent
-# credentials from reaching scheduler, CI, or application logs.
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# complete request URL; importing the package installs log redaction, which
+# keeps that logger above INFO and masks the key in any record that names it.
 
 # Target database
 # Overridable so self-contained stacks can point at their own warehouse

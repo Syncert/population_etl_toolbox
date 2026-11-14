@@ -10,6 +10,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from apps.api.schemas.labels import LabelStatus, PlainLabelled
+
 
 class ComparisonRow(BaseModel):
     """One geography's paired inputs and their API-derived combinations.
@@ -51,6 +53,12 @@ class ComparisonResponse(BaseModel):
 
     metric_code_a: str
     metric_code_b: str
+    #: Each side's plain label and where it came from (API-170): a registry
+    #: entry's status, or ``provider`` for the provider's own label.
+    metric_label_a: Optional[str] = None
+    metric_label_status_a: Optional[LabelStatus] = None
+    metric_label_b: Optional[str] = None
+    metric_label_status_b: Optional[LabelStatus] = None
     source_code_a: Optional[str] = None
     source_code_b: Optional[str] = None
     units_a: Optional[str] = None
@@ -89,6 +97,12 @@ class ComparisonPreflightResponse(BaseModel):
 
     metric_code_a: str
     metric_code_b: str
+    #: Each side's plain label and where it came from (API-170): a registry
+    #: entry's status, or ``provider`` for the provider's own label.
+    metric_label_a: Optional[str] = None
+    metric_label_status_a: Optional[LabelStatus] = None
+    metric_label_b: Optional[str] = None
+    metric_label_status_b: Optional[LabelStatus] = None
     source_code_a: Optional[str] = None
     source_code_b: Optional[str] = None
     comparable: bool
@@ -117,6 +131,12 @@ class ComparisonCorrelationResponse(BaseModel):
 
     metric_code_a: str
     metric_code_b: str
+    #: Each side's plain label and where it came from (API-170): a registry
+    #: entry's status, or ``provider`` for the provider's own label.
+    metric_label_a: Optional[str] = None
+    metric_label_status_a: Optional[LabelStatus] = None
+    metric_label_b: Optional[str] = None
+    metric_label_status_b: Optional[LabelStatus] = None
     source_code_a: Optional[str] = None
     source_code_b: Optional[str] = None
     units_a: Optional[str] = None
@@ -182,7 +202,7 @@ class CorrelationStatistic(BaseModel):
     derivations: list[str] = []
 
 
-class MatrixMetricSummary(BaseModel):
+class MatrixMetricSummary(PlainLabelled):
     """One requested measure, as the matrix read it.
 
     ``geographies`` is what this measure published under the request's own
@@ -192,6 +212,7 @@ class MatrixMetricSummary(BaseModel):
     """
 
     metric_code: str
+    metric_display_name: Optional[str] = None
     source_code: Optional[str] = None
     units: Optional[str] = None
     valid_time_grains: list[str] = []
@@ -289,7 +310,7 @@ class DistributionBin(BaseModel):
     count: int
 
 
-class DistributionBinsResponse(BaseModel):
+class DistributionBinsResponse(PlainLabelled):
     """API-derived equal-width bins over one metric's latest values.
 
     ``derived`` marks the binning itself as an API computation; counts are
@@ -299,6 +320,7 @@ class DistributionBinsResponse(BaseModel):
     """
 
     metric_code: str
+    metric_display_name: Optional[str] = None
     source_code: Optional[str] = None
     units: Optional[str] = None
     derived: bool = True

@@ -43,8 +43,15 @@ def test_each_registered_table_publishes_its_registered_lines(table) -> None:
     assert parsed.release_date is not None
     # County tables carry thousands of areas; the price parity tables carry
     # the states, the metros, or the states' portions.
+    # One row per area per registered line. The metro parities carry five
+    # lines over ~385 metros; the metro deflator (MAIRPD) carries one line,
+    # so its floor is the metro count alone (389 rows on 2026-11-03). The
+    # state disposable income summary carries two lines over the nation and
+    # 51 states (104 rows).
     minimum = {"county": 3000, "state": 250, "metro": 1500, "portion": 500}
-    assert parsed.in_scope_row_count > minimum[table.geography]
+    single_line_floor = {"MAIRPD": 350, "SAINC51": 100}
+    floor = single_line_floor.get(table.code, minimum[table.geography])
+    assert parsed.in_scope_row_count > floor
     national = {obs.line_code for obs in parsed.observations if obs.geo_id == "us:1"}
     assert national == set(table.lines)
 

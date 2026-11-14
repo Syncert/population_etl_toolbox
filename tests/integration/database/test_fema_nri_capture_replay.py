@@ -159,6 +159,43 @@ def test_declarations_are_counted_per_county_and_year(fema_warehouse) -> None:
     ) == [(0,)]
 
 
+def test_declarations_are_counted_per_incident_type(fema_warehouse) -> None:
+    """Covers: ETL-067 — distinct declarations of any type per county, year and FEMA incident type."""
+    factory = fema_warehouse
+    fema.run_to_gold(factory, DECLARATIONS)
+    expected: dict[tuple[str, int], set[int]] = {}
+    for record in fema.fixture_records(DECLARATIONS):
+        if record["fipsStateCode"] == "10" and record["fipsCountyCode"] == "001":
+            key = "incident_declarations_" + "_".join(
+                record["incidentType"].lower().replace("/", " ").split()
+            )
+            expected.setdefault((key, int(record["declarationDate"][:4])), set()).add(
+                record["disasterNumber"]
+            )
+    served = {
+        (metric_key, year): value
+        for metric_key, year, value in _rows(
+            factory,
+            """
+            SELECT metric_key, year, value FROM gold_fema_nri.observation_latest
+            WHERE geo_id = %s AND metric_key LIKE 'incident_declarations_%%'
+            """,
+            (fema.KENT,),
+        )
+    }
+    assert expected and served == {
+        key: Decimal(len(numbers)) for key, numbers in expected.items()
+    }
+    # The label and basis carry FEMA's incident type as published.
+    assert _rows(
+        factory,
+        """
+        SELECT measure_label FROM gold_fema_nri.measure_definition
+        WHERE measure = 'incident_declarations_severe_storm'
+        """,
+    ) == [("Disaster declarations for incident type: Severe Storm",)]
+
+
 def test_reruns_and_revisions(fema_warehouse) -> None:
     """Covers: ETL-067 — the same NRI pages replay nothing; a changed hash keeps both revisions."""
     factory = fema_warehouse
@@ -261,10 +298,14 @@ def test_the_harvest_names_every_published_measure(fema_warehouse) -> None:
     # The fixture's two fire management declarations designate Connecticut
     # legacy counties, which do not resolve: that measure has nothing to
     # publish yet, so it is not offered.
-    assert len(published) == 26 and "fire_management_declarations" not in published
+    # Three incident types (Biological, Hurricane, Winter Storm) designate a
+    # resolved county; Fire and Severe Storm designate only the legacy counties.
+    assert published["incident_declarations_hurricane"] == "derived_count"
+    assert len(published) == 29 and "fire_management_declarations" not in published
+    assert "incident_declarations_severe_storm" not in published
     assert harvest_publisher(factory, Publisher("gold_fema_nri")) > 0
     assert process_pending_events(factory) >= 1
     assert _rows(
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'FEMA_NRI'",
-    ) == [(26,)]
+    ) == [(29,)]

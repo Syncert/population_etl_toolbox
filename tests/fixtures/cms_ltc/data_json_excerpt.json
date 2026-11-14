@@ -1,0 +1,3787 @@
+{
+ "dataset": [
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2023-10-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2024-07-31",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2023-10-01",
+     "endDate": "2023-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2024-06/662211b8-29c5-4cd3-97b9-d9a0f8a4be2f/Form_671_Q4_2023.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d",
+     "title": "Long-Term Care Facility Characteristics : 2023-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2023-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-07-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2023-10-01",
+       "endDate": "2023-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d",
+     "title": "Long-Term Care Facility Characteristics : 2023-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2023-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-07-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2023-10-01",
+       "endDate": "2023-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/e62e6195-01de-407e-9f6b-538e671a73af/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2024-01-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/e62e6195-01de-407e-9f6b-538e671a73af/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2024-07-31",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2024-01-01",
+     "endDate": "2024-03-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2024-06/1f3fe51c-ea12-4bba-ba7b-05b3d14bde96/Form_671_Q1_2024.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/e62e6195-01de-407e-9f6b-538e671a73af",
+     "title": "Long-Term Care Facility Characteristics : 2024-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/e62e6195-01de-407e-9f6b-538e671a73af/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-07-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-01-01",
+       "endDate": "2024-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/e62e6195-01de-407e-9f6b-538e671a73af/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/e62e6195-01de-407e-9f6b-538e671a73af",
+     "title": "Long-Term Care Facility Characteristics : 2024-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/e62e6195-01de-407e-9f6b-538e671a73af/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-07-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-01-01",
+       "endDate": "2024-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/99117fd5-b2f5-439d-8a3a-1c6bedee563f/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2024-04-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/99117fd5-b2f5-439d-8a3a-1c6bedee563f/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2024-10-31",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2024-04-01",
+     "endDate": "2024-06-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2024-10/1e978fe9-9461-4b66-a1c2-503bbb63c351/Form_671_Q2_2024.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/99117fd5-b2f5-439d-8a3a-1c6bedee563f",
+     "title": "Long-Term Care Facility Characteristics : 2024-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/99117fd5-b2f5-439d-8a3a-1c6bedee563f/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-10-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-04-01",
+       "endDate": "2024-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/99117fd5-b2f5-439d-8a3a-1c6bedee563f/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/99117fd5-b2f5-439d-8a3a-1c6bedee563f",
+     "title": "Long-Term Care Facility Characteristics : 2024-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/99117fd5-b2f5-439d-8a3a-1c6bedee563f/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-10-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-04-01",
+       "endDate": "2024-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/510f8762-0cf7-4aa3-93ff-e13af0b3bf26/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2024-07-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/510f8762-0cf7-4aa3-93ff-e13af0b3bf26/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2024-10-31",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2024-07-01",
+     "endDate": "2024-09-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2024-10/24e55602-7308-4022-9f2a-749c500a8e26/Form_671_Q3_2024.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/510f8762-0cf7-4aa3-93ff-e13af0b3bf26",
+     "title": "Long-Term Care Facility Characteristics : 2024-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/510f8762-0cf7-4aa3-93ff-e13af0b3bf26/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-10-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-07-01",
+       "endDate": "2024-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/510f8762-0cf7-4aa3-93ff-e13af0b3bf26/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/510f8762-0cf7-4aa3-93ff-e13af0b3bf26",
+     "title": "Long-Term Care Facility Characteristics : 2024-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/510f8762-0cf7-4aa3-93ff-e13af0b3bf26/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2024-10-31",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-07-01",
+       "endDate": "2024-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/a40647b6-335d-4919-a017-7520e9f770ea/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2024-10-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/a40647b6-335d-4919-a017-7520e9f770ea/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2025-04-02",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2024-10-01",
+     "endDate": "2024-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2025-01/d51e2acf-28d6-49cf-9be0-a306c1b17837/Form_671_Q4_2024.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a40647b6-335d-4919-a017-7520e9f770ea",
+     "title": "Long-Term Care Facility Characteristics : 2024-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/a40647b6-335d-4919-a017-7520e9f770ea/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-04-02",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-10-01",
+       "endDate": "2024-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/a40647b6-335d-4919-a017-7520e9f770ea/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a40647b6-335d-4919-a017-7520e9f770ea",
+     "title": "Long-Term Care Facility Characteristics : 2024-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2024-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/a40647b6-335d-4919-a017-7520e9f770ea/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-04-02",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-10-01",
+       "endDate": "2024-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/74afdefb-3215-4416-b52b-9cc186b8c2a6/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2025-01-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/74afdefb-3215-4416-b52b-9cc186b8c2a6/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2025-05-07",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2025-01-01",
+     "endDate": "2025-03-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2025-04/dd156198-7c81-4ab2-9166-2802592a4178/Form_671_Q1_2025_Complete.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/74afdefb-3215-4416-b52b-9cc186b8c2a6",
+     "title": "Long-Term Care Facility Characteristics : 2025-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/74afdefb-3215-4416-b52b-9cc186b8c2a6/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-05-07",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-01-01",
+       "endDate": "2025-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/74afdefb-3215-4416-b52b-9cc186b8c2a6/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/74afdefb-3215-4416-b52b-9cc186b8c2a6",
+     "title": "Long-Term Care Facility Characteristics : 2025-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/74afdefb-3215-4416-b52b-9cc186b8c2a6/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-05-07",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-01-01",
+       "endDate": "2025-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/efb33e5a-7074-4e5d-9fa4-1420f9929605/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2025-04-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/efb33e5a-7074-4e5d-9fa4-1420f9929605/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2025-09-12",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2025-04-01",
+     "endDate": "2025-06-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2025-07/d3cb9516-0495-4565-bd30-487f15755569/Form_671_Q2_2025.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/efb33e5a-7074-4e5d-9fa4-1420f9929605",
+     "title": "Long-Term Care Facility Characteristics : 2025-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/efb33e5a-7074-4e5d-9fa4-1420f9929605/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-09-12",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-04-01",
+       "endDate": "2025-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/efb33e5a-7074-4e5d-9fa4-1420f9929605/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/efb33e5a-7074-4e5d-9fa4-1420f9929605",
+     "title": "Long-Term Care Facility Characteristics : 2025-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/efb33e5a-7074-4e5d-9fa4-1420f9929605/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-09-12",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-04-01",
+       "endDate": "2025-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/a3204f3c-0ee1-4068-a09f-014f67ef0dcb/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2025-07-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/a3204f3c-0ee1-4068-a09f-014f67ef0dcb/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2025-12-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2025-07-01",
+     "endDate": "2025-09-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2025-11/00db5c3e-c5f7-4225-8e9c-a1188dd99669/Form_671_Q3_2025.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a3204f3c-0ee1-4068-a09f-014f67ef0dcb",
+     "title": "Long-Term Care Facility Characteristics : 2025-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/a3204f3c-0ee1-4068-a09f-014f67ef0dcb/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-12-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-07-01",
+       "endDate": "2025-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/a3204f3c-0ee1-4068-a09f-014f67ef0dcb/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a3204f3c-0ee1-4068-a09f-014f67ef0dcb",
+     "title": "Long-Term Care Facility Characteristics : 2025-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/a3204f3c-0ee1-4068-a09f-014f67ef0dcb/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2025-12-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-07-01",
+       "endDate": "2025-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/9e0d78f2-e14f-4642-942d-a1d0df277e37/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2025-10-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/9e0d78f2-e14f-4642-942d-a1d0df277e37/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-01-28",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2025-10-01",
+     "endDate": "2025-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-01/b126fdba-2d76-4a8e-a005-d189917cae6b/Form_671_Q4_2025.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/9e0d78f2-e14f-4642-942d-a1d0df277e37",
+     "title": "Long-Term Care Facility Characteristics : 2025-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/9e0d78f2-e14f-4642-942d-a1d0df277e37/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-01-28",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-10-01",
+       "endDate": "2025-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/9e0d78f2-e14f-4642-942d-a1d0df277e37/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/9e0d78f2-e14f-4642-942d-a1d0df277e37",
+     "title": "Long-Term Care Facility Characteristics : 2025-10-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2025-10-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/9e0d78f2-e14f-4642-942d-a1d0df277e37/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-01-28",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2025-10-01",
+       "endDate": "2025-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/b9c583ec-9429-46bd-838c-02c3b39e054c/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2026-01-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/b9c583ec-9429-46bd-838c-02c3b39e054c/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-04-29",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2026-01-01",
+     "endDate": "2026-03-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-04/2a26d2b7-5adb-4805-a82f-cce15b77b512/Form_671_Q1_2026.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/b9c583ec-9429-46bd-838c-02c3b39e054c",
+     "title": "Long-Term Care Facility Characteristics : 2026-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/b9c583ec-9429-46bd-838c-02c3b39e054c/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-04-29",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-01-01",
+       "endDate": "2026-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/b9c583ec-9429-46bd-838c-02c3b39e054c/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/b9c583ec-9429-46bd-838c-02c3b39e054c",
+     "title": "Long-Term Care Facility Characteristics : 2026-01-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-01-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/b9c583ec-9429-46bd-838c-02c3b39e054c/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-04-29",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-01-01",
+       "endDate": "2026-03-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/381a2cab-84a8-440c-b868-fccb11b84516/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2026-04-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/381a2cab-84a8-440c-b868-fccb11b84516/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-07-29",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2026-04-01",
+     "endDate": "2026-06-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics Data Dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-07/4b0024b0-dad0-4039-9d5a-1042655480fb/Form_671_Q2_2026.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/381a2cab-84a8-440c-b868-fccb11b84516",
+     "title": "Long-Term Care Facility Characteristics : 2026-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/381a2cab-84a8-440c-b868-fccb11b84516/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-07-29",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-04-01",
+       "endDate": "2026-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/381a2cab-84a8-440c-b868-fccb11b84516/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/381a2cab-84a8-440c-b868-fccb11b84516",
+     "title": "Long-Term Care Facility Characteristics : 2026-04-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-04-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/381a2cab-84a8-440c-b868-fccb11b84516/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-07-29",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-04-01",
+       "endDate": "2026-06-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data-viewer",
+   "@type": "Dataset",
+   "title": "Long-Term Care Facility Characteristics : 2026-07-01",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "NH Facility - CCSQ",
+    "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-28",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2026-07-01",
+     "endDate": "2026-09-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics : 2026-07-01 data dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/129a6503-c0f1-4132-b186-4c0232c2d894",
+     "description": "latest",
+     "title": "Long-Term Care Facility Characteristics : 2026-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-10-28",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-07-01",
+       "endDate": "2026-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/00ccf906-52e3-4af6-840f-b10ffbb0cecd/Form_671_Q3_2026.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/20e94acb-be1b-4d17-9751-5a31d7e10f70",
+     "title": "Long-Term Care Facility Characteristics : 2026-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/20e94acb-be1b-4d17-9751-5a31d7e10f70/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-10-28",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-07-01",
+       "endDate": "2026-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/20e94acb-be1b-4d17-9751-5a31d7e10f70/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/20e94acb-be1b-4d17-9751-5a31d7e10f70",
+     "title": "Long-Term Care Facility Characteristics : 2026-07-01",
+     "describedBy": {
+      "@type": "Distribution",
+      "title": "Data dictionary for Long-Term Care Facility Characteristics : 2026-07-01",
+      "downloadURL": "https://data.cms.gov/data-api/v1/dataset/20e94acb-be1b-4d17-9751-5a31d7e10f70/dictionary",
+      "mediaType": "application/json"
+     },
+     "modified": "2026-10-28",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2026-07-01",
+       "endDate": "2026-09-30"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+     "@type": "DatasetSeries",
+     "title": "Long-Term Care Facility Characteristics",
+     "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "NH Facility - CCSQ",
+       "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2011-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2011-01-01",
+     "endDate": "2011-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/b4e8e732-63fe-4852-a7bc-f816bbb86307/CostReportsnf_Final_11.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25",
+     "title": "Skilled Nursing Facility Cost Report : 2011-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2011-01-01",
+       "endDate": "2011-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25",
+     "title": "Skilled Nursing Facility Cost Report : 2011-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2011-01-01",
+       "endDate": "2011-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/f9c9136b-34e5-4e49-b09f-e5a26363b8e6/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2012-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/f9c9136b-34e5-4e49-b09f-e5a26363b8e6/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2012-01-01",
+     "endDate": "2012-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/1dffbd36-cbb4-431b-90ba-a7541512855b/CostReportsnf_Final_12.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/f9c9136b-34e5-4e49-b09f-e5a26363b8e6",
+     "title": "Skilled Nursing Facility Cost Report : 2012-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2012-01-01",
+       "endDate": "2012-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/f9c9136b-34e5-4e49-b09f-e5a26363b8e6/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/f9c9136b-34e5-4e49-b09f-e5a26363b8e6",
+     "title": "Skilled Nursing Facility Cost Report : 2012-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2012-01-01",
+       "endDate": "2012-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/58d0e041-b5a4-4e19-bedd-1196bc89d5b0/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2013-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/58d0e041-b5a4-4e19-bedd-1196bc89d5b0/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2013-01-01",
+     "endDate": "2013-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/d104726c-7fc2-476b-b3a4-fd20686d33bc/CostReportsnf_Final_13.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/58d0e041-b5a4-4e19-bedd-1196bc89d5b0",
+     "title": "Skilled Nursing Facility Cost Report : 2013-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2013-01-01",
+       "endDate": "2013-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/58d0e041-b5a4-4e19-bedd-1196bc89d5b0/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/58d0e041-b5a4-4e19-bedd-1196bc89d5b0",
+     "title": "Skilled Nursing Facility Cost Report : 2013-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2013-01-01",
+       "endDate": "2013-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/05bba451-a477-48c6-9570-e4a9cb9735f4/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2014-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/05bba451-a477-48c6-9570-e4a9cb9735f4/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2014-01-01",
+     "endDate": "2014-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/afe2f5f8-d846-48e6-b658-0cc48f37e4b7/CostReportsnf_Final_14.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/05bba451-a477-48c6-9570-e4a9cb9735f4",
+     "title": "Skilled Nursing Facility Cost Report : 2014-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2014-01-01",
+       "endDate": "2014-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/05bba451-a477-48c6-9570-e4a9cb9735f4/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/05bba451-a477-48c6-9570-e4a9cb9735f4",
+     "title": "Skilled Nursing Facility Cost Report : 2014-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2014-01-01",
+       "endDate": "2014-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/837cbd34-3fb1-4baf-8be0-e5d559ab8a7c/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2015-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/837cbd34-3fb1-4baf-8be0-e5d559ab8a7c/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2015-01-01",
+     "endDate": "2015-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/40e0dfe3-6ed4-4c62-ac81-24472073cb22/CostReportsnf_Final_15.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/837cbd34-3fb1-4baf-8be0-e5d559ab8a7c",
+     "title": "Skilled Nursing Facility Cost Report : 2015-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2015-01-01",
+       "endDate": "2015-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/837cbd34-3fb1-4baf-8be0-e5d559ab8a7c/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/837cbd34-3fb1-4baf-8be0-e5d559ab8a7c",
+     "title": "Skilled Nursing Facility Cost Report : 2015-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2015-01-01",
+       "endDate": "2015-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/4df80a8a-ca0c-43f5-97d9-8f805f2d7410/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2016-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/4df80a8a-ca0c-43f5-97d9-8f805f2d7410/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2016-01-01",
+     "endDate": "2016-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/9b3ab4d7-5cdc-4304-8188-eb45cecfad0f/CostReportsnf_Final_16.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/4df80a8a-ca0c-43f5-97d9-8f805f2d7410",
+     "title": "Skilled Nursing Facility Cost Report : 2016-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2016-01-01",
+       "endDate": "2016-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/4df80a8a-ca0c-43f5-97d9-8f805f2d7410/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/4df80a8a-ca0c-43f5-97d9-8f805f2d7410",
+     "title": "Skilled Nursing Facility Cost Report : 2016-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2016-01-01",
+       "endDate": "2016-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/25b38806-d853-4d38-8248-b3af10803521/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2017-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/25b38806-d853-4d38-8248-b3af10803521/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2017-01-01",
+     "endDate": "2017-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/deb1182b-660d-4a81-8038-803484611931/CostReportsnf_Final_17.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/25b38806-d853-4d38-8248-b3af10803521",
+     "title": "Skilled Nursing Facility Cost Report : 2017-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2017-01-01",
+       "endDate": "2017-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/25b38806-d853-4d38-8248-b3af10803521/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/25b38806-d853-4d38-8248-b3af10803521",
+     "title": "Skilled Nursing Facility Cost Report : 2017-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2017-01-01",
+       "endDate": "2017-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/263469f3-fb3f-4244-b8a5-b0c8fe120e71/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2018-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/263469f3-fb3f-4244-b8a5-b0c8fe120e71/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2018-01-01",
+     "endDate": "2018-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/fecb4565-3fbe-4e30-b6c8-8d7b4eb906e0/CostReportsnf_Final_18.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/263469f3-fb3f-4244-b8a5-b0c8fe120e71",
+     "title": "Skilled Nursing Facility Cost Report : 2018-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2018-01-01",
+       "endDate": "2018-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/263469f3-fb3f-4244-b8a5-b0c8fe120e71/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/263469f3-fb3f-4244-b8a5-b0c8fe120e71",
+     "title": "Skilled Nursing Facility Cost Report : 2018-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2018-01-01",
+       "endDate": "2018-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/8849d5ed-3e70-481b-9c16-637cd57c1d30/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2019-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/8849d5ed-3e70-481b-9c16-637cd57c1d30/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2019-01-01",
+     "endDate": "2019-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/db955d8e-713c-4c1b-8e12-97bbf1deafa9/CostReportsnf_Final_19.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/8849d5ed-3e70-481b-9c16-637cd57c1d30",
+     "title": "Skilled Nursing Facility Cost Report : 2019-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2019-01-01",
+       "endDate": "2019-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/8849d5ed-3e70-481b-9c16-637cd57c1d30/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/8849d5ed-3e70-481b-9c16-637cd57c1d30",
+     "title": "Skilled Nursing Facility Cost Report : 2019-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2019-01-01",
+       "endDate": "2019-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/a96d23f8-aeb3-4c6c-b4bf-78da81d3a8cc/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2020-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/a96d23f8-aeb3-4c6c-b4bf-78da81d3a8cc/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2020-01-01",
+     "endDate": "2020-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/2864e666-792a-48e1-ac86-c7278f734248/CostReportsnf_Final_20.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a96d23f8-aeb3-4c6c-b4bf-78da81d3a8cc",
+     "title": "Skilled Nursing Facility Cost Report : 2020-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2020-01-01",
+       "endDate": "2020-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/a96d23f8-aeb3-4c6c-b4bf-78da81d3a8cc/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a96d23f8-aeb3-4c6c-b4bf-78da81d3a8cc",
+     "title": "Skilled Nursing Facility Cost Report : 2020-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2020-01-01",
+       "endDate": "2020-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/d46edf07-715f-4a23-9a7c-0abf1c0d5489/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2021-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/d46edf07-715f-4a23-9a7c-0abf1c0d5489/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2021-01-01",
+     "endDate": "2021-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/c350f0fb-2a5b-4ac0-8580-a0fcb723c0d1/CostReportsnf_Final_21.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/d46edf07-715f-4a23-9a7c-0abf1c0d5489",
+     "title": "Skilled Nursing Facility Cost Report : 2021-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2021-01-01",
+       "endDate": "2021-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/d46edf07-715f-4a23-9a7c-0abf1c0d5489/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/d46edf07-715f-4a23-9a7c-0abf1c0d5489",
+     "title": "Skilled Nursing Facility Cost Report : 2021-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2021-01-01",
+       "endDate": "2021-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/60e4931f-46c4-4238-ad92-56e7ffef7269/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2022-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/60e4931f-46c4-4238-ad92-56e7ffef7269/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2022-01-01",
+     "endDate": "2022-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/26be4bfd-57e0-4621-8340-090f0dda2909/CostReportsnf_Final_22.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/60e4931f-46c4-4238-ad92-56e7ffef7269",
+     "title": "Skilled Nursing Facility Cost Report : 2022-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2022-01-01",
+       "endDate": "2022-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/60e4931f-46c4-4238-ad92-56e7ffef7269/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/60e4931f-46c4-4238-ad92-56e7ffef7269",
+     "title": "Skilled Nursing Facility Cost Report : 2022-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2022-01-01",
+       "endDate": "2022-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/4758c7f1-c64f-4e6c-833e-56b173dc2d30/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2023-12-05",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/4758c7f1-c64f-4e6c-833e-56b173dc2d30/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2023-01-01",
+     "endDate": "2023-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "SNF Cost Report Data Dictionary (Current)",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/a3055a9a-a1db-4b01-956f-2492479d157f/CostReportsnf_Final_23.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/4758c7f1-c64f-4e6c-833e-56b173dc2d30",
+     "title": "Skilled Nursing Facility Cost Report : 2023-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2023-01-01",
+       "endDate": "2023-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/4758c7f1-c64f-4e6c-833e-56b173dc2d30/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/4758c7f1-c64f-4e6c-833e-56b173dc2d30",
+     "title": "Skilled Nursing Facility Cost Report : 2023-12-05",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2023-01-01",
+       "endDate": "2023-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data-viewer",
+   "@type": "Dataset",
+   "title": "Skilled Nursing Facility Cost Report : 2024-01-02",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": {
+    "@type": "Kind",
+    "fn": "PDAG Data Products - OEDA",
+    "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+   },
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data-viewer",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "modified": "2026-10-05",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2024-01-01",
+     "endDate": "2024-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Skilled Nursing Facility Cost Report : 2024-01-02 data dictionary",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "distribution": [
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/a69d3df7-3f66-4a0d-b5b8-0d66049bd565",
+     "description": "latest",
+     "title": "Skilled Nursing Facility Cost Report : 2024-01-02",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-01-01",
+       "endDate": "2024-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "downloadURL": "https://data.cms.gov/sites/default/files/2026-10/0f2b9acd-7ed2-4984-b0d7-6ec003493c1c/CostReportsnf_Final_24.csv",
+     "mediaType": "text/csv",
+     "format": "CSV",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/16af99d3-49cc-4845-8707-2f94542ddcb2",
+     "title": "Skilled Nursing Facility Cost Report : 2024-01-02",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-01-01",
+       "endDate": "2024-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    },
+    {
+     "@type": "Distribution",
+     "format": "API",
+     "accessURL": "https://data.cms.gov/data-api/v1/dataset/16af99d3-49cc-4845-8707-2f94542ddcb2/data",
+     "resourcesAPI": "https://data.cms.gov/data-api/v1/dataset-resources/16af99d3-49cc-4845-8707-2f94542ddcb2",
+     "title": "Skilled Nursing Facility Cost Report : 2024-01-02",
+     "modified": "2026-10-05",
+     "temporal": [
+      {
+       "@type": "PeriodOfTime",
+       "startDate": "2024-01-01",
+       "endDate": "2024-12-31"
+      }
+     ],
+     "license": "https://www.usa.gov/government-works"
+    }
+   ],
+   "inSeries": [
+    {
+     "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+     "@type": "DatasetSeries",
+     "title": "Skilled Nursing Facility Cost Report",
+     "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+     "publisher": {
+      "@type": "Organization",
+      "name": "Office of Enterprise Data and Analytics (OEDA)",
+      "subOrganizationOf": [
+       {
+        "@type": "Organization",
+        "name": "Centers for Medicare and Medicaid Services (CMS)"
+       }
+      ]
+     },
+     "contactPoint": [
+      {
+       "@type": "Kind",
+       "fn": "PDAG Data Products - OEDA",
+       "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+      }
+     ],
+     "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data"
+    }
+   ]
+  }
+ ],
+ "datasetSeries": [
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+   "@type": "DatasetSeries",
+   "title": "Long-Term Care Facility Characteristics",
+   "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": [
+    {
+     "@type": "Kind",
+     "fn": "NH Facility - CCSQ",
+     "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+    }
+   ],
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2023-10-01",
+     "endDate": "2026-09-30"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Long-Term Care Facility Characteristics landing page",
+    "accessURL": "https://data.cms.gov/quality-of-care/long-term-care-facility-characteristics"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Long-Term Care Facility Characteristics data dictionary",
+    "downloadURL": "https://data.cms.gov/resources/long-term-care-facility-characteristics-data-dictionary"
+   },
+   "keyword": [
+    "Medicare",
+    "Hospitals & Facilities",
+    "Inpatient",
+    "Long Term Care",
+    "Skilled Nursing"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "quarterly",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/long-term-care-facility-characteristics-methodology"
+   ],
+   "first": {
+    "@id": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/data-viewer",
+    "@type": "Dataset",
+    "title": "Long-Term Care Facility Characteristics : 2023-10-01",
+    "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+    "publisher": {
+     "@type": "Organization",
+     "name": "Office of Enterprise Data and Analytics (OEDA)",
+     "subOrganizationOf": [
+      {
+       "@type": "Organization",
+       "name": "Centers for Medicare and Medicaid Services (CMS)"
+      }
+     ]
+    },
+    "contactPoint": {
+     "@type": "Kind",
+     "fn": "NH Facility - CCSQ",
+     "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+    },
+    "identifier": "https://data.cms.gov/data-api/v1/dataset/b3c5c8c2-d7b2-410e-95ce-2919eaf8994d/data-viewer"
+   },
+   "last": {
+    "@id": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data-viewer",
+    "@type": "Dataset",
+    "title": "Long-Term Care Facility Characteristics : 2026-07-01",
+    "description": "The Long-Term Care Facility Characteristics, CMS Form 671, dataset provides information submitted by nursing homes on the CMS Form 671 collected during annual surveys. The data include information about resident census, ownership, dedicated special care units, facility characteristics, and staffing.",
+    "publisher": {
+     "@type": "Organization",
+     "name": "Office of Enterprise Data and Analytics (OEDA)",
+     "subOrganizationOf": [
+      {
+       "@type": "Organization",
+       "name": "Centers for Medicare and Medicaid Services (CMS)"
+      }
+     ]
+    },
+    "contactPoint": {
+     "@type": "Kind",
+     "fn": "NH Facility - CCSQ",
+     "hasEmail": "mailto:NursingHomeData@cms.hhs.gov"
+    },
+    "identifier": "https://data.cms.gov/data-api/v1/dataset/129a6503-c0f1-4132-b186-4c0232c2d894/data-viewer"
+   }
+  },
+  {
+   "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+   "@type": "DatasetSeries",
+   "title": "Skilled Nursing Facility Cost Report",
+   "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+   "publisher": {
+    "@type": "Organization",
+    "name": "Office of Enterprise Data and Analytics (OEDA)",
+    "subOrganizationOf": [
+     {
+      "@type": "Organization",
+      "name": "Centers for Medicare and Medicaid Services (CMS)"
+     }
+    ]
+   },
+   "contactPoint": [
+    {
+     "@type": "Kind",
+     "fn": "PDAG Data Products - OEDA",
+     "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+    }
+   ],
+   "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data",
+   "accessRights": "public",
+   "sourceSite": "data.cms.gov",
+   "sourceCatalog": "https://data.cms.gov/data.json",
+   "language": [
+    "en"
+   ],
+   "temporal": [
+    {
+     "@type": "PeriodOfTime",
+     "startDate": "2011-01-01",
+     "endDate": "2024-12-31"
+    }
+   ],
+   "landingPage": {
+    "@type": "Document",
+    "title": "Skilled Nursing Facility Cost Report landing page",
+    "accessURL": "https://data.cms.gov/provider-compliance/cost-reports/skilled-nursing-facility-cost-report"
+   },
+   "describedBy": {
+    "@type": "Distribution",
+    "title": "Skilled Nursing Facility Cost Report data dictionary",
+    "downloadURL": "https://data.cms.gov/sites/default/files/2023-12/Skilled%20Nursing%20Facility%20Cost%20Report%20Data%20Dictionary_508.pdf",
+    "mediaType": "application/pdf"
+   },
+   "keyword": [
+    "Medicare",
+    "Original Medicare",
+    "Hospitals & Facilities",
+    "Skilled Nursing",
+    "Health Care Use & Payments",
+    "Value-Based Care",
+    "Financials"
+   ],
+   "theme": [
+    "Medicare"
+   ],
+   "accrualPeriodicity": "annually",
+   "accessLevel": "public",
+   "bureauCode": [
+    "009:38"
+   ],
+   "programCode": [
+    "009:000"
+   ],
+   "references": [
+    "https://data.cms.gov/resources/skilled-nursing-facility-cost-report-methodology"
+   ],
+   "first": {
+    "@id": "https://data.cms.gov/data-api/v1/dataset/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25/data-viewer",
+    "@type": "Dataset",
+    "title": "Skilled Nursing Facility Cost Report : 2011-12-05",
+    "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+    "publisher": {
+     "@type": "Organization",
+     "name": "Office of Enterprise Data and Analytics (OEDA)",
+     "subOrganizationOf": [
+      {
+       "@type": "Organization",
+       "name": "Centers for Medicare and Medicaid Services (CMS)"
+      }
+     ]
+    },
+    "contactPoint": {
+     "@type": "Kind",
+     "fn": "PDAG Data Products - OEDA",
+     "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+    },
+    "identifier": "https://data.cms.gov/data-api/v1/dataset/ccb6fe1e-d024-4d24-99c3-2c4f62fa9b25/data-viewer"
+   },
+   "last": {
+    "@id": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data-viewer",
+    "@type": "Dataset",
+    "title": "Skilled Nursing Facility Cost Report : 2024-01-02",
+    "description": "The Skilled Nursing Facility (SNF) Cost Report dataset is a public use file that provides select measures from the skilled nursing facility annual cost report. This data includes provider information such as facility characteristics, utilization data, cost and charges by cost center (in total and for Medicare), Medicare settlement data, and financial statement data organized by CMS Certification Number.",
+    "publisher": {
+     "@type": "Organization",
+     "name": "Office of Enterprise Data and Analytics (OEDA)",
+     "subOrganizationOf": [
+      {
+       "@type": "Organization",
+       "name": "Centers for Medicare and Medicaid Services (CMS)"
+      }
+     ]
+    },
+    "contactPoint": {
+     "@type": "Kind",
+     "fn": "PDAG Data Products - OEDA",
+     "hasEmail": "mailto:PDAG_Data_Products@cms.hhs.gov"
+    },
+    "identifier": "https://data.cms.gov/data-api/v1/dataset/a69d3df7-3f66-4a0d-b5b8-0d66049bd565/data-viewer"
+   }
+  }
+ ]
+}

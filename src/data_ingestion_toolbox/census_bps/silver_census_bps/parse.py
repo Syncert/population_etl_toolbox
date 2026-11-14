@@ -7,6 +7,27 @@ A row outside the scope -- a county or place code the reference cannot hold
 -- is counted, not loaded. A row whose date or codes cannot be read is
 quarantined with a reason. A jurisdiction missing from a file produces no
 row at all: nothing here writes a zero for it.
+
+One geography can sit on more than one row of a file:
+
+* **Parts of one place.** A place file row is a permit-issuing jurisdiction
+  (the Bureau's 6-digit ID), not a FIPS place. New York city's five
+  boroughs each carry FIPS place 51000, and a village split across two
+  counties (Rushville, NY) has one row per county part. Rows with different
+  6-digit IDs and the same FIPS place are the place's parts: they load as
+  one observation per measure whose value is their sum, on the first part's
+  row. If any part reported for no month, the place is ``not_reported``.
+  Parts must carry the same place name, New York city's boroughs excepted:
+  rows naming different places under one code (Renovo borough, PA, printed
+  with Red Lion's 63840 in 2012-2013) mean a wrong code, so every such row is
+  quarantined as ``conflicting_place_code``.
+* **The same jurisdiction printed twice.** The 2000-04..2000-11 county
+  files list St. Clair County, Illinois, twice under two region/division
+  codes with the same figures. A later copy with the same figures is
+  quarantined as ``repeated_row`` and the jurisdiction loads once. Copies
+  whose figures differ cannot be told apart, so every copy is quarantined
+  as ``conflicting_repeated_row`` and that jurisdiction loads nothing for
+  the file, rather than an arbitrary copy.
 """
 
 from __future__ import annotations
@@ -97,6 +118,28 @@ def _geography(item: BpsSlice, row: list[str]) -> tuple[str, str, str, str] | No
     return "place", f"{state}{place}", f"state:{state}|place:{place}", row[16].strip()
 
 
+#: Places the Bureau reports as several differently named jurisdictions:
+#: New York city (FIPS 36-51000) as its five boroughs. Elsewhere the parts of
+#: one place (a village split across counties) carry the place's own name.
+MULTI_JURISDICTION_PLACES = frozenset({"3651000"})
+
+
+@dataclass(frozen=True)
+class _Row:
+    index: int
+    geography: tuple[str, str, str, str]
+    #: The Bureau's own jurisdiction ID (place files) or the provider code.
+    jurisdiction: str
+    figures: tuple[str, ...]
+    months_reported: int | None
+
+
+def _sum(parts: list[Decimal | None]) -> Decimal | None:
+    if any(part is None for part in parts):
+        return None
+    return sum(parts, Decimal(0))  # type: ignore[arg-type]
+
+
 def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
     """Every registered observation of one file, or why a row was set aside."""
     if not payload:
@@ -107,9 +150,10 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
         return ParsedFile((), (BpsQuarantine(0, exc.code, str(exc)),), 0, 0, 0)
     layout = item.layout
     start, end = item.period()
-    observations: list[BpsObservation] = []
     quarantined: list[BpsQuarantine] = []
-    in_scope = out_of_scope = 0
+    out_of_scope = 0
+    #: provider code -> its rows, in file order (dicts keep insertion order)
+    by_code: dict[str, list[_Row]] = {}
     for index, row in enumerate(rows, start=1):
         if len(row) != layout.leading_columns + 2 * len(STRUCTURE_TYPES) * len(
             MEASURES
@@ -135,14 +179,90 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
         if geography is None:
             out_of_scope += 1
             continue
-        in_scope += 1
-        geo_type, code, geo_id, label = geography
         months_reported: int | None = None
+        jurisdiction = geography[1]
         if item.kind == "place":
             months_text = row[15].strip()
             months_reported = int(months_text) if months_text.isdigit() else None
-        figures = row[layout.leading_columns :]
-        reported_offset = len(STRUCTURE_TYPES) * len(MEASURES)
+            jurisdiction = f"{row[1].strip()}{row[2].strip()}"
+        by_code.setdefault(geography[1], []).append(
+            _Row(
+                index,
+                geography,
+                jurisdiction,
+                tuple(cell.strip() for cell in row[layout.leading_columns :]),
+                months_reported,
+            )
+        )
+
+    observations: list[BpsObservation] = []
+    in_scope = 0
+    reported_offset = len(STRUCTURE_TYPES) * len(MEASURES)
+    for code, copies in by_code.items():
+        # One row per jurisdiction: a jurisdiction printed again is a copy.
+        parts: list[_Row] = []
+        seen: dict[str, _Row] = {}
+        conflicting = False
+        for part in copies:
+            first = seen.get(part.jurisdiction)
+            if first is None:
+                seen[part.jurisdiction] = part
+                parts.append(part)
+            elif (part.figures, part.months_reported) == (
+                first.figures,
+                first.months_reported,
+            ):
+                quarantined.append(
+                    BpsQuarantine(
+                        part.index,
+                        "repeated_row",
+                        f"{code} repeats row {first.index} with the same figures",
+                    )
+                )
+            else:
+                conflicting = True
+        labels = list(dict.fromkeys(part.geography[3] for part in parts))
+        if conflicting:
+            reason = (
+                "conflicting_repeated_row",
+                "is printed {n} times with different figures",
+            )
+        elif len(labels) > 1 and code not in MULTI_JURISDICTION_PLACES:
+            # Different places under one FIPS code: the code is wrong on at
+            # least one row, and nothing here can tell which.
+            reason = (
+                "conflicting_place_code",
+                "is the FIPS code of {n} rows naming different places",
+            )
+        else:
+            reason = None
+        if reason is not None:
+            indexes = [part.index for part in copies]
+            quarantined = [
+                q
+                for q in quarantined
+                if not (
+                    q.error_code == "repeated_row" and q.source_row_index in indexes
+                )
+            ]
+            error_code, summary = reason
+            quarantined.extend(
+                BpsQuarantine(
+                    index,
+                    error_code,
+                    f"{code} {summary.format(n=len(indexes))}"
+                    f" (rows {', '.join(str(i) for i in indexes)})",
+                )
+                for index in indexes
+            )
+            continue
+        in_scope += 1
+        geo_type, _code, geo_id, _label = parts[0].geography
+        label = " + ".join(labels)
+        months = [part.months_reported for part in parts]
+        months_reported = (
+            None if None in months else min(m for m in months if m is not None)
+        )
         for type_index, (structure_type, _label) in enumerate(STRUCTURE_TYPES):
             for measure_index, (measure_id, _measure_label, _unit) in enumerate(
                 MEASURES
@@ -150,13 +270,18 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                 if measure_id == "valuation" and not layout.registers_valuation:
                     continue
                 position = type_index * len(MEASURES) + measure_index
-                text = figures[position].strip()
-                reported_text = figures[reported_offset + position].strip()
-                if months_reported == 0:
+                texts = [part.figures[position] for part in parts]
+                text = "+".join(texts)
+                if any(part.months_reported == 0 for part in parts):
                     value, reported, status = None, None, "not_reported"
                 else:
-                    value = _decimal(text)
-                    reported = _decimal(reported_text)
+                    value = _sum([_decimal(t) for t in texts])
+                    reported = _sum(
+                        [
+                            _decimal(part.figures[reported_offset + position])
+                            for part in parts
+                        ]
+                    )
                     status = "valid" if value is not None else "missing"
                 identity = "|".join(
                     (
@@ -170,7 +295,7 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                 )
                 observations.append(
                     BpsObservation(
-                        source_row_index=index,
+                        source_row_index=parts[0].index,
                         measure_id=measure_id,
                         structure_type=structure_type,
                         geo_type=geo_type,
@@ -189,6 +314,8 @@ def parse_file(payload: bytes, *, item: BpsSlice) -> ParsedFile:
                         ).hexdigest(),
                     )
                 )
+    observations.sort(key=lambda o: o.source_row_index)
+    quarantined.sort(key=lambda q: (q.source_row_index, q.error_code))
     return ParsedFile(
         tuple(observations), tuple(quarantined), len(rows), in_scope, out_of_scope
     )

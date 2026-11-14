@@ -143,6 +143,33 @@ def test_county_and_state_figures_are_sums_of_placed_schools(ccd_warehouse) -> N
         factory,
         "SELECT COUNT(*) FROM gold_nces_ccd.observation_latest WHERE geo_id LIKE 'state:59%%' OR geo_id LIKE 'state:38%%'",
     ) == [(0,)]
+    # Students per teacher's sums cover one set of schools: those that
+    # reported both counts, with how many of the county's schools that is.
+    for geo_id in (ccd.KENT_DE, ccd.PROVIDENCE_RI, ccd.DELAWARE):
+        [(students, teachers, both, either)] = _rows(
+            factory,
+            """
+            WITH school AS (
+                SELECT ncessch,
+                       MAX(value) FILTER (WHERE measure = 'student_membership' AND value_status = 'valid') AS students,
+                       MAX(value) FILTER (WHERE measure = 'teacher_fte' AND value_status = 'valid') AS teachers
+                FROM gold_nces_ccd.school_observation
+                WHERE measure IN ('student_membership', 'teacher_fte')
+                  AND (county_geo_id = %s OR 'state:' || state_fips = %s)
+                GROUP BY ncessch
+            )
+            SELECT SUM(students) FILTER (WHERE students IS NOT NULL AND teachers IS NOT NULL),
+                   SUM(teachers) FILTER (WHERE students IS NOT NULL AND teachers IS NOT NULL),
+                   COUNT(*) FILTER (WHERE students IS NOT NULL AND teachers IS NOT NULL),
+                   COUNT(*)
+            FROM school
+            """,
+            (geo_id, geo_id),
+        )
+        matched_students = _latest(factory, "student_membership_matched", geo_id)
+        matched_teachers = _latest(factory, "teacher_fte_matched", geo_id)
+        assert matched_students[0] == students and matched_teachers[0] == teachers
+        assert matched_students[2:4] == matched_teachers[2:4] == (both, either - both)
 
 
 def test_withheld_counts_are_never_zero_and_bad_rows_are_quarantined(
@@ -319,6 +346,8 @@ def test_the_harvest_names_every_published_measure(ccd_warehouse) -> None:
         "free_lunch_eligible",
         "reduced_price_lunch_eligible",
         "direct_certification",
+        "student_membership_matched",
+        "teacher_fte_matched",
     }
     assert set(published.values()) == {"derived_summary"}
     basis = dict(
@@ -334,4 +363,4 @@ def test_the_harvest_names_every_published_measure(ccd_warehouse) -> None:
     assert _rows(
         factory,
         "SELECT COUNT(*) FROM gold_glossary.dim_metric WHERE source_code = 'NCES_CCD'",
-    ) == [(8,)]
+    ) == [(10,)]

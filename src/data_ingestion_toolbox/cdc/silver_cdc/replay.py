@@ -70,34 +70,53 @@ def replay_pages(
     quarantined: list[QuarantinedObservation] = []
     input_count = 0
     for page, rows in parsed:
-        if asset.asset_id == "cdi":
-            result = parse_cdi_rows(
-                rows, release_watermark=release_watermark, asset=asset
-            )
-        elif asset.asset_id == "places_county":
-            result = parse_places_county_rows(
-                rows, release_watermark=release_watermark, asset=asset
-            )
-        else:
-            raise CdcReplayError(
-                f"no CDC parser registered for asset: {asset.asset_id}"
-            )
+        result = parse_page(
+            asset,
+            capture_id=page.capture_id,
+            offset=page.offset,
+            rows=rows,
+            release_watermark=release_watermark,
+        )
         input_count += result.input_count
-        observations.extend(
-            replace(
-                observation,
-                capture_id=page.capture_id,
-                source_row_index=page.offset + int(observation.source_row_index or 0),
-            )
-            for observation in result.observations
-        )
-        quarantined.extend(
-            replace(item, source_row_index=page.offset + item.source_row_index)
-            for item in result.quarantined
-        )
+        observations.extend(result.observations)
+        quarantined.extend(result.quarantined)
     if input_count != len(observations) + len(quarantined):
         raise CdcReplayError("CDC replay reconciliation failed")
     return ReplayResult(input_count, tuple(observations), tuple(quarantined))
+
+
+def parse_page(
+    asset: CdcAsset,
+    *,
+    capture_id: UUID,
+    offset: int,
+    rows: list[object],
+    release_watermark: str,
+) -> ReplayResult:
+    """Parse one captured page; row indexes count from the release's first row."""
+    if asset.asset_id == "cdi":
+        result = parse_cdi_rows(rows, release_watermark=release_watermark, asset=asset)
+    elif asset.asset_id in ("places_county", "places_tract"):
+        result = parse_places_county_rows(
+            rows, release_watermark=release_watermark, asset=asset
+        )
+    else:
+        raise CdcReplayError(f"no CDC parser registered for asset: {asset.asset_id}")
+    return ReplayResult(
+        result.input_count,
+        tuple(
+            replace(
+                observation,
+                capture_id=capture_id,
+                source_row_index=offset + int(observation.source_row_index or 0),
+            )
+            for observation in result.observations
+        ),
+        tuple(
+            replace(item, source_row_index=offset + item.source_row_index)
+            for item in result.quarantined
+        ),
+    )
 
 
 def load_captured_pages(
@@ -121,6 +140,7 @@ def load_captured_pages(
                 WHERE capture.run_id = %s
                   AND capture.source_code = 'CDC'
                   AND capture.endpoint = %s
+                  AND capture.request_parameters ? '$offset'
                 ORDER BY (capture.request_parameters ->> '$offset')::INTEGER
                 """,
                 (str(run_id), asset.api_path),
@@ -163,6 +183,148 @@ def replay_captured_run(
         load_captured_pages(connection_factory, run_id=run_id, asset=asset),
         release_watermark=release_watermark,
     )
+
+
+@dataclass(frozen=True)
+class RecordedPage:
+    """One page a run recorded in ``control.cdc_release_page``, bytes not loaded."""
+
+    capture_id: UUID
+    offset: int
+    limit: int
+    row_count: int
+
+
+@dataclass(frozen=True)
+class StreamedReplay:
+    """What a page-by-page replay read and stored."""
+
+    input_count: int
+    observation_count: int
+    quarantine_count: int
+
+
+def recorded_pages(
+    connection_factory: Callable[[], Any], *, run_id: UUID
+) -> list[RecordedPage]:
+    """The pages a run recorded, in offset order (empty for an older run)."""
+    database_connection = connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT capture_id::TEXT, page_offset, page_limit, row_count
+                FROM control.cdc_release_page
+                WHERE run_id = %s ORDER BY page_offset
+                """,
+                (str(run_id),),
+            )
+            rows = cursor.fetchall()
+    finally:
+        database_connection.close()
+    return [
+        RecordedPage(UUID(capture_id), int(offset), int(limit), int(count))
+        for capture_id, offset, limit, count in rows
+    ]
+
+
+def _page_payload(
+    connection_factory: Callable[[], Any], capture_id: UUID
+) -> tuple[bytes, str]:
+    database_connection = connection_factory()
+    try:
+        with database_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT blob.payload, blob.payload_checksum
+                FROM raw_capture.response_capture AS capture
+                JOIN raw_capture.payload_blob AS blob USING (payload_checksum)
+                WHERE capture.capture_id = %s AND capture.source_code = 'CDC'
+                """,
+                (str(capture_id),),
+            )
+            row = cursor.fetchone()
+    finally:
+        database_connection.close()
+    if row is None:
+        raise CdcReplayError(f"CDC page capture is absent: {capture_id}")
+    return bytes(row[0]), row[1]
+
+
+def replay_and_persist_run(
+    connection_factory: Callable[[], Any],
+    *,
+    run_id: UUID,
+    asset: CdcAsset,
+    release_watermark: str,
+) -> StreamedReplay:
+    """Replay a run page by page, storing each page before reading the next.
+
+    A run that recorded its pages (every run since the tract release) is read
+    from ``control.cdc_release_page`` one page's bytes at a time, so a
+    three-million-row release never sits in memory whole; the sequence is
+    checked complete before any page is parsed. An older run without page
+    rows is replayed whole, as before. Storing is idempotent, so a replay
+    that stops part way is simply run again.
+    """
+    pages = recorded_pages(connection_factory, run_id=run_id)
+    if not pages:
+        result = replay_captured_run(
+            connection_factory,
+            run_id=run_id,
+            asset=asset,
+            release_watermark=release_watermark,
+        )
+        persist_replay_result(
+            connection_factory,
+            run_id=run_id,
+            asset=asset,
+            release_watermark=release_watermark,
+            result=result,
+        )
+        return StreamedReplay(
+            result.input_count, len(result.observations), len(result.quarantined)
+        )
+    expected = 0
+    for page in pages:
+        if page.offset != expected or page.row_count > page.limit:
+            raise CdcReplayError("CDC capture page sequence is incomplete")
+        expected += page.row_count
+    if pages[-1].row_count >= pages[-1].limit:
+        raise CdcReplayError("CDC release lacks a terminating short page")
+    totals = [0, 0, 0]
+    for page in pages:
+        payload, checksum = _page_payload(connection_factory, page.capture_id)
+        rows = _rows(
+            CapturedPage(
+                page.capture_id,
+                page.offset,
+                page.limit,
+                page.row_count,
+                payload,
+                checksum,
+            )
+        )
+        result = parse_page(
+            asset,
+            capture_id=page.capture_id,
+            offset=page.offset,
+            rows=rows,
+            release_watermark=release_watermark,
+        )
+        if result.input_count != len(result.observations) + len(result.quarantined):
+            raise CdcReplayError("CDC replay reconciliation failed")
+        persist_replay_result(
+            connection_factory,
+            run_id=run_id,
+            asset=asset,
+            release_watermark=release_watermark,
+            result=result,
+        )
+        totals[0] += result.input_count
+        totals[1] += len(result.observations)
+        totals[2] += len(result.quarantined)
+    return StreamedReplay(*totals)
 
 
 def _stratum_id(observation: CdcObservation) -> str:

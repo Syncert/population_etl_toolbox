@@ -27,9 +27,10 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await ready(page, "/us");
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
-  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change"]);
-  // BLS publishes no national unemployment rate in this catalog.
-  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published at national grain");
+  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Starting a family", "Climate averages"]);
+  // LAUS publishes no national rate; the card says the nation's is another survey's.
+  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published nationally by LAUS");
+  await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Current Population Survey");
   await expect(page.getByTestId("place-children").getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin");
   await expect(page.getByTestId("chapter-people-trend")).toHaveAttribute("data-scale", "index");
   await noViolations(page);
@@ -66,8 +67,10 @@ test("a county page draws three levels, labels state context, and states its gap
 
   const safety = page.getByTestId("chapter-safety");
   await expect(safety).toHaveAttribute("data-read-grain", "STATE");
-  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures below are Wisconsin's, not Dane County's");
-  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("Not published at county grain");
+  // The FBI publishes no county rate; the county's is computed from its own
+  // agencies' reports and says whom it covers (ADR-0012, WEB-150).
+  await expect(page.getByTestId("chapter-safety-state-context")).toContainText("The figures for Wisconsin and the nation are the FBI's");
+  await expect(page.getByTestId("card-violent-crime-rate-county")).toContainText("computed from agency reports");
   await expect(page.getByTestId("card-violent-crime-rate-state")).toContainText("(state context)");
 
   // NASS publishes no Dane County cell in the fixture.
@@ -88,6 +91,98 @@ test("a county page draws three levels, labels state context, and states its gap
   await noViolations(page);
   await noHorizontalScroll(page);
   await expect(page.getByTestId("chapter-rail")).toBeVisible();
+});
+
+// Covers: WEB-125 — a county page shows how it voted beside its state, says
+// how a margin is counted and why the nation has no figure, and draws the
+// margins on one level scale.
+test("a county page's Voting chapter reads the margins beside the state's", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const voting = page.getByTestId("chapter-voting");
+  await expect(voting).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Voting" })).toBeVisible();
+  const card = page.getByTestId("card-president-margin");
+  await expect(card).toHaveAttribute("data-period", "2024-11-07");
+  await expect(card).toContainText("below zero, the Democrat led");
+  await expect(page.getByTestId("card-president-margin-county")).toContainText(/[-−]6\b/);
+  await expect(page.getByTestId("card-president-margin-state")).toContainText(/[-−]15\b/);
+  await expect(page.getByTestId("card-president-margin-national")).toContainText("The nation's popular vote is not loaded");
+  await expect(page.getByTestId("chapter-voting-trend")).toHaveAttribute("data-scale", "level");
+  await expect(voting).toContainText("never as a cause");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-125 — a chapter shows its values as its own reads settle: a
+// slow batch for another chapter leaves only that chapter reading (OFFICE_LAB
+// 2026-11-08: the Voting cards read "Reading…" for 55 s behind Census and
+// BEA batches of 5-10 s).
+test("a slow read for one chapter does not hold another chapter's cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/v1/observations/newest/batch?**", async (route) => {
+    const codes = new URL(route.request().url()).searchParams.get("metric_codes") || "";
+    if (codes.includes("B19013_001")) await held;
+    await route.fallback();
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("card-president-margin-county")).toContainText(/[-−]6\b/);
+  await expect(page.getByTestId("chapter-voting-trend")).toHaveAttribute("data-scale", "level");
+  await expect(page.getByTestId("card-median-household-income-county")).toContainText("Reading…");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "false");
+  release();
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("card-median-household-income-county")).not.toContainText("Reading…");
+});
+
+// Covers: WEB-164 — a headline card draws its own place's history as a
+// sparkline, read in one history batch per chapter for that place only, with
+// a change line in the record page's verbs.
+test("a county's headline cards carry a sparkline of the county's own history", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const batches = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/observations/history/batch") batches.push(url);
+  });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spark = page.getByTestId("card-bea-per-capita-income-spark");
+  await expect(spark).toHaveAttribute("data-points", "6");
+  await expect(spark.locator("figcaption")).toContainText("2019");
+  await expect(page.getByTestId("card-bea-per-capita-income-spark-change")).toHaveText("Rose from 1,000 in 2019.");
+  await expect(page.getByTestId("card-median-household-income-spark-change")).toHaveText(
+    "Not distinguishable from 41 in 2019 at the published margins of error.",
+  );
+  // The sparkline-only reads ask the county alone; a trend's batch asks every level.
+  const own = batches.filter((url) => url.searchParams.get("geo_ids") === "state:55|county:025");
+  expect(own.length).toBeGreaterThan(0);
+  expect(own.some((url) => url.searchParams.get("metric_codes").includes("BEA:CAINC1:3"))).toBe(true);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-162 — a headline card draws its levels on one scale, margins as
+// whiskers, and says how the place compares in the record page's verbs; a
+// count draws no strip and keeps its table.
+test("a county's headline cards place the county beside its state and the nation on one scale", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const age = page.getByTestId("card-median-age");
+  await expect(page.getByTestId("card-median-age-strip").locator(".level-strip-row:not(.level-strip-axis)")).toHaveCount(2);
+  await expect(page.getByTestId("card-median-age-strip-sentence")).toHaveText(
+    "Dane County was not distinguishable from Wisconsin at the published margins of error.",
+  );
+  // The table stays for screen readers and copying, out of sight.
+  expect((await age.locator("table").boundingBox()).width).toBeLessThanOrEqual(1);
+  await expect(page.getByTestId("card-median-age-county")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-strip-sentence")).toHaveText("Dane County was lower than Wisconsin.");
+  await expect(page.getByTestId("card-population-estimate-strip")).toHaveCount(0);
+  await expect(page.getByTestId("card-population-estimate").locator("table")).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
 });
 
 // Covers: WEB-139 — sub-county-geography: a county page paints one ACS
@@ -118,7 +213,10 @@ test("within this county paints tracts, counts the uncoloured one, and tabulates
   );
   await expect(page.getByTestId("within-county-map")).toHaveAttribute("data-colored-values", "2");
   await page.getByTestId("within-county-measure").selectOption("CENSUS_ACS:acs5:B25064_001");
-  await expect(page.getByTestId("within-county-table")).toContainText("Median gross rent by Census tract");
+  // The caption names the release's period between the measure and the grain.
+  await expect(page.getByTestId("within-county-table").locator("caption")).toHaveText(
+    /^Median gross rent, .+ by Census tract$/,
+  );
 });
 
 // Covers: WEB-137 — bea-regional-accounts: BEA per capita income and real GDP
@@ -134,10 +232,15 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
   await expect(page.getByTestId("card-median-household-income")).not.toContainText("BEA:");
 
   const earnings = page.getByTestId("bea-earnings");
-  await expect(earnings.locator("tbody tr")).toHaveCount(21);
+  await expect(earnings.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("bea-earnings-basis")).toContainText("BEA personal income account");
   await expect(page.getByTestId("bea-earnings-bea-earnings-1600")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toContainText("Published without a value: withheld");
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("bea-earnings-bea-earnings-200").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const bea_earningsValues = (await page.getByTestId("bea-earnings").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(bea_earningsValues).toEqual([...bea_earningsValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never combined with the survey's income");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -146,6 +249,18 @@ test("BEA income and GDP sit beside the survey income, labelled apart, with earn
 test("a state page has no within-this-county section", async ({ page }) => {
   await ready(page, "/us/wisconsin");
   await expect(page.getByTestId("within-county")).toHaveCount(0);
+});
+
+// Covers: WEB-144 — a reader never sees a provider's label path or a
+// variable code as a name, on any level's page; codes stay in attributes.
+test("no place page shows an Estimate!! label path or a bare variable code", async ({ page }) => {
+  for (const path of ["/us", "/us/wisconsin", "/us/wisconsin/dane-county", "/us/wisconsin/crossing-city"]) {
+    await ready(page, path);
+    const text = await page.locator("main").innerText();
+    expect(text, path).not.toMatch(/Estimate!!/);
+    const code = text.match(/.{0,60}\b[BC]\d{5}_\d{3}[EM]?\b.{0,20}/);
+    expect(code?.[0] ?? null, path).toBeNull();
+  }
 });
 
 // Covers: WEB-135 — bls-qcew-county-wages: the county page shows jobs located
@@ -157,15 +272,20 @@ test("jobs located here sit beside residents who work, labelled apart, with an i
   await expect(page.getByTestId("card-qcew-jobs")).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-qcew-jobs-basis")).toHaveText("Jobs located here, counted by employers (QCEW)");
   await expect(page.getByTestId("card-unemployment-rate-basis")).toHaveText("Residents who work, counted where they live (LAUS)");
-  await expect(page.getByTestId("card-qcew-jobs")).toContainText("BLS_QCEW:employment:10:0");
+  await expect(page.getByTestId("card-qcew-jobs").locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "BLS_QCEW:employment:10:0");
   await expect(page.getByTestId("card-qcew-jobs-county")).toContainText("jobs");
   await expect(page.getByTestId("card-unemployment-rate")).not.toContainText("BLS_QCEW");
 
   const mix = page.getByTestId("industry-mix");
-  await expect(mix.locator("tbody tr")).toHaveCount(21);
+  await expect(mix.locator("tbody tr")).toHaveCount(20);
   await expect(page.getByTestId("industry-mix-basis")).toContainText("counted by employers (QCEW)");
   await expect(page.getByTestId("industry-mix-qcew-sector-62")).toContainText("Health care and social assistance");
-  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toContainText("Published without a value: withheld");
+  // WEB-163: bars sorted largest first; a withheld sector has no bar and is
+  // named once in the line under them.
+  await expect(page.getByTestId("industry-mix-qcew-sector-21")).toHaveText("Mining, quarrying, and oil and gas extraction.");
+  await expect(page.getByTestId("industry-mix-qcew-sector-21").locator("xpath=..")).toContainText("Withheld by the publisher to protect confidential employer data:");
+  const industry_mixValues = (await page.getByTestId("industry-mix").locator(".place-industry-value").allTextContents()).map((text) => Number(text.replace(/,/g, "")));
+  expect(industry_mixValues).toEqual([...industry_mixValues].sort((left, right) => right - left));
   await expect(page.getByTestId("chapter-work-money-footer")).toContainText("never added or subtracted");
   await noViolations(page);
   await noHorizontalScroll(page);
@@ -203,13 +323,25 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await expect(model).toHaveAttribute("data-available", "true");
   await expect(page.getByTestId("card-median-household-income-basis")).toHaveText("Survey estimate (American Community Survey)");
   await expect(page.getByTestId("card-saipe-median-household-income-basis")).toHaveText("Model-based annual estimate (SAIPE)");
-  await expect(model).toContainText("CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
+  await expect(model.locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "CENSUS_SAIPE_SAHIE:saipe:SAEMHI");
   await expect(survey).not.toContainText("CENSUS_SAIPE_SAHIE");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("confidence lower");
+  // The margin's percentage is the served one; a field the source does not
+  // publish arrives null and is never printed as 0 (UAT: "±2,947 (0%)").
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).toContainText("(3.22%)");
+  await expect(page.getByTestId("card-saipe-median-household-income-county")).not.toContainText("(0%)");
+  await expect(page.getByTestId("card-obesity-county")).not.toContainText("margin of error");
   await expect(page.getByTestId("card-saipe-poverty-rate-basis")).toHaveText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toContainText("Model-based annual estimate (SAIPE)");
   await expect(page.getByTestId("depth-below-poverty-basis")).toContainText("Survey estimate (American Community Survey)");
+  // WEB-163: what the depth rows share is said once above them; a row says
+  // its source only where it differs from that line.
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("Survey estimate (American Community Survey)");
+  await expect(page.getByTestId("chapter-work-money-depth-shared")).toContainText("± is the 90% margin of error");
+  await expect(page.getByTestId("depth-below-poverty-basis")).toHaveClass("sr-only");
+  await expect(page.getByTestId("depth-saipe-child-poverty-rate-basis")).toHaveClass("place-basis");
+  await expect(page.getByTestId("depth-below-poverty")).not.toContainText("margin of error ±");
 
   await expect(page.getByTestId("card-sahie-uninsured-rate-basis")).toHaveText("Model-based annual estimate (SAHIE)");
   await expect(page.getByTestId("card-sahie-uninsured-rate-county")).toContainText("confidence upper");
@@ -219,12 +351,12 @@ test("model-based SAIPE and SAHIE cards sit beside the survey cards with their o
   await noHorizontalScroll(page);
 });
 
-test("a SAIPE slot the catalog does not publish says so and borrows no ACS figure", async ({ page }) => {
+test("a SAIPE slot the catalog does not serve says it is not loaded yet and borrows no ACS figure", async ({ page }) => {
   await installPlaceFixtures(page, { withoutSource: "CENSUS_SAIPE_SAHIE" });
   await page.goto("/us/wisconsin/dane-county");
   await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
   await expect(page.getByTestId("card-saipe-median-household-income")).toHaveAttribute("data-available", "false");
-  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not published by this warehouse");
+  await expect(page.getByTestId("card-saipe-median-household-income")).toContainText("Not loaded into this site yet.");
   await expect(page.getByTestId("card-median-household-income")).toHaveAttribute("data-available", "true");
 });
 
@@ -247,6 +379,36 @@ test("migration lists name origins and destinations and say the populations diff
   await noHorizontalScroll(page);
 });
 
+// Covers: WEB-138 — irs-county-migration: the flows are read for the page's
+// county only. While a county address is still resolving the chapters hold
+// only the state, and the page once read `/migration-flows?geo_id=state:55`,
+// which the API refuses with 422, on every Dane County load; a city page
+// never reads them at all.
+test("migration flows are asked for the county, never its state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  // Hold the state's county list so the chapters render before the county is known.
+  await page.route("**/api/v1/catalog/geographies?*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("geo_level") === "COUNTY") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return route.fallback();
+  });
+  const asked = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/migration-flows") asked.push(url.searchParams.get("geo_id"));
+  });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("migration-inflow")).toContainText("Where people came from");
+  expect([...new Set(asked)]).toEqual(["state:55|county:025"]);
+  asked.length = 0;
+  await page.goto("/us/wisconsin/madison-city");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  expect(asked).toEqual([]);
+});
+
 test("an address by FIPS settles on the named address", async ({ page }) => {
   await ready(page, "/us/55/025");
   await expect(page).toHaveURL(/\/us\/wisconsin\/dane-county$/);
@@ -260,7 +422,7 @@ test("an unknown place is a not-found page with search and no chart", async ({ p
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("There is no place at this address");
   await expect(page.locator(".place-trend, .place-card")).toHaveCount(0);
   await page.getByRole("searchbox", { name: "Search places" }).fill("rock");
-  await expect(page.getByTestId("place-search-results").getByRole("link", { name: "Rock County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/rock-county");
+  await expect(page.getByTestId("place-search-results").getByRole("link", { name: "Rock County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/rock-county");
   await noViolations(page);
 
   const response = await page.goto("/us/Not%20A%20Place");
@@ -274,10 +436,14 @@ test("nearby and related: a place crossing two counties is noted on both pages",
   const nearby = page.getByTestId("place-nearby");
   await expect(nearby.getByTestId("place-nearby-within")).toContainText("Crossing city");
   await expect(nearby.getByTestId("place-nearby-within")).toContainText("60% of it lies in this county; the rest is in another county");
-  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/rock-county");
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Rock County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/rock-county");
   // A neighbour in another state is addressed by its FIPS, which settles on its name.
-  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota" })).toHaveAttribute("href", "/us/minnesota/27053");
-  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link")).toHaveText(["Wisconsin", "United States"]);
+  await expect(nearby.getByTestId("place-nearby-neighbours").getByRole("link", { name: "Hennepin County, Minnesota", exact: true })).toHaveAttribute("href", "/us/minnesota/27053");
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link").and(page.locator(':not([data-testid="place-nearby-compare"])'))).toHaveText(["Wisconsin", "Madison, WI", "United States"]);
+  // Its metro links to the metro's page by code (WEB-153).
+  await expect(nearby.getByTestId("place-nearby-part-of").getByRole("link", { name: "Madison, WI", exact: true })).toHaveAttribute("href", "/metro/31540");
+  // Each related place links its comparison (WEB-146).
+  await expect(nearby.getByTestId("place-nearby-part-of").getByTestId("place-nearby-compare")).toHaveCount(3);
   await expect(nearby).toContainText("vintage 2025");
 
   await ready(page, "/us/wisconsin/rock-county");
@@ -295,9 +461,11 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Crossing city, Wisconsin");
   await expect(page.locator(".section-kicker").first()).toHaveText("City or town");
 
-  // Three levels: the place, its state, the nation.
+  // Four levels: the place, the county holding most of it, its state, the
+  // nation.
   const income = page.getByTestId("card-median-household-income");
-  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(income.locator("tbody tr")).toHaveCount(4);
+  await expect(income).toContainText("Dane County");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("Crossing city");
   await expect(page.getByTestId("card-median-household-income-place")).toContainText("margin of error");
   // BLS publishes no place: said in the card, not borrowed from a county.
@@ -307,10 +475,11 @@ test("a city page reads its own figures, notes the counties it crosses, and omit
     "Crossing city crosses county lines: it lies in Dane County (60%) and Rock County (40%). A county's figures describe the whole county, not this place.",
   );
   const counties = page.getByTestId("place-nearby-counties");
-  await expect(counties.getByRole("link", { name: "Dane County, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+  await expect(counties.getByRole("link", { name: "Dane County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/dane-county");
   // Its metro, reached through the counties it lies in, with the share inside.
   const metro = page.getByTestId("place-nearby-part-of").locator('li[data-geo-id="cbsa:31540"]');
-  await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties");
+  await expect(metro).toHaveText("Madison, WI · 60% of this place lies in its counties · compare");
+  await expect(metro.getByRole("link", { name: "Madison, WI", exact: true })).toHaveAttribute("href", "/metro/31540");
 
   await expect(page.getByTestId("chapter-safety")).toHaveCount(0);
   await expect(page.getByTestId("chapter-land-farms")).toHaveCount(0);
@@ -327,7 +496,7 @@ test("a city addressed by its FIPS settles on its name, and a county links to it
   await ready(page, "/us/wisconsin/5599999");
   await expect(page).toHaveURL(/\/us\/wisconsin\/crossing-city$/);
   await ready(page, "/us/wisconsin/dane-county");
-  await expect(page.getByTestId("place-nearby-within").getByRole("link", { name: "Crossing city, Wisconsin" })).toHaveAttribute("href", "/us/wisconsin/5599999");
+  await expect(page.getByTestId("place-nearby-within").getByRole("link", { name: "Crossing city, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/5599999");
   await ready(page, "/us/wisconsin/madison-city");
   await expect(page.getByTestId("place-cross-county")).toHaveText("Madison city lies in Dane County.");
 });
@@ -341,16 +510,47 @@ test("a place with no recorded relationships omits the section and says why", as
 
 test("what stands out lists the highest and lowest measures apart, with withheld siblings named", async ({ page }) => {
   // Covers: WEB-131 — one measure per row; a withheld sibling is counted, not zero.
+  // Covers: WEB-165 — each rank drawn as a position; caveats said once.
   await ready(page, "/us/wisconsin/dane-county");
   const section = page.getByTestId("place-standout");
-  await expect(section.getByTestId("place-standout-count")).toContainText("6 measures could be ranked among Wisconsin counties, each on its own");
+  await expect(section.getByTestId("place-standout-count")).toContainText("7 measures could be ranked among Wisconsin counties, each on its own");
   await expect(section.getByTestId("place-standout-highest").locator("li")).toHaveCount(3);
   await expect(section.getByTestId("place-standout-lowest").locator("li")).toHaveCount(3);
   const income = section.getByTestId("standout-CENSUS_ACS:acs5:B19013_001");
   await expect(income).toContainText("Higher than 68 of 70 Wisconsin counties with a published value (1 withheld a value)");
-  await expect(income.getByRole("link", { name: "See every county on a map" })).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
-  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age (UI fixture)");
+  // WEB-165: the measure's name opens its map; the dot sits at its rank,
+  // lowest to highest; the sources' caveats are said once, not per row.
+  await expect(income.getByRole("link")).toHaveAttribute("href", "/map/CENSUS_ACS%3Aacs5%3AB19013_001");
+  const dot = await income.locator(".standout-track i").getAttribute("style");
+  expect(Number(/left: ([\d.]+)%/.exec(dot)[1])).toBeCloseTo((68 / 70) * 100, 1);
+  await expect(section.locator(".standout-track")).toHaveCount(6);
+  const caveats = await section.getByTestId("place-standout-caveats").locator("p").allTextContents();
+  expect(new Set(caveats).size).toBe(caveats.length);
+  // Named by the API's plain label (WEB-144), not the provider's.
+  await expect(section.getByTestId("place-standout-lowest")).toContainText("Median age");
+  await expect(section.getByTestId("place-standout-lowest")).not.toContainText("Median age (UI fixture)");
   await expect(section).not.toContainText(/score|overall/i);
+});
+
+test("what stands out names a bulk-file rate in words and keeps its long unit inside the panel", async ({ page }) => {
+  // Covers: WEB-167 — PEP's provider label is the bare variable ("Rdeath");
+  // the row reads the registry's plain name, and "per 1,000 people" wraps
+  // under the number instead of running past the panel edge.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const death = page.getByTestId("standout-CENSUS_PEP:RDEATH");
+  await expect(death.getByRole("link")).toHaveText("Death rate");
+  await expect(death).not.toContainText("Rdeath");
+  const value = death.locator(".standout-value");
+  await expect(value).toContainText("7.1");
+  await expect(value).toContainText("per 1,000 people");
+  await expect(value).toHaveAttribute("title", "7.1 per 1,000 people");
+  const fits = await value.evaluate((element) => {
+    const row = element.closest("li").getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return element.scrollWidth <= element.clientWidth + 1 && box.right <= row.right + 1;
+  });
+  expect(fits).toBe(true);
 });
 
 test("a place with no ranked measure omits What stands out and says why", async ({ page }) => {
@@ -384,8 +584,281 @@ test("a county's groceries and gas card names the area behind every figure", asy
   await expect(parity).toContainText("97.4 (nation = 100)");
   await expect(parity).toContainText("Madison, WI figure");
   await expect(parity).toContainText("Bureau of Economic Analysis");
+
+  // Covers: WEB-143 — cost-of-living-section: everyday prices in one table,
+  // the region named once, an item only the nation publishes named on its
+  // row, an item not loaded said so, and rent linked to Housing.
+  await expect(card.getByRole("heading", { level: 2 })).toHaveText("Cost of living");
+  await expect(page.getByTestId("place-cost-items-area")).toContainText("Midwest Region figure, urban average, except where a row names another area");
+  const eggs = page.getByTestId("place-cost-eggs");
+  await expect(eggs).toHaveAttribute("data-area", "region:2");
+  await expect(eggs).toContainText("$3.18 a dozen");
+  await expect(eggs).toContainText("up 6.0% over the year");
+  await expect(page.getByTestId("place-cost-eggs-spark")).toBeVisible();
+  // Electricity is EIA's Wisconsin price, named on its row; the others BLS's region.
+  const electricity = page.getByTestId("place-cost-electricity");
+  await expect(electricity).toHaveAttribute("data-area", "state:55");
+  await expect(electricity).toContainText("18.0\u00a2 a kilowatt-hour");
+  await expect(electricity).toContainText("Wisconsin figure, U.S. Energy Information Administration");
+  const chicken = page.getByTestId("place-cost-chicken");
+  await expect(chicken).toHaveAttribute("data-area", "us:1");
+  await expect(chicken).toContainText("United States figure");
+  await expect(page.getByTestId("place-cost-milk")).toContainText("Not loaded into this site yet.");
+  // Rent is the Housing chapter's, linked, never read a second time.
+  await expect(page.getByTestId("place-cost-rent").getByRole("link")).toHaveAttribute("href", "#housing");
+
+  // Covers: WEB-143 — cost-of-living-section CL-3: minutes of work are read
+  // only when chosen, at the county's own wage, stated once with its year.
+  const minutesReads = [];
+  page.on("request", (request) => { if (request.url().includes("/observations/derived")) minutesReads.push(new URL(request.url())); });
+  const view = page.getByTestId("place-cost-view");
+  await expect(view.getByRole("button", { name: "Price" })).toHaveAttribute("aria-pressed", "true");
+  await view.getByRole("button", { name: "Minutes of work" }).click();
+  await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("6 minutes");
+  await expect(page.getByTestId("place-cost-eggs-minutes")).toContainText("for $3.18 a dozen");
+  // Minutes of work divide BLS's region price, which has a wage pairing.
+  await expect(page.getByTestId("place-cost-electricity-minutes")).toContainText("20 seconds");
+  await expect(page.getByTestId("place-cost-electricity-minutes")).toContainText("for 17.0\u00a2 a kilowatt-hour");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("9 minutes");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("United States figure");
+  await expect(page.getByTestId("place-cost-wage")).toContainText("Dane County's average wage, $1,200 a week in 2025, the newest year published");
+  await expect(page.getByTestId("place-cost-items").getByRole("columnheader", { name: "Minutes of work" })).toBeVisible();
+  expect(minutesReads.map((url) => url.searchParams.get("wage_geo_id"))).toEqual(Array(3).fill("state:55|county:025"));
+  expect(minutesReads.map((url) => url.searchParams.get("ratio_id")).sort()).toEqual([
+    "minutes_of_work_chicken:0000", "minutes_of_work_eggs:0200", "minutes_of_work_electricity:0200",
+  ]);
   await noViolations(page);
   await noHorizontalScroll(page);
+});
+
+// Covers: WEB-170 — home-heating-fuel-prices: natural gas is the state's own
+// price restated a therm, heating oil falls back to EIA's petroleum region
+// with its season said, propane not published says so, and diesel is a
+// second figure on the gasoline line.
+test("a county's home heating fuels name the area, season and unit behind each price", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const heat = page.getByTestId("place-cost-heat_gas");
+  await expect(heat).toHaveAttribute("data-area", "state:55");
+  await expect(heat).toContainText("$12.72 per thousand cubic feet ($1.23 a therm)");
+  await expect(heat).toContainText("Wisconsin figure");
+  await expect(heat).toContainText("up 6.0% over the year");
+  await expect(heat).toContainText("10.37 therms");
+  const oil = page.getByTestId("place-cost-heating_oil");
+  await expect(oil).toHaveAttribute("data-area", "area:eia:R20");
+  await expect(oil).toContainText("$3.64 a gallon");
+  await expect(oil).toContainText("Midwest (PADD 2) figure");
+  await expect(oil).toContainText("up 4.0% over the year");
+  await expect(oil).toContainText("October to March");
+  await expect(oil).toContainText("Wisconsin (EIA): no value published for this area.");
+  await expect(page.getByTestId("place-cost-propane")).toContainText("Not published for this place or any area containing it.");
+  const diesel = page.getByTestId("place-cost-diesel");
+  await expect(diesel).toHaveAttribute("data-area", "us:1");
+  await expect(diesel).toContainText("Diesel $3.71 a gallon");
+  await expect(diesel).toContainText("United States figure");
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-171 — county-childcare-prices: a county page shows its own
+// eight childcare prices for one study year as published, each with its
+// hours of the county's own wage and the arithmetic stated, marks none
+// imputed in 2022, says a blank price is not published, and a state page
+// says the prices are published for counties only.
+test("a county's childcare prices are its own, for one year, with a blank price said to be missing", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const childcare = page.getByTestId("place-childcare");
+  await expect(page.getByTestId("place-childcare-headline")).toContainText("A childcare center charges $293 a week for an infant in Dane County, the median full-time price in 2022");
+  // Hours of work beside the dollars, never instead of them, the arithmetic
+  // stated once: $293 over Dane County's $1,200 week of 40 hours.
+  await expect(page.getByTestId("place-childcare-headline-work")).toHaveText("9 hours 46 minutes of work");
+  await expect(page.getByTestId("place-childcare-center_infant-work")).toHaveText("9 hours 46 minutes of work");
+  await expect(page.getByTestId("place-childcare-center_infant")).toContainText("$293 a week");
+  await expect(page.getByTestId("place-childcare-formula")).toContainText(
+    "Dane County's average wage in 2022 was $1,200 a week (Bureau of Labor Statistics, QCEW, all jobs located in the county), or $30.00 an hour over a 40-hour week. $293 a week for center-based infant care ÷ $30.00 an hour = 9.8 hours of work.",
+  );
+  await expect(page.getByTestId("place-childcare-home_school_age-work")).toHaveCount(0);
+  await expect(page.getByTestId("place-childcare-work-gap")).toHaveCount(0);
+  const table = page.getByTestId("place-childcare-table");
+  await expect(table).toContainText("Median weekly full-time price, 2022");
+  await expect(table).toContainText("Women's Bureau, National Database of Childcare Prices");
+  await expect(page.getByTestId("place-childcare-center_toddler")).toContainText("$258.75 a week");
+  await expect(page.getByTestId("place-childcare-center_toddler")).toHaveAttribute("data-imputed", "false");
+  await expect(page.getByTestId("place-childcare-home_infant")).toContainText("$220 a week");
+  const blank = page.getByTestId("place-childcare-home_school_age");
+  await expect(blank).toHaveAttribute("data-missing", "true");
+  await expect(blank).toContainText("Not published for 2022.");
+  await expect(blank).not.toContainText("$150");
+  await expect(page.getByTestId("place-childcare-imputed")).toHaveCount(0);
+  await expect(childcare.getByRole("columnheader", { name: "Childcare center" })).toBeVisible();
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-childcare-counties-only")).toContainText("publishes childcare prices for counties only");
+  await expect(page.getByTestId("place-childcare-table")).toHaveCount(0);
+});
+
+// Covers: WEB-174 — childcare-national-trend: a county's childcare card adds
+// the nation's CPI change for day care and preschool from the same month of
+// the study year to the newest month, with both index values and the
+// division stated, says the county's prices are not adjusted by it, and the
+// Starting a family infant care row repeats the sentence.
+test("a county's childcare card adds the nation's price change since its study year, never applied to the county", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-childcare-national")).toHaveText(
+    "Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.",
+  );
+  const formula = page.getByTestId("place-childcare-national-formula");
+  await expect(formula).toContainText("series CUUR0000SEEB03");
+  await expect(formula).toContainText("was 300.000 in August 2026 and 250.000 in August 2022; 300.000 ÷ 250.000 = 1.200, a change of +20.0%.");
+  await expect(formula).toContainText("It is the nation's change, not Dane County's: the county's prices above are the Women's Bureau's for 2022, as published, and are not adjusted by it.");
+  // The county's own price stays as published.
+  await expect(page.getByTestId("place-childcare-center_infant")).toContainText("$293 a week");
+  await expect(page.getByTestId("family-infant-care-value")).toHaveText("$293 a week");
+  await expect(page.getByTestId("family-infant-care-national")).toContainText(
+    "Nationally, prices for day care and preschool rose 20.0% from August 2022 to August 2026.",
+  );
+  await noViolations(page);
+});
+
+// Covers: WEB-175 — place-climate-normals: a county page shows its twelve
+// months of NOAA's 1991-2020 normals at NCEI's station precision, with the station counts and
+// the nearest-county placement note; a state says the normals are shown for
+// counties, and a city links the county it lies in.
+test("a county page shows its monthly climate normals at NCEI's precision, with stations and the placement note", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const climate = page.getByTestId("place-climate");
+  await expect(climate.getByRole("heading", { name: "Climate averages" })).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Climate averages" })).toBeVisible();
+  await expect(page.getByTestId("place-climate-headline")).toHaveText(
+    "In Dane County, the month with the highest mean temperature is July (71.5°F) and the lowest is January (18.6°F); the month with the most precipitation is June (4.98 in).",
+  );
+  await expect(page.getByTestId("place-climate-1-mean")).toHaveText("18.6°F");
+  await expect(page.getByTestId("place-climate-1-high")).toHaveText("27.3°F");
+  await expect(page.getByTestId("place-climate-1-low")).toHaveText("9.9°F");
+  await expect(page.getByTestId("place-climate-1-precipitation")).toHaveText("1.56 in");
+  await expect(page.getByTestId("place-climate-7-mean")).toHaveText("71.5°F");
+  await expect(page.getByTestId("place-climate-7-precipitation")).toHaveText("4.40 in");
+  await expect(page.getByTestId("place-climate-stations")).toContainText("temperature from 3 to 4 stations; precipitation from 6 stations");
+  await expect(page.getByTestId("place-climate-stations")).toContainText("rounded to the precision NCEI publishes for a station: 0.1°F and 0.01 in");
+  await expect(page.getByTestId("place-climate-placement-note")).toHaveText(
+    "Includes stations no county boundary covers, placed on this county as the nearest county boundary within 1,000 metres: USC00470000 (212 m).",
+  );
+  await expect(climate).not.toContainText(/annual|mild|harsh|pleasant/i);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-climate-counties-only")).toContainText("this site shows them for counties");
+  await expect(page.getByTestId("place-climate-table")).toHaveCount(0);
+
+  await ready(page, "/us/wisconsin/madison-city");
+  await expect(page.getByTestId("place-climate-county-links").getByRole("link", { name: "Dane County" })).toHaveAttribute("href", /dane-county#climate$/);
+});
+
+// Covers: WEB-173 — starting-a-family-collection: a county page gathers
+// eight published measures in four groups, each with its own value, period,
+// levels and rank; the two prices show hours of the county's own wage with
+// the arithmetic stated; no line is called good or bad; a state page says
+// where a county-only figure is published instead of showing one.
+test("Starting a family gathers its lines, each standing alone, with hours of work for the prices", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const family = page.getByTestId("chapter-family");
+  await expect(family.getByRole("heading", { name: "Starting a family" })).toBeVisible();
+  await expect(page.getByTestId("chapter-rail").getByRole("link", { name: "Starting a family" })).toBeVisible();
+  await expect(page.getByTestId("family-infant-care-value")).toHaveText("$293 a week");
+  // $293 over Dane County's $1,200 week of 40 hours, the price's own year.
+  await expect(page.getByTestId("family-infant-care-hours")).toHaveText("9 hours 46 minutes of work at Dane County's average wage");
+  await expect(page.getByTestId("family-infant-care-rank")).toContainText("Higher than 40 of 70 Wisconsin counties with a published value");
+  await expect(page.getByTestId("family-rent-3br-value")).toHaveText("$2,000 a month");
+  await expect(page.getByTestId("family-rent-3br-hours")).toHaveText("66 hours 40 minutes of work at Dane County's average wage");
+  await expect(page.getByTestId("family-hours-formula")).toContainText(
+    "$2,000 a month ÷ (Dane County's average wage in 2025, the newest year QCEW has published, $1,200 a week ÷ 40 hours = $30.00 an hour) = 66.7 hours for a month's three-bedroom rent.",
+  );
+  await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,200 a week");
+  await expect(page.getByTestId("family-students-per-teacher")).toHaveAttribute("data-available", "true");
+  // A ratio over the schools that reported both says how many those are.
+  await expect(page.getByTestId("family-students-per-teacher-schools")).toHaveText(
+    "From the schools that reported both students and teachers: 112 of 118 in Dane County and all 2,031 in Wisconsin.",
+  );
+  await expect(page.getByTestId("family-households-with-children-value")).toContainText("%");
+  // acs-family-tables: "More for families" reads nothing until opened, then
+  // shows the three ACS tables in the same row format.
+  const more = page.getByTestId("family-more");
+  await expect(more.getByRole("heading", { name: "More for families" })).toBeVisible();
+  await expect(page.getByTestId("family-births-past-year")).toHaveCount(0);
+  await more.locator("summary").click();
+  await expect(page.getByTestId("family-births-past-year-value")).toContainText("%");
+  await expect(page.getByTestId("family-young-children-parents-in-labor-force-value")).toContainText("%");
+  await expect(page.getByTestId("family-young-children-parents-in-labor-force")).toContainText("B23008_004 + _010 + _013 ÷ _002");
+  await expect(page.getByTestId("family-income-families-with-children")).toBeVisible();
+  await expect(page.getByTestId("family-income-families-without-children")).toBeVisible();
+  for (const word of ["easier", "harder", "better", "worse", "score"]) await expect(family).not.toContainText(word);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("family-infant-care-gap")).toHaveText("Published by county; the Women's Bureau publishes no state or national figure");
+  await expect(page.getByTestId("family-infant-care-hours")).toHaveCount(0);
+  await expect(page.getByTestId("family-weekly-wage-value")).toHaveText("$1,100 a week");
+});
+
+// Covers: WEB-173 — a "More for families" pairing whose inputs the site has
+// not loaded yet (the API answers 404 or "the catalog does not publish") says
+// it is not loaded, never that it could not be read.
+test("a family pairing whose inputs are not loaded yet says so, not that it failed", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  await page.route(/\/api\/v1\/observations\/derived\?.*ratio_id=(births_past_year_share|young_children_all_parents)/, (route) =>
+    route.request().url().includes("births_past_year_share")
+      ? route.fulfill({ status: 404, json: { detail: "ratio_id not found" } })
+      : route.fulfill({ status: 422, json: { detail: "pairing 'young_children_all_parents_in_labor_force_share:acs5' names CENSUS_ACS:acs5:B23008_004, which the catalog does not publish" } }),
+  );
+  await page.getByTestId("family-more").locator("summary").click();
+  for (const id of ["births-past-year", "young-children-parents-in-labor-force"]) {
+    const line = page.getByTestId(`family-${id}`);
+    await expect(line).toHaveAttribute("data-available", "false");
+    await expect(line).toContainText("Not loaded into this site yet.");
+    await expect(line).not.toContainText("Could not be read");
+  }
+});
+
+// Covers: WEB-172 — grocery-spending: a county shows its Census region's
+// yearly household grocery spending, named as the region's and as spending,
+// not a price, with the nation's figures by household size.
+test("a county's grocery spending is its region's, named, with the nation's household sizes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/dane-county");
+  const spending = page.getByTestId("place-cost-spending");
+  await expect(spending).toHaveAttribute("data-area", "region:2");
+  await expect(spending).toContainText("Household grocery spending (food at home)");
+  await expect(spending).toContainText("$5,846 a year");
+  await expect(spending).toContainText("Midwest Region figure, 2024");
+  await expect(spending).toContainText("It is spending, not a price");
+  await expect(page.getByTestId("place-cost-spending-sizes")).toContainText(
+    "Nationally, by household size (2024): one person $3,612, two people $6,120, three $7,310, four $8,905, five or more $10,214 a year.",
+  );
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+// Covers: WEB-143 — CL-3: a county with no wage loaded says so, never zero;
+// a metro has no minutes-of-work choice, and says why.
+test("minutes of work say when no wage is loaded, and a metro says QCEW has none", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await ready(page, "/us/wisconsin/rock-county");
+  await page.getByTestId("place-cost-view").getByRole("button", { name: "Minutes of work" }).click();
+  // Only the nation's chicken price reaches Rock County in this fixture.
+  await expect(page.getByTestId("place-cost-chicken-minutes")).toContainText("No wage loaded for this place yet.");
+  await expect(page.getByTestId("place-cost-chicken-minutes")).not.toContainText("0 minutes");
+  await ready(page, "/metro/madison-wi-metro-area");
+  await expect(page.getByTestId("place-cost-view")).toHaveCount(0);
+  await expect(page.getByTestId("place-cost-no-wage")).toContainText("not metro areas");
 });
 
 test("the nation's groceries and gas card is its own, with parity 100 by definition", async ({ page }) => {
@@ -396,4 +869,76 @@ test("the nation's groceries and gas card is its own, with parity 100 by definit
   await expect(page.getByTestId("place-cost-gas")).toContainText("U.S. Energy Information Administration");
   await expect(page.getByTestId("place-cost-food")).toContainText("up 2.0% over the year");
   await expect(page.getByTestId("place-cost-parity")).toContainText("100 by definition");
+});
+
+// Covers: WEB-153 — web-metro-pages: a metro has its own page in the same
+// chapters, beside its principal state and the nation, resolved in one read.
+test("a metro page reads its own figures beside its state and the nation and lists its counties", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const asked = [];
+  page.on("request", (request) => { if (request.url().includes("/api/v1/")) asked.push(new URL(request.url()).pathname); });
+  await ready(page, "/metro/madison-wi-metro-area");
+  await expect(page.locator("main")).toHaveCount(1);
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-level", "METRO");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-geo-id", "cbsa:31540");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Madison, WI Metro Area");
+  await expect(page.locator(".section-kicker").first()).toHaveText("Metro area");
+  await expect(page.getByRole("navigation", { name: "Place hierarchy" }).getByRole("link", { name: "Wisconsin" })).toHaveAttribute("href", "/us/wisconsin");
+
+  // Three levels: the metro, its principal state, the nation.
+  const income = page.getByTestId("card-median-household-income");
+  await expect(income.locator("tbody tr")).toHaveCount(3);
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("margin of error");
+  await expect(page.getByTestId("card-unemployment-rate-metro")).toContainText("Percent");
+  // BEA's metro income is summed from the counties, and the card says so.
+  await expect(page.getByTestId("card-bea-per-capita-income-metro-derivation")).toContainText("Derived: its member counties' summed income");
+  await expect(page.getByTestId("card-bea-per-capita-income-state-derivation")).toHaveCount(0);
+  // A count published for counties and not for metros is its counties' sum,
+  // and says it was derived (WEB-159).
+  await expect(page.getByTestId("card-population-estimate-metro")).toContainText("(derived from member counties)");
+  await expect(page.getByTestId("chapter-health")).toHaveCount(0);
+  await expect(page.getByTestId("place-omissions")).toContainText("Health: no published metro area values for this place");
+
+  // Covers: WEB-159 — a measure published for counties and not for metro
+  // areas lists the member counties; a count is summed and says so, a
+  // median or a chained-dollar figure is not.
+  await expect(page.getByTestId("card-qcew-jobs-metro")).toContainText("1,100 jobs (derived from member counties)");
+  await expect(page.getByTestId("card-qcew-jobs-members")).toContainText("Dane County");
+  await expect(page.getByTestId("card-qcew-jobs-members-note")).toContainText("the sum of its 1 member county's published figures");
+  await expect(page.getByTestId("card-saipe-median-household-income-metro")).toContainText("its member counties are listed below");
+  await expect(page.getByTestId("card-saipe-median-household-income-members").locator('tr[data-geo-id="state:55|county:025"]')).toContainText("dollars");
+  await expect(page.getByTestId("card-saipe-median-household-income-members-note")).toContainText("not added up from its counties");
+  await expect(page.getByTestId("card-bea-real-gdp-metro")).toContainText("its member counties are listed below");
+  await expect(page.getByTestId("card-bea-real-gdp-members")).toContainText("Dane County");
+  // A measure published for metros reads its own row, with no member list.
+  await expect(page.getByTestId("card-median-household-income-members")).toHaveCount(0);
+
+  // Prices: BEA's price level is the metro's own; gas and food are larger areas'.
+  await expect(page.getByTestId("place-cost-no-local")).toContainText("The price level is BEA's figure for this metro");
+  await expect(page.getByTestId("place-cost-parity")).toHaveAttribute("data-area", "cbsa:31540");
+
+  const members = page.getByTestId("place-metro-members");
+  await expect(members.getByRole("link", { name: "Dane County, Wisconsin", exact: true })).toHaveAttribute("href", "/us/wisconsin/dane-county");
+  await expect(members).toContainText("2023 CBSA delineation");
+  await expect(page.getByTestId("place-metro-states")).toHaveCount(0);
+  await expect(page.getByTestId("place-compare-with").getByRole("link", { name: "the United States" })).toHaveAttribute("href", "/compare/places?a=cbsa%3A31540&b=us%3A1");
+
+  // One metro read; no ranking among every metro and no relationship read.
+  expect(asked.filter((path) => path.startsWith("/api/v1/catalog/geographies/metros/"))).toHaveLength(1);
+  expect(asked.filter((path) => path === "/api/v1/place/distinctive" || path.endsWith("/related"))).toEqual([]);
+  await noViolations(page);
+  await noHorizontalScroll(page);
+});
+
+test("a metro's CBSA code settles on its named address, and an unknown metro is not found", async ({ page }) => {
+  await ready(page, "/metro/31540");
+  await expect(page).toHaveURL(/\/metro\/madison-wi-metro-area$/);
+  await installPlaceFixtures(page);
+  await page.goto("/metro/nowhere-metro-area");
+  await expect(page.getByTestId("place-not-found")).toContainText("No metro or micro area is published under that name or code.");
+});
+
+test("a state page lists the metros reaching into it", async ({ page }) => {
+  await ready(page, "/us/wisconsin");
+  await expect(page.getByTestId("place-state-metros").getByRole("link", { name: "Madison, WI Metro Area" })).toHaveAttribute("href", "/metro/madison-wi-metro-area");
 });

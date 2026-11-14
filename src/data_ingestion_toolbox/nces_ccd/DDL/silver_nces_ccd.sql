@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS silver_nces_ccd.school_location (
 );
 
 CREATE INDEX IF NOT EXISTS nces_ccd_location_school_idx ON silver_nces_ccd.school_location (ncessch);
+-- A county's or a state's schools in one geocode file, read without scanning
+-- every school (students per teacher reads placement first).
+CREATE INDEX IF NOT EXISTS nces_ccd_location_county_idx ON silver_nces_ccd.school_location (geo_id, run_id);
+CREATE INDEX IF NOT EXISTS nces_ccd_location_state_idx ON silver_nces_ccd.school_location (state_fips, run_id);
 
 -- Every school of every replayed directory file, with its status that year.
 CREATE TABLE IF NOT EXISTS silver_nces_ccd.school_directory (

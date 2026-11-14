@@ -132,6 +132,8 @@ import {
   unsupportedViewModes,
 } from "../lib/viewModes";
 import { displayMetricName, formatNumber } from "../lib/format";
+import { describePublishedYears } from "../lib/publishedYears";
+import { MetricName } from "./MetricName";
 import {
   GEO_GRAIN_LABELS,
   GEO_GRAIN_ORDER,
@@ -152,7 +154,10 @@ import type { SaveOutcome } from "../lib/savedAnalysis";
 import { discoverTileMetadata, loadPreviewTileFeatures } from "../lib/tiles";
 import {
   EXPLORER_CHOROPLETH_LAYERS,
+  EXPLORER_TILE_MAXZOOM,
+  EXPLORER_TILE_MINZOOM,
   US_OVERVIEW_VIEW,
+  boundaryTileUrl,
   pitchForMapMode,
   syncExplorerMapMode,
   syncLayerFilter,
@@ -364,6 +369,14 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
     return [...byStart].map(([start, count]) => ({ start, count }));
   }, [periods]);
+  // The status row's year count, from the same listing the period picker
+  // reads; a listing the page bound cut short is a lower bound.
+  const publishedYearsMessage =
+    periodsStatus.state === "ok"
+      ? describePublishedYears(periods)
+      : periodsStatus.state === "bad" && periods.length
+        ? describePublishedYears(periods, false)
+        : periodsStatus.message;
   const [releases, setReleases] = useState<MetricRelease[]>([]);
   const [releasesStatus, setReleasesStatus] = useState<RequestStatus>({
     state: "idle",
@@ -391,8 +404,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     complete: boolean;
   }>({ total: null, complete: true });
   const [distribution, setDistribution] = useState<DistributionResponse | null>(null);
-  // The polygons currently drawn, kept so a state selection can fit their
+  // The decoded zoom-0 preview tile, kept so a state selection can fit its
   // extent; set once the layers exist so the fit never runs ahead of them.
+  // The map draws from the vector source, not from these polygons.
   const [choroplethFeatures, setChoroplethFeatures] = useState<FeatureLike[]>([]);
   const fittedStateRef = useRef("");
   const [distributionStatus, setDistributionStatus] = useState<RequestStatus>({
@@ -1127,7 +1141,8 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
     }
 
     const request = observationTracker.begin();
-    setObservationStatus({ state: "loading", message: `loading ${selectedMetric}` });
+    // The plain name, never the code: the status shows while the page loads (WEB-144).
+    setObservationStatus({ state: "loading", message: `loading ${selectedMetricMeta ? displayMetricName(selectedMetricMeta) : "the measure"}` });
 
     async function loadObservations(source: ExplorerSource) {
       try {
@@ -1637,9 +1652,18 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
       removeChoropleth();
       const geoFilter = tileFilterForGeoLevel(selectedGeoLevel) as FilterSpecification;
 
+      // The polygons are drawn from the tile pyramid, not from the decoded
+      // sample. The sample is the zoom-0 tile: the whole world in 4,096
+      // units, about 10 km each, so a county border drawn from it is a
+      // staircase at state zoom (a Wisconsin lakeshore drawn as
+      // blocks). A vector source asks for the tile at the zoom on screen,
+      // which carries the boundary at the detail that zoom can show. The
+      // sample is kept for what it is good for: a state's extent to fit.
       map.addSource("choropleth", {
-        type: "geojson",
-        data: featureCollection as FeatureCollection,
+        type: "vector",
+        tiles: [boundaryTileUrl(tileMetadata.tileTemplate, window.location.origin)],
+        minzoom: EXPLORER_TILE_MINZOOM,
+        maxzoom: EXPLORER_TILE_MAXZOOM,
       });
 
       map.addLayer(
@@ -1647,6 +1671,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-fill",
           type: "fill",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           paint: {
             "fill-color": buildChoroplethMatchExpression(
@@ -1667,6 +1692,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-extrusion",
           type: "fill-extrusion",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           layout: {
             visibility: mapMode === "extrusion" ? "visible" : "none",
@@ -1695,6 +1721,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-outline",
           type: "line",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: geoFilter,
           paint: {
             "line-color": "#22384d",
@@ -1715,6 +1742,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           id: "choropleth-selected",
           type: "line",
           source: "choropleth",
+          "source-layer": sourceLayer,
           filter: buildSelectionFilter(
             selectedJoinValue,
             tileMetadata.joinKey,
@@ -2311,12 +2339,26 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           message={distributionStatus.message}
           testId="distribution-status"
         />
+        {/* Years, not releases: a release identity is a load's capture time
+            for some sources, so counting them read as eleven years of data
+            where two were published (WEB-158). */}
         <StatusPill
-          state={releasesStatus.state}
-          label="Releases"
-          message={releasesStatus.message}
-          testId="releases-status"
+          state={periodsStatus.state}
+          label="Years"
+          message={publishedYearsMessage}
+          testId="years-status"
         />
+        {/* The release listing is still read for the publication picker; it
+            is shown here only when that read failed or was cut short, which
+            the picker alone would not say. */}
+        {releasesStatus.state === "bad" ? (
+          <StatusPill
+            state={releasesStatus.state}
+            label="Releases"
+            message={releasesStatus.message}
+            testId="releases-status"
+          />
+        ) : null}
       </section>
 
       <div className="workspace-tabs" role="tablist" aria-label="Explorer views">
@@ -2700,7 +2742,9 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
             </p>
           ) : null}
           {requestedMetricNotice ? (
-            <p className="subtle" data-testid="requested-metric-note">
+            // Quotes the code the link asked for, which no catalog row names,
+            // so there is no label to show instead (WEB-144).
+            <p className="subtle" data-testid="requested-metric-note" data-provenance="link">
               {requestedMetricNotice}
             </p>
           ) : null}
@@ -2953,7 +2997,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
                     <td>{observationName(geographyById.get(String(item.geo_id ?? "")) || item)}</td>
                     <td>{String(item.geo_level || "-")}</td>
                     <td>{observationPeriodLabel(item) || "-"}</td>
-                    <td>{item.metric_code}</td>
+                    <td><MetricName metric={item.metric_label || item.metric_code !== selectedMetricMeta?.metric_code ? (item as MetricSummary) : selectedMetricMeta} code={String(item.metric_code ?? "")} /></td>
                     {/* A missing or suppressed value is never rendered as a
                         number; the source's own status says why. */}
                     <td>{item.value ?? "-"}</td>
@@ -3032,7 +3076,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
           ) : null}
         </article>
         <article className="card workspace-panel" data-active={effectiveTab === "metadata"}>
-          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? `${displayMetricName(selectedMetricMeta)} (${selectedMetricMeta.metric_code})` : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={selectedPeriod || observations[0]?.period_start || observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
+          <SourceNote source={selectedMetricMeta?.source_code} sourceName={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.source_name ?? "")} referenceUrl={String(sourceSystems[String(selectedMetricMeta?.source_code ?? "")]?.reference_url ?? "")} dataset={selectedDataset ? selectedDataset.toUpperCase() : activeSource?.tabLabel} metric={selectedMetricMeta ? <MetricName metric={selectedMetricMeta} /> : null} geography={selectedStateFips ? `${selectedGeoLevel.toLowerCase()}s in selected state` : `United States ${selectedGeoLevel.toLowerCase()}s`} period={selectedPeriod || observations[0]?.period_start || observations[0]?.period || observations[0]?.observation_date} updatedAt={selectedMetricMeta?.harvested_at} caveats="Validate geographies and coverage before drawing conclusions from sparse source-series values." />
         </article>
         {viewModes.quality.supported ? (
           <article className="card workspace-panel" data-active={effectiveTab === "quality"}>

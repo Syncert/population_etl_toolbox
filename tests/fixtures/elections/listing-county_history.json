@@ -1,0 +1,56 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "dataverse_shareable_presidential_county_returns_1868_2020.Rdata",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 5028532,
+    "filename": "dataverse_shareable_presidential_county_returns_1868_2020.Rdata",
+    "contentType": "application/octet-stream"
+   }
+  },
+  {
+   "label": "County_Level_Dataset_Manual_READ_ME.pdf",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 5028533,
+    "filename": "County_Level_Dataset_Manual_READ_ME.pdf",
+    "contentType": "application/pdf"
+   }
+  },
+  {
+   "label": "dataverse_shareable_us_senate_county_returns_1908_2020.Rdata",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 5028534,
+    "filename": "dataverse_shareable_us_senate_county_returns_1908_2020.Rdata",
+    "contentType": "application/octet-stream"
+   }
+  },
+  {
+   "label": "dataverse_shareable_gubernatorial_county_returns_1865_2020.Rdata",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 5028535,
+    "filename": "dataverse_shareable_gubernatorial_county_returns_1865_2020.Rdata",
+    "contentType": "application/octet-stream"
+   }
+  },
+  {
+   "label": "1868_2020_presvote.tab",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 5028540,
+    "filename": "1868_2020_presvote.tab",
+    "contentType": "text/tab-separated-values",
+    "originalFileName": "1868_2020_presvote.csv"
+   }
+  }
+ ]
+}

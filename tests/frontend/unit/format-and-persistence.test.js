@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   DISPLAY_LOCALE,
   displayMetricName,
+  metricNameNote,
   formatDate,
   formatNumber,
   formatTime,
@@ -49,6 +50,31 @@ describe("frontend formatting and saved-chart persistence", () => {
     );
     expect(displayMetricName({ metric_display_name: "Estimate!!Population!Total" })).toBe("Population - Total");
     expect(displayMetricName(null)).toBe("Untitled metric");
+  });
+
+  test("a metric's name is the API's plain label when it serves one", () => {
+    // Covers: WEB-144 — the label a reader sees comes from the API's
+    // definitions (A-2), not from this client reformatting a provider label.
+    expect(
+      displayMetricName({
+        metric_code: "CENSUS_ACS:acs5:B19083_001",
+        metric_display_name: "Estimate!!Gini Index",
+        metric_label: "Gini index of income inequality",
+        metric_label_status: "draft",
+      }),
+    ).toBe("Gini index of income inequality");
+  });
+
+  test("a metric's hover text says whether its label is reviewed, then its code", () => {
+    // Covers: WEB-144 — the code leaves the visible name but stays findable.
+    expect(
+      metricNameNote({ metric_code: "CENSUS_ACS:acs5:B19083_001", metric_label_status: "draft" }),
+    ).toBe("Plain label awaiting review · CENSUS_ACS:acs5:B19083_001");
+    expect(metricNameNote({ metric_code: "BLS:x", metric_label_status: "provider" })).toBe(
+      "The publisher's own label · BLS:x",
+    );
+    expect(metricNameNote({ metric_code: "BLS:x", metric_label_status: "approved" })).toBe("BLS:x");
+    expect(metricNameNote(null, "BLS:y")).toBe("BLS:y");
   });
 
   test("formats numbers, dates and times in the one chosen locale", () => {

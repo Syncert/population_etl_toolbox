@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
+
 import httpx
 
 TOKEN = "CDC:unit-test-token"
@@ -62,3 +65,25 @@ def socrata_response(
     if headers:
         kwargs["headers"] = headers
     return httpx.Response(status_code, request=request, **kwargs)
+
+
+class MemoryPageLedger:
+    """An in-memory stand-in for ``control.cdc_release_page``.
+
+    ``resume`` seeds what an unfinished earlier run captured:
+    ``(run_id, [(offset, rows, capture_id)])``.
+    """
+
+    def __init__(
+        self, resume: tuple[UUID | None, list[tuple[int, int, UUID]]] | None = None
+    ) -> None:
+        self.pages: list[dict[str, Any]] = []
+        self.resume = resume or (None, [])
+
+    def record(self, **page: Any) -> None:
+        self.pages.append(page)
+
+    def resumable(
+        self, asset: Any, *, watermark: int, page_size: int
+    ) -> tuple[UUID | None, list[tuple[int, int, UUID]]]:
+        return self.resume

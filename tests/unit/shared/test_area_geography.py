@@ -109,3 +109,69 @@ def test_a_malformed_file_is_refused(payload: bytes, parser: str) -> None:
             parse_regions_and_divisions(payload, vintage=2024)
         else:
             parse_cbsa_delineation(payload, delineation_vintage=2023)
+
+
+def _cbsa_boundary(code: str, *, field: str = "CBSAFP") -> bytes:
+    import io
+    import zipfile
+
+    import shapefile
+
+    shp, shx, dbf = io.BytesIO(), io.BytesIO(), io.BytesIO()
+    writer = shapefile.Writer(shp=shp, shx=shx, dbf=dbf, shapeType=shapefile.POLYGON)
+    writer.field(field, "C", size=5)
+    writer.field("NAMELSAD", "C", size=100)
+    writer.poly(
+        [[[-89.5, 43.0], [-89.5, 43.2], [-89.3, 43.2], [-89.3, 43.0], [-89.5, 43.0]]]
+    )
+    writer.record(code, "Madison, WI Metro Area")
+    writer.close()
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        for suffix, buffer in (("shp", shp), ("shx", shx), ("dbf", dbf)):
+            archive.writestr(f"cb_2023_us_cbsa_500k.{suffix}", buffer.getvalue())
+    return payload.getvalue()
+
+
+@pytest.mark.parametrize("field", ["CBSAFP", "GEOID"])
+def test_a_cbsa_boundary_is_keyed_by_its_omb_code_and_names_nothing(field: str) -> None:
+    """Covers: ETL-105 — the CBSA polygon carries the delineation vintage and no attributes.
+
+    The metro's name and kind come from the delineation file that lists its
+    counties. The boundary file's "Madison, WI Metro Area" would be a second
+    attribute version renaming every metro, so a metro boundary carries none.
+    """
+    from data_ingestion_toolbox.silver_ref.geography_pipeline import (
+        parse_boundary_capture,
+    )
+
+    (record,) = parse_boundary_capture(
+        _cbsa_boundary("31540", field=field), geo_type="metro", boundary_vintage=2023
+    )
+    assert record.geo_id == "cbsa:31540"
+    assert record.boundary_vintage == 2023
+    assert record.geography is None
+    assert '"type":"Polygon"' in record.geojson
+
+
+def test_a_cbsa_boundary_without_a_five_digit_code_is_refused() -> None:
+    """Covers: ETL-105 — no polygon is attached to a guessed identity."""
+    from data_ingestion_toolbox.silver_ref.geography_pipeline import (
+        parse_boundary_capture,
+    )
+
+    with pytest.raises(ValueError, match="five-digit code"):
+        parse_boundary_capture(
+            _cbsa_boundary("3154"), geo_type="metro", boundary_vintage=2023
+        )
+
+
+def test_the_area_release_captures_the_boundary_of_its_own_delineation() -> None:
+    """Covers: ETL-105 — the polygons are the delineation the membership follows."""
+    from data_ingestion_toolbox.silver_ref.area_geography import AREA_RELEASES
+
+    for release in AREA_RELEASES.values():
+        assert release.cbsa_boundary_url.endswith(
+            f"/GENZ{release.delineation_vintage}/shp/"
+            f"cb_{release.delineation_vintage}_us_cbsa_500k.zip"
+        )

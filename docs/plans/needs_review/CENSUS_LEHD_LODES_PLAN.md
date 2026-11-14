@@ -192,6 +192,11 @@ states' `aux` files). Feeds the Work and Money chapter.
   (default 1) registered year and fetches nothing beyond the two metadata
   files while a state's vintage is unchanged. State-years run one at a time
   through the one-slot `census_lodes_files` pool.
+  The years before the newest load once with
+  `python -m data_ingestion_toolbox.census_lodes.history` (build-out W-9,
+  ETL-108): resumable by state-year, publishing only when every requested
+  year is in, with the served sums precomputed into
+  `gold_census_lodes.observation_fact`.
 - **Control grain:** one slice per state-year (`control.census_lodes_slice`)
   with one row per family (`control.census_lodes_file`), not per segment
   and job type, because only `S000`/`JT00` is registered.

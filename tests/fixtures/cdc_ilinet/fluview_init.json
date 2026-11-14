@@ -1,0 +1,138 @@
+{
+  "seasons": [
+    {
+      "seasonid": 65,
+      "id": 65,
+      "enabled": 1,
+      "endweek": 3327,
+      "startweek": 3379,
+      "label": "2025-26",
+      "description": "Season 2025-26",
+      "hasstatedata": 1
+    },
+    {
+      "seasonid": 64,
+      "id": 64,
+      "enabled": 1,
+      "endweek": 3275,
+      "startweek": 3326,
+      "label": "2024-25",
+      "description": "Season 2024-25",
+      "hasstatedata": 1
+    },
+    {
+      "seasonid": 49,
+      "id": 49,
+      "enabled": 1,
+      "endweek": 2488,
+      "startweek": 2544,
+      "label": "2009-10",
+      "description": "Season 2009-10",
+      "hasstatedata": 0
+    }
+  ],
+  "hhsregion": [
+    {
+      "hhsregionid": 10,
+      "hhsregionname": "Region 10",
+      "hhsregionnumber": 10,
+      "hhsregionstates": "Alaska, Idaho, Oregon, Washington",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 9,
+      "hhsregionname": "Region 9",
+      "hhsregionnumber": 9,
+      "hhsregionstates": "Arizona, California, Guam, Hawaii, Los Angeles, Nevada",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 8,
+      "hhsregionname": "Region 8",
+      "hhsregionnumber": 8,
+      "hhsregionstates": "Colorado, Montana, North Dakota, South Dakota, Utah, Wyoming",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 7,
+      "hhsregionname": "Region 7",
+      "hhsregionnumber": 7,
+      "hhsregionstates": "Iowa, Kansas, Missouri, Nebraska",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 6,
+      "hhsregionname": "Region 6",
+      "hhsregionnumber": 6,
+      "hhsregionstates": "Arkansas, Louisiana, New Mexico, Oklahoma, Texas",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 5,
+      "hhsregionname": "Region 5",
+      "hhsregionnumber": 5,
+      "hhsregionstates": "Chicago, Illinois, Indiana, Michigan, Minnesota, Ohio, Wisconsin",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 4,
+      "hhsregionname": "Region 4",
+      "hhsregionnumber": 4,
+      "hhsregionstates": "Alabama, Florida, Georgia, Kentucky, Mississippi, North Carolina, South Carolina, Tennessee",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 3,
+      "hhsregionname": "Region 3",
+      "hhsregionnumber": 3,
+      "hhsregionstates": "Delaware, District of Columbia, Maryland, Pennsylvania, Virginia, West Virginia",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 2,
+      "hhsregionname": "Region 2",
+      "hhsregionnumber": 2,
+      "hhsregionstates": "New Jersey, New York, New York City, Puerto Rico, Virgin Islands",
+      "isactive": 1
+    },
+    {
+      "hhsregionid": 1,
+      "hhsregionname": "Region 1",
+      "hhsregionnumber": 1,
+      "hhsregionstates": "Connecticut, Maine, Massachusetts, New Hampshire, Rhode Island, Vermont ",
+      "isactive": 1
+    }
+  ],
+  "states": [
+    {
+      "stateid": 59,
+      "statename": "Los Angeles",
+      "statefips": "91        "
+    },
+    {
+      "stateid": 58,
+      "statename": "New York City",
+      "statefips": "57        "
+    },
+    {
+      "stateid": 55,
+      "statename": "Puerto Rico",
+      "statefips": "72        "
+    },
+    {
+      "stateid": 50,
+      "statename": "Wisconsin",
+      "statefips": "55        "
+    },
+    {
+      "stateid": 33,
+      "statename": "New York",
+      "statefips": "36        "
+    },
+    {
+      "stateid": 5,
+      "statename": "California",
+      "statefips": "06        "
+    }
+  ]
+}

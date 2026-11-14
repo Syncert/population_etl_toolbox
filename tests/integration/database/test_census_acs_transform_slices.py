@@ -1,16 +1,18 @@
 """The ACS silver transform reads a large year in slices and resumes, against real PostgreSQL.
 
-Covers: ETL-082
+Covers: ETL-082, ETL-087
 """
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import polars as pl
 import pytest
 from psycopg2.extensions import connection
 
@@ -126,11 +128,16 @@ def _facts(factory: Callable[[], connection]) -> list[tuple]:
 
 
 def _delete_facts(factory: Callable[[], connection]) -> None:
+    """Remove the year's facts and the record of which slices produced them."""
     writer = factory()
     try:
         with writer.cursor() as cursor:
             cursor.execute(
                 "DELETE FROM silver_census.fact_demographics WHERE estimate_year = %s",
+                (YEAR,),
+            )
+            cursor.execute(
+                "DELETE FROM silver_census.transform_slice_state WHERE year = %s",
                 (YEAR,),
             )
         writer.commit()
@@ -148,6 +155,12 @@ def two_slice_year(
     writer = factory()
     try:
         with writer.cursor() as cursor:
+            # A slice state left by an interrupted earlier session would make
+            # this session's first transform skip what it must write.
+            cursor.execute(
+                "DELETE FROM silver_census.transform_slice_state WHERE year = %s",
+                (YEAR,),
+            )
             _seed_time(cursor, TIME_SK, TIME_DATE)
             seed_geography(
                 cursor, geo_type="state", state_fips="10", vintage=YEAR, name="Delaware"
@@ -178,6 +191,10 @@ def two_slice_year(
             cursor.execute(
                 "DELETE FROM silver_census.transform_checkpoint WHERE resume_key = ANY(%s)",
                 (list(RESUME_KEYS),),
+            )
+            cursor.execute(
+                "DELETE FROM silver_census.transform_slice_state WHERE year = %s",
+                (YEAR,),
             )
             cursor.execute(
                 "DELETE FROM silver_census.fact_demographics WHERE estimate_year = %s",
@@ -220,7 +237,7 @@ def _record_fetches(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def test_a_sliced_year_writes_exactly_the_facts_the_whole_year_writes(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-082 — slicing by dataset, level and state changes no fact."""
+    """Covers: ETL-082 â€” slicing by dataset, level and state changes no fact."""
     factory = two_slice_year
     expected_changed = (len(SEEDED_PLACES) + 1) * 2
 
@@ -232,26 +249,132 @@ def test_a_sliced_year_writes_exactly_the_facts_the_whole_year_writes(
     monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
     fetched = _record_fetches(monkeypatch)
     assert transform.transform_census_to_silver() == expected_changed
-    assert fetched == ["acs5/place/10", "acs5/state/10"]
+    # Slices run concurrently, so they are read in no fixed order.
+    assert sorted(fetched) == ["acs5/place/10", "acs5/state/10"]
     assert _facts(factory) == whole_year
+
+
+def _range_bounds(key: str) -> tuple[str, str]:
+    low, high = key.rsplit("/[", 1)[1].rstrip(")").split(",")
+    return low, high
+
+
+def test_an_oversized_slice_read_as_code_ranges_writes_the_same_facts(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — a state slice read as place-code ranges changes no fact."""
+    factory = two_slice_year
+    expected_changed = (len(SEEDED_PLACES) + 1) * 2
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == expected_changed
+    by_state = _facts(factory)
+
+    _delete_facts(factory)
+    # The place slice is over the threshold and is cut at its place codes
+    # into about four ranges; the state level is never split.
+    place_rows = _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_census.observation_revision "
+        "WHERE year = %s AND geo_level = 'place'",
+        (YEAR,),
+    )[0][0]
+    monkeypatch.setattr(transform, "_SLICE_SPLIT_ROW_THRESHOLD", place_rows // 4)
+    fetched = _record_fetches(monkeypatch)
+    assert transform.transform_census_to_silver() == expected_changed
+    assert "acs5/state/10" in fetched
+    # Rows with no place code are read as their own part (none here).
+    assert "acs5/place/10/[null]" in fetched
+    ranges = sorted(
+        _range_bounds(key)
+        for key in fetched
+        if key not in {"acs5/state/10", "acs5/place/10/[null]"}
+    )
+    assert 3 <= len(ranges) <= 5
+    # Contiguous, and open at both ends: every place code is in one range.
+    assert ranges[0][0] == "" and ranges[-1][1] == ""
+    ranges.sort(key=lambda bounds: bounds[0])
+    assert all(a[1] == b[0] for a, b in itertools.pairwise(ranges))
+    assert _facts(factory) == by_state
+
+    # The next run reuses the ranges the ledger records, so their
+    # fingerprints hold and nothing is read again.
+    fetched.clear()
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == []
+
+
+def test_a_slice_read_that_runs_too_long_is_read_again_in_halves(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — a timed-out read splits, logs, finishes, and stays split."""
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    real = transform._fetch_raw_frame
+    fetched: list[str] = []
+
+    def place_read_times_out(hook, year, raw_slice=transform.WHOLE_YEAR):
+        fetched.append(raw_slice.key)
+        if raw_slice.key == "acs5/place/10":
+            raise transform.SliceReadTimeout(raw_slice.key)
+        return real(hook, year, raw_slice)
+
+    monkeypatch.setattr(transform, "_fetch_raw_frame", place_read_times_out)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    assert fetched[0] == "acs5/place/10" or "acs5/place/10" in fetched
+    assert "acs5/place/10/[null]" in fetched
+    halves = sorted(
+        key
+        for key in fetched
+        if key.startswith("acs5/place/10/") and key != "acs5/place/10/[null]"
+    )
+    assert len(halves) == 2
+    middle = _range_bounds(halves[0])[1] or _range_bounds(halves[1])[1]
+    assert sorted(_range_bounds(key) for key in halves) == [
+        ("", middle),
+        (middle, ""),
+    ]
+    assert len(_facts(factory)) == (len(SEEDED_PLACES) + 1) * 2
+    assert _rows(
+        factory,
+        "SELECT slice_key FROM silver_census.transform_slice_state "
+        "WHERE year = %s ORDER BY slice_key",
+        (YEAR,),
+    ) == [(key,) for key in sorted([*halves, "acs5/place/10/[null]", "acs5/state/10"])]
+
+    # The next run plans the halves from the ledger and skips them unchanged,
+    # rather than timing out on the whole slice again.
+    fetched.clear()
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == []
+
+
+def test_a_raw_read_past_its_deadline_raises_rather_than_holding_the_run(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-082 — the deadline spans the cursor's fetches, not one statement."""
+    monkeypatch.setattr(transform, "_RAW_FETCH_TIMEOUT_SECONDS", 1e-9)
+    hook = PostgresHookStub(two_slice_year)
+    place = transform.RawSlice(dataset="acs5", geo_level="place", state_fips="10")
+    with pytest.raises(transform.SliceReadTimeout, match="acs5/place/10"):
+        transform._fetch_raw_frame(hook, YEAR, place)
 
 
 def test_a_retry_under_the_same_key_resumes_after_the_last_finished_slice(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-082 — a finished slice is not read again; an interrupted one is."""
+    """Covers: ETL-082 â€” a finished slice is not read again; an interrupted one is."""
     factory = two_slice_year
     monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
     real_upsert = transform._upsert_silver_rows
-    calls = {"n": 0}
 
-    def dies_on_second_slice(hook, df, load_batch_id, ingested_at):
-        calls["n"] += 1
-        if calls["n"] == 2:
+    # Slices run concurrently, so the interruption is named by slice rather
+    # than by its position: the state slice dies, the place slice finishes.
+    def dies_on_the_state_slice(hook, df, load_batch_id, ingested_at):
+        if "state" in set(df["geo_level"].to_list()):
             raise RuntimeError("Docker froze")
         return real_upsert(hook, df, load_batch_id, ingested_at)
 
-    monkeypatch.setattr(transform, "_upsert_silver_rows", dies_on_second_slice)
+    monkeypatch.setattr(transform, "_upsert_silver_rows", dies_on_the_state_slice)
     with pytest.raises(RuntimeError, match="Docker froze"):
         transform.transform_census_to_silver(resume_key="etl082-resume")
     checkpoints = _rows(
@@ -273,9 +396,10 @@ def test_a_retry_under_the_same_key_resumes_after_the_last_finished_slice(
     assert transform.transform_census_to_silver(resume_key="etl082-resume") == 0
     assert fetched == []
 
-    # A new run (or no key) replays every slice; equal facts change nothing.
+    # A new run (or no key) skips every slice finished against the same
+    # content (ETL-087), so a backfill resumes across runs.
     assert transform.transform_census_to_silver() == 0
-    assert fetched == ["acs5/place/10", "acs5/state/10"]
+    assert fetched == []
     assert len(_facts(factory)) == (len(SEEDED_PLACES) + 1) * 2
     assert _rows(
         factory,
@@ -287,7 +411,7 @@ def test_a_retry_under_the_same_key_resumes_after_the_last_finished_slice(
 def test_a_small_year_under_a_key_is_one_whole_year_checkpoint(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-082 — a year under the threshold is read whole and checkpointed once."""
+    """Covers: ETL-082 â€” a year under the threshold is read whole and checkpointed once."""
     factory = two_slice_year
     fetched = _record_fetches(monkeypatch)
     assert (
@@ -306,7 +430,7 @@ def test_a_small_year_under_a_key_is_one_whole_year_checkpoint(
 def test_a_backfill_run_transforms_only_its_year(
     two_slice_year, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Covers: ETL-083 — a one-year run reads no other year's revisions."""
+    """Covers: ETL-083 â€” a one-year run reads no other year's revisions."""
     factory = two_slice_year
     fetched = _record_fetches(monkeypatch)
     assert transform.transform_census_to_silver(years=[YEAR - 1]) == 0
@@ -317,4 +441,304 @@ def test_a_backfill_run_transforms_only_its_year(
         transform.transform_census_to_silver(years=[YEAR])
         == (len(SEEDED_PLACES) + 1) * 2
     )
-    assert fetched == ["*"]
+    # A year-scoped run reads its year one dataset at a time (ETL-100).
+    assert fetched == ["acs5/*"]
+
+
+def test_a_later_run_skips_unchanged_slices_and_replays_a_changed_one(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 â€” the checkpoint is keyed by content, not by run."""
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert (
+        transform.transform_census_to_silver(resume_key="etl087-first")
+        == (len(SEEDED_PLACES) + 1) * 2
+    )
+    fetched = _record_fetches(monkeypatch)
+
+    # Another run, another key, the same content: nothing is read again.
+    assert transform.transform_census_to_silver(resume_key="etl087-second") == 0
+    assert fetched == []
+
+    # The Bureau revises Delaware's income: a new capture of the state slice. Both of its
+    # facts now name the new capture, and only that slice is read.
+    revised = STATE_PAYLOAD.replace(b'"82174"', b'"82999"')
+    run_id, _ = _capture(
+        factory, CaptureControl(factory, source_code="CENSUS_ACS"), revised, "state"
+    )
+    try:
+        assert transform.transform_census_to_silver(resume_key="etl087-third") == 2
+        assert fetched == ["acs5/state/10"]
+        assert ("state:10", "B19013_001", 82999) in {
+            (geo_id, variable, int(value))
+            for geo_id, variable, value, *_ in _facts(factory)
+            if value is not None
+        }
+    finally:
+        cleanup = factory()
+        try:
+            with cleanup.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM silver_census.fact_demographics WHERE estimate_year = %s",
+                    (YEAR,),
+                )
+                cursor.execute(
+                    "DELETE FROM silver_census.transform_checkpoint "
+                    "WHERE resume_key LIKE 'etl087-%%'"
+                )
+                cursor.execute(
+                    "DELETE FROM silver_census.observation_revision "
+                    "WHERE capture_id IN (SELECT capture_id FROM raw_capture.response_capture "
+                    "WHERE run_id = %s)",
+                    (run_id,),
+                )
+                delete_capture_graph(cursor, [run_id])
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def _slice_reference(meta: pl.DataFrame, geo: pl.DataFrame, raw_slice) -> str:
+    return transform.TransformReference(meta, geo).for_slice(YEAR, raw_slice)
+
+
+_META = pl.DataFrame(
+    {
+        "dataset": ["acs5", "acs5"],
+        "year": [YEAR, YEAR],
+        "variable_name": ["B01003_001E", "B19013_001E"],
+        "variable_label": ["Total", "Median household income"],
+        "variable_concept": [None, None],
+        "universe": [None, None],
+    }
+)
+_GEO = pl.DataFrame(
+    {
+        "geo_sk": [1, 2, 3],
+        "geo_level": ["state", "place", "metro"],
+        "geo_id": ["state:10", "state:10|place:01400", "cbsa:20100"],
+    }
+)
+
+
+def test_a_slice_reference_is_only_the_rows_the_slice_reads() -> None:
+    """Covers: ETL-087 — a slice's fingerprint folds in its own reference rows only."""
+    place_10 = transform.RawSlice(dataset="acs5", geo_level="place", state_fips="10")
+    before = _slice_reference(_META, _GEO, place_10)
+    assert before == _slice_reference(_META.reverse(), _GEO.reverse(), place_10)
+
+    unrelated_geo = pl.concat(
+        [
+            _GEO,
+            pl.DataFrame(
+                {
+                    "geo_sk": [4, 5, 6],
+                    "geo_level": ["metro", "tract", "place"],
+                    "geo_id": [
+                        "cbsa:99999",
+                        "state:10|county:001|tract:000100",
+                        "state:11|place:50000",
+                    ],
+                }
+            ),
+        ]
+    )
+    unrelated_meta = pl.concat(
+        [
+            _META,
+            pl.DataFrame(
+                {
+                    "dataset": ["acs5", "acs1"],
+                    "year": [YEAR - 1, YEAR],
+                    "variable_name": ["B25001_001E", "B25001_001E"],
+                    "variable_label": ["Housing units", "Housing units"],
+                    "variable_concept": [None, None],
+                    "universe": [None, None],
+                }
+            ),
+        ]
+    )
+    # Another level, another state, another year and another dataset.
+    assert _slice_reference(unrelated_meta, unrelated_geo, place_10) == before
+
+    # A place newly carried in its own state could map a row ledgered unmapped.
+    own_state = pl.concat(
+        [
+            _GEO,
+            pl.DataFrame(
+                {
+                    "geo_sk": [7],
+                    "geo_level": ["place"],
+                    "geo_id": ["state:10|place:01530"],
+                }
+            ),
+        ]
+    )
+    assert _slice_reference(_META, own_state, place_10) != before
+    # A metro slice reads every metro.
+    metro = transform.RawSlice(dataset="acs5", geo_level="metro", state_fips=None)
+    assert _slice_reference(_META, unrelated_geo, metro) != _slice_reference(
+        _META, _GEO, metro
+    )
+
+
+def _seed_variable(factory, dataset: str, year: int, table_id: str) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO raw_census.acs_variables "
+                "(dataset, year, variable_name, table_id, label, concept, predicate_type) "
+                "VALUES (%s, %s, %s, %s, 'Estimate!!Total', 'Fixture', 'int') "
+                "ON CONFLICT DO NOTHING",
+                (dataset, year, f"{table_id}_001E", table_id),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def _delete_variables(factory, table_id: str) -> None:
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM raw_census.acs_variables WHERE table_id = %s",
+                (table_id,),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+
+
+def test_an_unrelated_reference_change_leaves_a_finished_slice_skipped(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 — new geographies and variables elsewhere replay nothing.
+
+    The October 2026 monthly run re-transformed every slice of 1990-2021
+    because the fingerprint hashed the whole reference: new metros and a
+    widened 2009 tract table list invalidated years they do not touch.
+    """
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    fetched = _record_fetches(monkeypatch)
+
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            seed_geography(
+                cursor,
+                geo_type="state",
+                state_fips="11",
+                vintage=YEAR,
+                name="Elsewhere",
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    _seed_variable(factory, "acs5", YEAR - 1, "B99901")
+    _seed_variable(factory, "acs1", YEAR, "B99901")
+    try:
+        assert transform.transform_census_to_silver() == 0
+        assert fetched == []
+    finally:
+        _delete_variables(factory, "B99901")
+        cleanup = factory()
+        try:
+            with cleanup.cursor() as cursor:
+                delete_geography(cursor, "state:11")
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
+def test_a_wider_table_list_for_the_year_replays_its_slices(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 — new variables for a slice's dataset and year replay it."""
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+    fetched = _record_fetches(monkeypatch)
+
+    _seed_variable(factory, "acs5", YEAR, "B99902")
+    try:
+        # Replayed, and an identical replay changes no fact.
+        assert transform.transform_census_to_silver() == 0
+        assert sorted(fetched) == ["acs5/place/10", "acs5/state/10"]
+    finally:
+        _delete_variables(factory, "B99902")
+
+
+def test_a_legacy_fingerprint_still_matching_is_restamped_not_reread(
+    two_slice_year, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Covers: ETL-087 — the first run after the per-slice reference re-reads no unchanged slice.
+
+    Ledger rows written before it carry the whole-reference fingerprint. One
+    that still matches is skipped and rewritten in the new shape with its
+    serving columns untouched; one that does not is read again.
+    """
+    factory = two_slice_year
+    monkeypatch.setattr(transform, "_YEAR_SLICE_ROW_THRESHOLD", 0)
+    assert transform.transform_census_to_silver() == (len(SEEDED_PLACES) + 1) * 2
+
+    hook = PostgresHookStub(factory)
+    legacy = transform.legacy_transform_context(
+        transform._load_variable_metadata(hook), transform._load_geo_dim(hook)
+    )
+    place, state = (
+        transform.RawSlice(dataset="acs5", geo_level=level, state_fips="10")
+        for level in ("place", "state")
+    )
+    current = transform._finished_fingerprints(hook, YEAR)
+    writer = factory()
+    try:
+        with writer.cursor() as cursor:
+            # The place slice as the old code stamped it; the state slice as
+            # the old code stamped it before its content changed.
+            cursor.execute(
+                "UPDATE silver_census.transform_slice_state SET content_fingerprint = %s "
+                "WHERE year = %s AND slice_key = %s",
+                (
+                    transform.slice_fingerprint(hook, YEAR, place, legacy),
+                    YEAR,
+                    place.key,
+                ),
+            )
+            cursor.execute(
+                "UPDATE silver_census.transform_slice_state SET content_fingerprint = %s "
+                "WHERE year = %s AND slice_key = %s",
+                (
+                    transform.fingerprint_of(legacy, YEAR, state, (0, None)),
+                    YEAR,
+                    state.key,
+                ),
+            )
+        writer.commit()
+    finally:
+        writer.close()
+    serving_columns = _rows(
+        factory,
+        "SELECT slice_key, rows_changed, completed_at, last_changed_at "
+        "FROM silver_census.transform_slice_state WHERE year = %s AND slice_key = %s",
+        (YEAR, place.key),
+    )
+
+    fetched = _record_fetches(monkeypatch)
+    assert transform.transform_census_to_silver() == 0
+    assert fetched == [state.key]
+    assert transform._finished_fingerprints(hook, YEAR) == current
+    assert (
+        _rows(
+            factory,
+            "SELECT slice_key, rows_changed, completed_at, last_changed_at "
+            "FROM silver_census.transform_slice_state "
+            "WHERE year = %s AND slice_key = %s",
+            (YEAR, place.key),
+        )
+        == serving_columns
+    )

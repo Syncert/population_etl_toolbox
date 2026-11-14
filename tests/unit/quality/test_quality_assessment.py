@@ -37,6 +37,17 @@ def test_weekly_cadence_runs_every_deterministic_executor() -> None:
     )
 
 
+def test_a_weekly_run_can_leave_one_named_rule_out() -> None:
+    """Covers: DQ-005 — `exclude_rules` holds the gate past one rule, and refuses typos."""
+    weekly = select_executors("weekly")
+    held = select_executors("weekly", exclude_rules=["DQ-ACS-007"])
+    assert set(weekly) - set(held) == {"DQ-ACS-007"}
+    with pytest.raises(AssessmentError, match="DQ-ACS-070"):
+        select_executors("weekly", exclude_rules=["DQ-ACS-070"])
+    with pytest.raises(AssessmentError, match="nothing to run"):
+        select_executors("weekly", rule_id="DQ-ACS-007", exclude_rules=["DQ-ACS-007"])
+
+
 def test_monthly_cadence_adds_warn_only_plausibility() -> None:
     """Covers: DQ-005, DQ-006 — plausibility joins only the monthly sweep."""
     monthly = select_executors("monthly")

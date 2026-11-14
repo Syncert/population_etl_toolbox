@@ -306,7 +306,13 @@ def test_every_geo_level_filter_matches_the_grain_the_source_projects() -> None:
         assert condition.startswith(f"{projection} = ") or condition.startswith(
             f"UPPER({projection}) = "
         ), f"{source_code}: filter {condition!r} does not compare {projection!r}"
-        assert condition.endswith("= UPPER(:geo_level)"), source_code
+        # The bound word is normalised before it is bound, so it is either
+        # upper-cased again in SQL or compared as is against a column that
+        # already holds the vocabulary word (ACS, through geo_grain), which is
+        # the form an index can serve.
+        assert condition.endswith("= UPPER(:geo_level)") or (
+            condition == f"{projection} = :geo_level"
+        ), source_code
 
     # The alias table only ever points into the vocabulary.
     assert normalize_geo_level("nation") == "NATIONAL"

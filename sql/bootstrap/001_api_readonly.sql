@@ -1,7 +1,16 @@
 -- The public analytical serving role: what the API and Martin may read.
 --
 -- ETL continues to connect as the warehouse owner; `api_reader` receives
--- SELECT on the gold schemas and nothing anywhere else. This file is the one
+-- SELECT on the gold schemas and nothing anywhere else.
+--
+-- Applied twice in a warehouse's life and then on every deploy: first by the
+-- Compose initdb mount, before any gold schema exists, and again as the last
+-- manifest asset (`api-readonly-grants`), which `apply_warehouse_manifest
+-- --only-flagged` re-applies whatever the ledger says. A schema created after
+-- the first pass is granted by the second; without it `/public-money` and
+-- `/governor-terms` answered 503 on OFFICE_LAB on 2026-11-06 because
+-- `gold_elections`, `gold_census_govfin` and `gold_irs_soi` were created
+-- after this file last ran. This file is the one
 -- statement of that policy -- `scripts/provision_api_readonly.py` applies it
 -- rather than repeating it, because two copies of a privilege policy drift and
 -- the copy that drifts is the one nobody reads.
@@ -37,7 +46,25 @@ $$;
 -- Belt and braces beside the grants below: even if a future schema is added to
 -- the list and a write privilege is granted by mistake, this role's sessions
 -- cannot write.
-ALTER ROLE api_reader SET default_transaction_read_only = on;
+--
+-- Guarded, because this file is re-applied on every deploy (the manifest's
+-- `api-readonly-grants` asset) and `ALTER ROLE` needs a privilege the
+-- warehouse owner of an externally hosted deployment may not hold; once the
+-- setting is there, there is nothing to alter.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_db_role_setting AS setting
+          JOIN pg_catalog.pg_roles AS role ON role.oid = setting.setrole
+         WHERE role.rolname = 'api_reader'
+           AND setting.setdatabase = 0
+           AND 'default_transaction_read_only=on' = ANY (setting.setconfig)
+    ) THEN
+        ALTER ROLE api_reader SET default_transaction_read_only = on;
+    END IF;
+END
+$$;
 
 -- `gold` is created here because the contract views live in it and the role
 -- must be able to see the schema before anything is granted in it. It is owned
@@ -72,10 +99,12 @@ BEGIN
     FOREACH _schema IN ARRAY ARRAY[
         'gold', 'gold_glossary', 'gold_bea', 'gold_bls', 'gold_bls_qcew',
         'gold_cdc', 'gold_census', 'gold_census_bps', 'gold_census_cbp',
-        'gold_census_lodes', 'gold_census_sae', 'gold_eia', 'gold_epa_aqs',
+        'gold_census_govfin',
+        'gold_census_decennial', 'gold_cms_ltc', 'gold_nces_ipeds', 'gold_hhs_hospital_capacity', 'gold_cdc_covid_cases', 'gold_cdc_ilinet', 'gold_census_lodes', 'gold_census_sae', 'gold_dol_childcare', 'gold_eia', 'gold_elections',
+        'gold_epa_aqs',
         'gold_fbi', 'gold_fcc_bdc', 'gold_fema_nri', 'gold_fhfa_hpi',
-        'gold_fred', 'gold_hud_fmr_il', 'gold_irs_migration', 'gold_nass',
-        'gold_nces_ccd', 'gold_noaa_normals', 'gold_pep', 'gold_usda_ers'
+        'gold_fred', 'gold_hud_fmr_il', 'gold_irs_migration', 'gold_irs_soi', 'gold_nass',
+        'gold_nces_ccd', 'gold_noaa_climdiv', 'gold_noaa_normals', 'gold_noaa_storm_events', 'gold_pep', 'gold_treasury_mts', 'gold_usaspending', 'gold_usda_ers'
     ]
     LOOP
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = _schema) THEN

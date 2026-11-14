@@ -28,8 +28,9 @@ by race/ethnicity x sex x age band, and its clothing by occupation. Race and
 age are on the tract slices only separately today, and multiplying them
 assumes every group has the same age profile, which is false (Madison's
 Asian and Hispanic residents skew younger). The joint tables are the Bureau's
-sex-by-age-by-race tables B01001A-I; with B03002, B24010 and B25034 (year structure built, for
-facade aging) that is 12 tables.
+sex-by-age-by-race tables B01001A-I; with B24010 and B25034 (year structure built, for
+facade aging) that is 11 tables. Hispanic or Latino by race (B03002) is already a tract
+table for every state (v1.0 W-4), so the focus slice does not ask for it again.
 At every tract they would be about 24 million estimates a year; at Dane's
 ~107 tracts, about 35,000. The owner asked to keep disk use small and to stay
 at tract grain.
@@ -37,7 +38,7 @@ at tract grain.
 ## What changed
 
 - `AcsConfig.focus_counties`: a list of `FocusCounty(county_fips, label,
-  tables)`; Dane (55025) with B01001A-I, B03002, B24010, B25034 by default. Validated:
+  tables)`; Dane (55025) with B01001A-I, B24010, B25034 by default. Validated:
   five digits, a state that publishes tracts, at least one table, no repeats,
   each county once.
 - Variable metadata is synced for curated and focus tables
@@ -49,12 +50,23 @@ at tract grain.
   county's tables and refuses `tables` beside it.
 - The planner adds one tract slice per focus county per tract year, with its
   own variable-set hash.
-- Migration 036 adds `control.acs_ingestion_slices.county_fips` (NULL except on
+- Migration 043 adds `control.acs_ingestion_slices.county_fips` (NULL except on
   focus slices) and swaps the per-state unique index for one including it.
-- Catalog: ETL-085.
+- Catalog: ETL-137.
 
 ## Not in scope
 
 Gold serving of the new tables. They land in raw capture and silver like any
 tract table; whether the API serves them is a later catalog decision. The
 game reads its pinned summary at build time, not live.
+
+## Merged onto dev (2026-11-14)
+
+- Renumbered: migration 036 → 043 (dev's 036 is the metro grain), catalog
+  ETL-085 → ETL-137. 036's re-run now keeps 043's focus-county check.
+- Focus slices are planned for the ACS 5-year only: dev's tract years also
+  cover the 2000 census datasets, whose tracts lack these tables.
+- Dev's tract year scope is every year (2009-2024), so Dane's focus slices
+  cover the same years: 16 slices of one county each.
+- Dev's added-tables pass skips focus slices; its ledger keys a focus row by
+  its county so it never stands in for the state's tract row.

@@ -15,3 +15,11 @@ Expected source database:
 - Source table/layer seed: `gold.tile_boundary` (published as `counties`)
 - Tract layer: `gold.tile_tract` (published as `tracts`, zoom 6 to 14), the
   current Census tracts with their county's code and name
+- Place and metro layers (tiles-places-and-metros): function sources
+  `gold.tile_places` (published as `places`, zoom 6 to 14) and
+  `gold.tile_metros` (published as `metros`, zoom 0 to 12), reading
+  `gold_glossary.tile_boundary_version`. `?vintage=YYYY` draws that boundary
+  vintage; no vintage draws the newest; an unheld vintage draws nothing.
+  `/api/v1/catalog/tile-layers` lists the vintages held. Apply the gold DDL
+  before restarting Martin: it refuses to start when a declared function is
+  missing.

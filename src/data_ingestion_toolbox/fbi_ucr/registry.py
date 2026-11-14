@@ -323,7 +323,7 @@ def _summarized_product(
         # request per subject; verified live 2026-08-29 for ``V`` and
         # 2026-09-23 for the other nine offenses (every request 200).
         period_start="01-1990",
-        period_end="06-2023",
+        period_end="12-2025",
         state_scope=SUMMARIZED_STATE_SCOPE,
         agency_scope=REVIEWED_AGENCY_SCOPE,
         parser_contract_version="fbi-cde-summarized-v1",

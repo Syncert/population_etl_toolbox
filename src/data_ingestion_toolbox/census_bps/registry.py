@@ -155,9 +155,13 @@ def metric_key(measure_id: str, structure_type: str, frequency: str) -> str:
 
 
 def recent_periods(today: date, months: int) -> list[tuple[str, int, int]]:
-    """The calendar months before ``today``, oldest first, then their years' annual files.
+    """The calendar months before ``today``, oldest first, then the annual files.
 
-    A month not yet published answers 404 and is recorded empty.
+    The annual files are those of the years the months fall in, and always
+    the year before ``today``'s: from July on the window holds only this
+    year's months, yet the newest published year is last year's (its
+    December year-to-date file is out early in this year). A month or a year
+    not yet published answers 404 and is recorded empty.
     """
     year, month = today.year, today.month
     chosen: list[tuple[str, int, int]] = []
@@ -168,8 +172,10 @@ def recent_periods(today: date, months: int) -> list[tuple[str, int, int]]:
         if year >= FIRST_YEAR:
             chosen.append((MONTHLY, year, month))
     chosen.reverse()
-    years = sorted({item[1] for item in chosen if item[1] < today.year})
-    return chosen + [(ANNUAL, year, 12) for year in years]
+    years = {item[1] for item in chosen if item[1] < today.year}
+    if today.year - 1 >= FIRST_YEAR:
+        years.add(today.year - 1)
+    return chosen + [(ANNUAL, year, 12) for year in sorted(years)]
 
 
 def registered_periods(today: date) -> list[tuple[str, int, int]]:

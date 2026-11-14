@@ -76,6 +76,22 @@ FACTS = [
         "valid",
     ),
     FactContract(
+        "ELECTIONS",
+        SRC / "elections/DDL/silver_elections.sql",
+        "silver_elections.candidate_result",
+        "valid",
+        # A vote count MEDSL leaves as NA is quarantined, not kept: a
+        # candidate row with no count is a row the warehouse does not hold.
+        can_withhold=False,
+        value_column="candidate_votes",
+    ),
+    FactContract(
+        "CENSUS_GOVFIN",
+        SRC / "census_govfin/DDL/silver_census_govfin.sql",
+        "silver_census_govfin.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "FCC_BDC",
         SRC / "fcc_bdc/DDL/silver_fcc_bdc.sql",
         "silver_fcc_bdc.availability_row",
@@ -89,6 +105,38 @@ FACTS = [
         SRC / "noaa_normals/DDL/silver_noaa_normals.sql",
         "silver_noaa_normals.station_normal",
         "valid",
+    ),
+    FactContract(
+        "NOAA_CLIMDIV",
+        SRC / "noaa_climdiv/DDL/silver_noaa_climdiv.sql",
+        "silver_noaa_climdiv.county_month",
+        "valid",
+    ),
+    # A Table 9 heading line is printed `null`: `missing`, with no amount.
+    FactContract(
+        "TREASURY_MTS",
+        SRC / "treasury_mts/DDL/silver_treasury_mts.sql",
+        "silver_treasury_mts.statement_line",
+        "valid",
+        value_column="current_fytd_amount",
+    ),
+    # An amount USAspending writes as null is `missing`, with no amount.
+    FactContract(
+        "USASPENDING",
+        SRC / "usaspending/DDL/silver_usaspending.sql",
+        "silver_usaspending.geography_amount",
+        "valid",
+        value_column="amount",
+    ),
+    # A storm event is a record, not one number: each figure on it says
+    # whether NCEI published it (`damage_property_status` and its CHECK), and
+    # the counts served are derived from the events.
+    FactContract(
+        "NOAA_STORM_EVENTS",
+        SRC / "noaa_storm_events/DDL/silver_noaa_storm_events.sql",
+        "silver_noaa_storm_events.event",
+        "valid",
+        can_withhold=False,
     ),
     FactContract(
         "EPA_AQS",
@@ -117,9 +165,21 @@ FACTS = [
         value_column="returns",
     ),
     FactContract(
+        "IRS_SOI",
+        SRC / "irs_soi/DDL/silver_irs_soi.sql",
+        "silver_irs_soi.fact_observation",
+        "valid",
+    ),
+    FactContract(
         "BEA",
         SRC / "bea/DDL/silver_bea.sql",
         "silver_bea.fact_observation",
+        "valid",
+    ),
+    FactContract(
+        "DOL_CHILDCARE",
+        SRC / "dol_childcare/DDL/silver_dol_childcare.sql",
+        "silver_dol_childcare.fact_price",
         "valid",
     ),
     FactContract(
@@ -176,6 +236,50 @@ FACTS = [
         "CENSUS_SAIPE_SAHIE",
         SRC / "census_saipe_sahie/DDL/silver_census_sae.sql",
         "silver_census_sae.fact_estimate",
+        "valid",
+    ),
+    # A count the API returns as null is `missing`, with no number.
+    FactContract(
+        "CENSUS_DECENNIAL",
+        SRC / "census_decennial/DDL/silver_census_decennial.sql",
+        "silver_census_decennial.fact_count",
+        "valid",
+    ),
+    # A blank CMS figure is `missing`, with no number.
+    FactContract(
+        "CMS_LTC",
+        SRC / "cms_ltc/DDL/silver_cms_ltc.sql",
+        "silver_cms_ltc.facility_count",
+        "valid",
+    ),
+    # An IPEDS figure marked not applicable or not reported has no number.
+    FactContract(
+        "NCES_IPEDS",
+        SRC / "nces_ipeds/DDL/silver_nces_ipeds.sql",
+        "silver_nces_ipeds.institution_value",
+        "valid",
+    ),
+    # An HHS weekly figure HHS suppressed (-999999) or left blank has no number.
+    FactContract(
+        "HHS_HOSPITAL_CAPACITY",
+        SRC / "hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql",
+        "silver_hhs_hospital_capacity.facility_week_value",
+        "valid",
+    ),
+    # A CDC group is a count of published case records; a combination with no
+    # record is a group the API does not return, so nothing is withheld here.
+    FactContract(
+        "CDC_COVID_CASES",
+        SRC / "cdc_covid_cases/DDL/silver_cdc_covid_cases.sql",
+        "silver_cdc_covid_cases.slice_group",
+        "valid",
+        can_withhold=False,
+    ),
+    # An ILINet figure CDC marks X is `not_published` with no number.
+    FactContract(
+        "CDC_ILINET",
+        SRC / "cdc_ilinet/DDL/silver_cdc_ilinet.sql",
+        "silver_cdc_ilinet.week_value",
         "valid",
     ),
     FactContract(

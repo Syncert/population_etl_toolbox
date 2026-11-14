@@ -22,7 +22,7 @@ from data_ingestion_toolbox.capture import (
 
 from .client import fetch_archive
 from .config import SOURCE_CODE, NormalsConfig
-from .registry import ARCHIVE_PATH, ARCHIVE_VERSION, NORMALS_BASE_URL
+from .registry import ANNUAL, PRODUCTS
 
 PARSER_CONTRACT_VERSION = "noaa_normals_csv:v1"
 
@@ -53,15 +53,27 @@ def capture_archive(
     persist_capture: Callable[
         [Callable[[], Any], ResponseCapture], CaptureReceipt
     ] = persist_response_capture,
+    product: str = ANNUAL,
 ) -> tuple[UUID, str]:
-    """Capture the registered archive; return (run_id, file status)."""
+    """Capture one registered archive; return (run_id, file status).
+
+    ``unchanged`` compares with the last published capture of the same
+    product, so the annual and monthly archives never mask each other.
+    """
+    registered = PRODUCTS[product]
     runtime = config or NormalsConfig()
     capture_control = control or CaptureControl(
         connection_factory, source_code=SOURCE_CODE
     )
-    parameters = {"archive": ARCHIVE_VERSION}
+    # The annual read keeps its original parameters, so its watermark and
+    # request history read as before the monthly archive was added.
+    parameters = (
+        {"archive": registered.version}
+        if product == ANNUAL
+        else {"archive": registered.version, "product": product}
+    )
     run_id = capture_control.start_run(watermark=dict(parameters))
-    endpoint = f"{NORMALS_BASE_URL}{ARCHIVE_PATH}"
+    endpoint = f"{registered.base_url}{registered.path}"
     request = capture_control.start_request(
         run_id=run_id,
         endpoint=endpoint,
@@ -72,6 +84,7 @@ def capture_archive(
         response = fetch_archive(
             config=runtime,
             client=client,
+            product=product,
             on_retry=lambda error: capture_control.record_request_retry(
                 request.request_id, error=error
             ),
@@ -91,7 +104,7 @@ def capture_archive(
                 media_type="application/gzip",
                 payload=response.raw_bytes,
                 payload_schema_version=PARSER_CONTRACT_VERSION,
-                source_revision=ARCHIVE_VERSION,
+                source_revision=registered.version,
             ),
         )
         capture_control.finish_request(request.request_id, status="captured")
@@ -99,9 +112,10 @@ def capture_archive(
             connection_factory,
             """
             SELECT payload_checksum FROM control.noaa_normals_file
-            WHERE status = 'published' ORDER BY published_at DESC LIMIT 1
+            WHERE status = 'published' AND product = %s
+            ORDER BY published_at DESC LIMIT 1
             """,
-            (),
+            (product,),
         )
         status = (
             "unchanged"
@@ -111,15 +125,18 @@ def capture_archive(
         _execute(
             connection_factory,
             """
-            INSERT INTO control.noaa_normals_file (run_id, archive_version, capture_id, payload_checksum, status)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO control.noaa_normals_file (
+                run_id, archive_version, capture_id, payload_checksum, status, product
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 str(run_id),
-                ARCHIVE_VERSION,
+                registered.version,
                 str(receipt.capture_id),
                 receipt.payload_checksum,
                 status,
+                product,
             ),
         )
         capture_control.finish_run(run_id, status="success")

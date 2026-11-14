@@ -28,6 +28,9 @@ class LodesConfig(BaseModel):
     #: state-year is four files and the origin-destination file alone is
     #: tens of megabytes for a large state, so the default is the newest.
     recent_years: int = 1
+    #: Spawned worker processes the scheduled backfill of never-loaded years
+    #: runs at once (``census_lodes.plan``); the history command's default.
+    backfill_workers: int = 6
 
     @field_validator("postgres_conn_id", "user_agent")
     @classmethod
@@ -36,7 +39,7 @@ class LodesConfig(BaseModel):
             raise ValueError("must not be empty")
         return value
 
-    @field_validator("max_attempts", "recent_years")
+    @field_validator("max_attempts", "recent_years", "backfill_workers")
     @classmethod
     def _positive(cls, value: int) -> int:
         if value < 1:

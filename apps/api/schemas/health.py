@@ -43,6 +43,9 @@ class SourceContent(BaseModel):
     registered: bool
     metrics_total: int
     metrics_current: int
+    #: Still emitted, but its newest real value is older than its time grain
+    #: allows; served, and not counted as current.
+    metrics_ended: int = 0
     metrics_stale: int
     metrics_retired: int
     counts_are_complete: bool

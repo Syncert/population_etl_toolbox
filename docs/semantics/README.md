@@ -22,3 +22,11 @@ entry with status `approved` authorizes a derived quarter, year or window;
 the provider's own published formulas, never from units: where a provider states
 no formula, the entry is `not_aggregable`, and where the provider publishes the
 coarser value itself (BLS `M13`), that provider fact is served instead.
+
+`metric_definitions.json` (schema `definition.schema.json`) is the plain-language
+registry of every measure a place page shows (A-2): each entry names the metric
+codes it defines, a short label, a one-sentence definition, the unit, the
+universe and a caveat, from the place pages' own wording and the provider's
+documentation. The API serves an entry's label as `metric_label` with its
+status, so a `draft` is never presented as reviewed; a metric with no entry is
+served its provider's label (`data_ingestion_toolbox.semantics.definitions`).

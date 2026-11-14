@@ -142,7 +142,7 @@ def test_a_withheld_cell_has_no_value_and_the_publisher_harvests(cbp_warehouse) 
 def test_a_rerun_adds_nothing_and_a_corrected_file_is_kept_beside_the_old(
     cbp_warehouse,
 ) -> None:
-    """Covers: ETL-062 — the same bytes change nothing; a changed file keeps both checksums."""
+    """Covers: ETL-062, ETL-116 — the same bytes store nothing; a changed file keeps both checksums."""
     factory = cbp_warehouse
     first, _f, _p = cbp.run_to_gold(factory, "county", 2023)
     second, _f, _p = cbp.run_to_gold(factory, "county", 2023)
@@ -170,9 +170,20 @@ def test_a_rerun_adds_nothing_and_a_corrected_file_is_kept_beside_the_old(
         """,
         (KENT,),
     )
-    assert [row[2] for row in history] == [str(first), str(second), str(third)]
-    assert [row[0] for row in history] == ["61078", "61078", "61080"]
-    assert history[0][1] == history[1][1] != history[2][1]
+    assert [row[2] for row in history] == [str(first), str(third)]
+    assert [row[0] for row in history] == ["61078", "61080"]
+    assert history[0][1] != history[1][1]
+    # The second read repeats the first byte for byte: recorded, not stored again.
+    assert _rows(
+        factory,
+        "SELECT DISTINCT status FROM control.census_cbp_file WHERE run_id = %s",
+        (str(second),),
+    ) == [("unchanged",)]
+    assert _rows(
+        factory,
+        "SELECT COUNT(*) FROM silver_census_cbp.fact_observation WHERE run_id = %s",
+        (str(second),),
+    ) == [(0,)]
     assert (
         _rows(factory, "SELECT COUNT(*) FROM gold_census_cbp.observation_latest")
         == count

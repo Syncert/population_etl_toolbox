@@ -52,6 +52,11 @@ def _upsert_dimensions(cursor: Any) -> None:
             methodology_url = EXCLUDED.methodology_url,
             parser_contract_version = EXCLUDED.parser_contract_version,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_bls_qcew.dim_measure.measure_label, silver_bls_qcew.dim_measure.unit, silver_bls_qcew.dim_measure.period_kind, silver_bls_qcew.dim_measure.observation_basis, silver_bls_qcew.dim_measure.methodology_url, silver_bls_qcew.dim_measure.parser_contract_version)
+                      IS DISTINCT FROM
+                      (EXCLUDED.measure_label, EXCLUDED.unit, EXCLUDED.period_kind, EXCLUDED.observation_basis, EXCLUDED.methodology_url, EXCLUDED.parser_contract_version)
         """,
         [
             (
@@ -75,6 +80,11 @@ def _upsert_dimensions(cursor: Any) -> None:
             industry_title = EXCLUDED.industry_title,
             industry_level = EXCLUDED.industry_level,
             updated_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_bls_qcew.dim_industry.industry_title, silver_bls_qcew.dim_industry.industry_level)
+                      IS DISTINCT FROM
+                      (EXCLUDED.industry_title, EXCLUDED.industry_level)
         """,
         [
             (
@@ -105,7 +115,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
             _upsert_dimensions(cursor)
             expected = 0
             for industry_code, year, period, capture_id, status in slices:
-                if status == "empty":
+                if status in ("empty", "unchanged"):
                     continue
                 industry = get_industry(industry_code)
                 parsed = parse_slice(
@@ -231,6 +241,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )

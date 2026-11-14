@@ -2,6 +2,8 @@
 
 One ingestion run per file (level and year): one request and one committed
 capture of the zip. The bytes are committed before anything parses them.
+A read whose bytes repeat the file's last published capture is recorded
+``unchanged`` and replays nothing (``utility.unchanged``).
 """
 
 from __future__ import annotations
@@ -17,12 +19,27 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import repeats_last_publication
 
 from .client import fetch_file
 from .config import SOURCE_CODE, CbpConfig
 from .registry import CBP_BASE_URL, CbpFile
 
 PARSER_CONTRACT_VERSION = "census_cbp_csv:v1"
+
+#: The file's newest published capture.
+LATEST_PUBLISHED_SQL = """
+    SELECT response.payload_checksum, response.payload_schema_version, file.published_at,
+           response.capture_id
+    FROM control.census_cbp_file AS file
+    JOIN raw_capture.response_capture AS response ON response.capture_id = file.capture_id
+    WHERE file.kind = %s AND file.year = %s AND file.status = 'published'
+    ORDER BY file.published_at DESC
+    LIMIT 1
+"""
+
+#: Its revision rows name the geographies a replay would resolve (utility.unchanged).
+REVISION_TABLE = "silver_census_cbp.observation_revision"
 
 
 def capture_file(
@@ -77,15 +94,33 @@ def capture_file(
             ),
         )
         capture_control.finish_request(request.request_id, status="captured")
+        status = (
+            "unchanged"
+            if repeats_last_publication(
+                connection_factory,
+                LATEST_PUBLISHED_SQL,
+                (item.kind, item.year),
+                payload_checksum=receipt.payload_checksum,
+                parser_contract=PARSER_CONTRACT_VERSION,
+                revision_table=REVISION_TABLE,
+            )
+            else "captured"
+        )
         connection = connection_factory()
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     INSERT INTO control.census_cbp_file (run_id, kind, year, capture_id, status)
-                    VALUES (%s, %s, %s, %s, 'captured')
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (str(run_id), item.kind, item.year, str(receipt.capture_id)),
+                    (
+                        str(run_id),
+                        item.kind,
+                        item.year,
+                        str(receipt.capture_id),
+                        status,
+                    ),
                 )
             connection.commit()
         except BaseException:

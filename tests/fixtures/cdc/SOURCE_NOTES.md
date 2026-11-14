@@ -20,3 +20,13 @@ The metadata fixtures retain only the reviewed identity, watermark, license,
 and consumed column/type contract. Observation fixtures contain only the
 registered `$select` fields, matching production requests. They are not full
 dataset downloads and must not be treated as current release counts.
+
+- PLACES tract metadata: `https://data.cdc.gov/api/views/cwsq-ngmh.json`, read
+  2026-11-12 by OFFICE_LAB probe 6; public domain; 2025 release; watermark
+  `rowsUpdatedAt=1765560443`; `count(*)` answered 3,047,284. The fixture keeps
+  the identity, watermark, licence and the full column contract.
+- PLACES tract observations (`places_tract_dane_offset_{0,2000,4000}.json`):
+  every Dane County row (`countyfips=55025`, 4,920 rows, 123 tracts x 40
+  measures) of `https://data.cdc.gov/resource/cwsq-ngmh.json`, cut to the
+  registered `$select` fields, ordered by the registered `$order` and split at
+  2,000 rows, values unchanged.

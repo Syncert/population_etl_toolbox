@@ -4,9 +4,12 @@
 // only splits the ranked measures into the few highest and the few lowest and
 // words each one. Nothing here sums, averages, or scores across measures.
 
+import { displayMetricName } from "./format";
+
 export interface DistinctiveMeasure {
   metric_code: string;
   metric_display_name?: string | null;
+  metric_label?: string | null;
   source_code?: string | null;
   units?: string | null;
   period_start?: string | null;
@@ -60,4 +63,21 @@ export function rankSentence(measure: DistinctiveMeasure, siblingsName: string):
     measure.siblings_missing ? `${measure.siblings_missing} published none` : "",
   ].filter(Boolean);
   return `${base}${tied}${gaps.length ? ` (${gaps.join("; ")})` : ""}`;
+}
+
+/**
+ * The name a rank row shows. The API's plain label when it has one; a
+ * measure with no registry entry falls back to the provider's label, and for
+ * a bulk file that is the bare variable ("Rdeath" for CENSUS_PEP:RDEATH),
+ * which a reader cannot read. A name that is only the code says so in words
+ * instead; the code stays in the row's hover text.
+ */
+export function standoutName(measure: DistinctiveMeasure): string {
+  const name = displayMetricName(measure);
+  const code = measure.metric_code || "";
+  const variable = code.split(":").pop() || code;
+  const bare = name.trim().toLowerCase();
+  return !/\s/.test(bare) && (bare === code.toLowerCase() || bare === variable.toLowerCase())
+    ? "Measure not yet named in plain words"
+    : name;
 }

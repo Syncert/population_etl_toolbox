@@ -277,9 +277,23 @@ class ObservationDispatch:
     metric_code_column: str | None = None
     lineage_key_column: str | None = None
     lineage_key_prefix: str = ""
+    #: The relation columns ``lineage_key_column`` is composed from, in order,
+    #: joined by ``:`` (BEA's ``metric_key`` is ``table_code || ':' ||
+    #: line_code``). Declared, a read binds each part to its own column as
+    #: well as the whole key to the composed column: the key alone is an
+    #: expression no index can serve, so every read of one place scanned the
+    #: source's whole fact table (place-page-reads). A key that does not split
+    #: into exactly these parts binds the composed column only.
+    lineage_key_columns: tuple[str, ...] = ()
     identity_columns: tuple[str, ...] = ()
     # -- projection onto the neutral envelope ------------------------------
     release_expression: str = ""
+    #: An integer column holding the release, when ``release_expression`` is
+    #: that column cast to text. A pinned release is then matched on the
+    #: column itself (``vintage_year = :release_number``), which an index can
+    #: serve, rather than on the cast, which none can (web-place-maps: an
+    #: earlier ACS release of one state's cities).
+    release_integer_column: str | None = None
     #: Orders releases oldest-to-newest (``release_watermark::BIGINT`` for CDC,
     #: dates elsewhere). Never carries ``DESC``.
     release_order_expression: str = ""
@@ -391,6 +405,13 @@ _UNION_PERIOD_START = "COALESCE(duration_start, observation_date)::TEXT"
 _UNION_PERIOD_END = "COALESCE(duration_end, observation_date)::TEXT"
 _GEO_ID_FILTER = ("geo_id", "geo_id = :geo_id")
 _GEO_LEVEL_FILTER = ("geo_level", "UPPER(geo_level) = UPPER(:geo_level)")
+#: The same filter for a relation whose ``geo_level`` is already the
+#: vocabulary word: ACS serving writes it through ``gold_glossary.geo_grain``,
+#: which upper-cases and trims, and the bound value is normalised by
+#: ``normalize_geo_level`` before it is bound. Plain equality is the same
+#: answer, and unlike ``UPPER(geo_level)`` an index can serve it, which is what
+#: keeps an all-county read from scanning every tract row of the metric.
+_CANONICAL_GEO_LEVEL_FILTER = ("geo_level", "geo_level = :geo_level")
 
 #: The geography-grain vocabulary every served row carries and every catalog
 #: ``valid_geo_grains`` entry uses, so a grain read from the catalog can be
@@ -522,6 +543,15 @@ _GRAIN_OF_GEO_TYPE = "gold_glossary.geo_grain(geo_type)"
 _GEO_TYPE_GRAIN_FILTER = ("geo_level", f"{_GRAIN_OF_GEO_TYPE} = UPPER(:geo_level)")
 _STATE_FIPS_FILTER = ("state_fips", "state_fips = :state_fips")
 _COUNTY_FIPS_FILTER = ("county_fips", "county_fips = :county_fips")
+#: The state filter for a source whose relation carries no ``state_fips``
+#: column but whose ``geo_id`` is the canonical ``state:NN[|county:NNN]`` key:
+#: the state is the key's first segment, so a state row and every county or
+#: place inside it match, and a row keyed otherwise (a metro, the nation)
+#: does not, as it does not on a ``state_fips`` column.
+_STATE_OF_GEO_ID_FILTER = (
+    "state_fips",
+    "split_part(geo_id, '|', 1) = 'state:' || :state_fips",
+)
 
 #: One reviewed dispatch entry per completed source, keyed by glossary source
 #: code. This is the registry dispatch API-001 recorded: the neutral
@@ -584,6 +614,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             lineage_relation="fact_acs_observation",
             metric_code_column="metric_code",
             release_expression="vintage_year::TEXT",
+            release_integer_column="vintage_year",
             release_order_expression="vintage_year",
             as_of_expression="as_of_date::TEXT",
             period_start_expression=_UNION_PERIOD_START,
@@ -598,7 +629,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             filter_conditions=(
                 _GEO_ID_FILTER,
-                _GEO_LEVEL_FILTER,
+                _CANONICAL_GEO_LEVEL_FILTER,
                 _STATE_FIPS_FILTER,
                 _COUNTY_FIPS_FILTER,
                 ("year_from", _DATE_YEAR_FROM),
@@ -719,6 +750,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "observation_year >= :year_from"),
                 ("year_to", "observation_year <= :year_to"),
             ),
@@ -943,6 +975,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<table>:<line>`, the same text
             # the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("table_code", "line_code"),
             # BEA's own release date, read from the file's footer.
             release_expression="release_key",
             release_order_expression="release_date",
@@ -960,6 +993,11 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("dollar_basis", "dollar_basis"),
                 ("observation_basis", "observation_basis"),
                 ("value_source", "value_source"),
+                # NULL on every figure BEA published; on a metro area summed
+                # from its member counties, how it was derived
+                # (`sum_of_member_counties`, `ratio_of_member_county_sums`),
+                # so a reader never takes it for BEA's own (web-metro-pages).
+                ("derivation", "derivation"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -988,6 +1026,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<industry>:<ownership>`,
             # the same text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id", "industry_code", "own_code"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1031,6 +1070,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<structure>:<frequency>`,
             # the same text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id", "structure_type", "frequency"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1065,6 +1105,49 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="CENSUS_GOVFIN",
+            latest_relation="gold_census_govfin.observation_latest",
+            released_relation="gold_census_govfin.observation_revision",
+            lineage_schema="gold_census_govfin",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<dataset>:<measure>:<government
+            # level>`, the same text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "measure_id", "government_level"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("government_level", "government_level"),
+                # A fiscal year is dated by the calendar year it ends in.
+                ("period_label", "period_label"),
+                # Census's figure, or the warehouse's sum of Census's
+                # government records (county areas, Census of Governments).
+                ("derivation", "COALESCE(derivation, 'census_published')"),
+                ("record_coverage", "record_coverage"),
+                ("government_count", "government_count::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="CENSUS_SAIPE_SAHIE",
             latest_relation="gold_census_sae.estimate_latest",
             released_relation="gold_census_sae.estimate_revision",
@@ -1073,6 +1156,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<dataset>:<measure>`, the same
             # text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "measure_id"),
             release_expression="release_key",
             release_order_expression="retrieved_at",
             period_start_expression="period_start::TEXT",
@@ -1094,12 +1178,19 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("confidence_lower", "confidence_lower::TEXT"),
                 ("confidence_upper", "confidence_upper::TEXT"),
                 ("margin_of_error", "margin_of_error::TEXT"),
+                # The margin as a percent of the estimate, as the ACS silver
+                # transform derives it; no percentage for a zero estimate.
+                (
+                    "margin_of_error_pct",
+                    "(margin_of_error / NULLIF(value, 0) * 100)::TEXT",
+                ),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
             filter_conditions=(
                 _GEO_ID_FILTER,
                 _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
                 ("year_from", "estimate_year >= :year_from"),
                 ("year_to", "estimate_year <= :year_to"),
             ),
@@ -1107,6 +1198,265 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # the metric is pinned by every query.
             latest_order=("geo_id", "estimate_year"),
             released_order=("estimate_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CENSUS_DECENNIAL",
+            latest_relation="gold_census_decennial.count_latest",
+            released_relation="gold_census_decennial.count_revision",
+            lineage_schema="gold_census_decennial",
+            lineage_relation="count_revision",
+            # The publisher's lineage key is `<dataset>:<variable>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("dataset_id", "variable_id"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("dataset_id", "dataset_id"),
+                ("variable_id", "variable_id"),
+                ("variable_label", "variable_label"),
+                ("universe", "universe"),
+                ("parent_variable", "parent_variable"),
+                ("census_year", "census_year::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "census_year >= :year_from"),
+                ("year_to", "census_year <= :year_to"),
+            ),
+            # One row per (metric, geography) in the latest view: the count
+            # describes Census Day alone.
+            latest_order=("geo_id",),
+            released_order=("geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CMS_LTC",
+            latest_relation="gold_cms_ltc.area_latest",
+            released_relation="gold_cms_ltc.area_revision",
+            lineage_schema="gold_cms_ltc",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `<series>:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("series_id", "measure_id"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("series_id", "series_id"),
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: residents on the facility's last
+                # survey, or beds on its cost report.
+                ("basis", "basis"),
+                ("release_title", "release_title"),
+                # A sum of CMS's facility figures, never an estimate.
+                ("derivation", "derivation"),
+                ("facility_count", "facility_count::TEXT"),
+                ("unplaced_facility_count", "unplaced_facility_count::TEXT"),
+                # What a county sum leaves out: facilities CMS places on no
+                # county are in the state and national sums only.
+                ("coverage_note", "coverage_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_year >= :year_from"),
+                ("year_to", "period_year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="NCES_IPEDS",
+            latest_relation="gold_nces_ipeds.area_latest",
+            released_relation="gold_nces_ipeds.area_revision",
+            lineage_schema="gold_nces_ipeds",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `ipeds:<measure>`, the same text
+            # the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="make_date(period_year, 1, 1)::TEXT",
+            period_end_expression="make_date(period_year, 12, 31)::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: housing capacity, or fall headcount,
+                # as each institution reports it to IPEDS.
+                ("basis", "basis"),
+                ("file_stem", "file_stem"),
+                # A sum of IPEDS's institution figures, never an estimate.
+                ("derivation", "derivation"),
+                ("institution_count", "institution_count::TEXT"),
+                ("unplaced_institution_count", "unplaced_institution_count::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_year >= :year_from"),
+                ("year_to", "period_year <= :year_to"),
+            ),
+            latest_order=("geo_id", "period_year"),
+            released_order=("period_year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="HHS_HOSPITAL_CAPACITY",
+            latest_relation="gold_hhs_hospital_capacity.area_latest",
+            released_relation="gold_hhs_hospital_capacity.area_revision",
+            lineage_schema="gold_hhs_hospital_capacity",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `hospital:<measure>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # What the figure is: HHS's weekly average of the hospital's
+                # daily reports.
+                ("basis", "basis"),
+                # A sum of HHS's facility figures, never an estimate.
+                ("derivation", "derivation"),
+                ("facility_count", "facility_count::TEXT"),
+                ("reporting_facility_count", "reporting_facility_count::TEXT"),
+                # Cells HHS suppressed (-999999) and cells the file omits:
+                # the sum leaves both out.
+                ("suppressed_count", "suppressed_count::TEXT"),
+                ("missing_count", "missing_count::TEXT"),
+                ("unplaced_facility_count", "unplaced_facility_count::TEXT"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_start >= make_date(:year_from, 1, 1)"),
+                ("year_to", "period_start <= make_date(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CDC_COVID_CASES",
+            latest_relation="gold_cdc_covid_cases.area_latest",
+            released_relation="gold_cdc_covid_cases.area_revision",
+            lineage_schema="gold_cdc_covid_cases",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `covid:<measure>:<age>`, the same
+            # text the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id", "age_key"),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("age_key", "age_key"),
+                ("basis", "basis"),
+                # A count of CDC's published case records, never an estimate.
+                ("derivation", "derivation"),
+                ("case_record_count", "case_record_count::TEXT"),
+                # Records CDC published without a county of the shared
+                # geography: in state and national counts only.
+                ("unplaced_record_count", "unplaced_record_count::TEXT"),
+                ("coverage_note", "coverage_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_start >= make_date(:year_from, 1, 1)"),
+                ("year_to", "period_start <= make_date(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="CDC_ILINET",
+            latest_relation="gold_cdc_ilinet.area_latest",
+            released_relation="gold_cdc_ilinet.area_revision",
+            lineage_schema="gold_cdc_ilinet",
+            lineage_relation="area_revision",
+            # The publisher's lineage key is `ilinet:<measure>`, the same text
+            # the relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            lineage_key_columns=("measure_id",),
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                ("basis", "basis"),
+                ("mmwr_year", "mmwr_year::TEXT"),
+                ("mmwr_week", "mmwr_week::TEXT"),
+                ("source_region", "source_region"),
+                # CDC's own text: X where it does not publish the figure.
+                ("value_source", "value_source"),
+                ("jurisdiction_note", "jurisdiction_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "period_start >= make_date(:year_from, 1, 1)"),
+                ("year_to", "period_start <= make_date(:year_to, 12, 31)"),
+            ),
+            latest_order=("geo_id", "period_start"),
+            released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
         ObservationDispatch(
@@ -1144,6 +1494,51 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             ),
             latest_order=("geo_id", "period_start"),
             released_order=("period_start", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="IRS_SOI",
+            latest_relation="gold_irs_soi.observation_latest",
+            released_relation="gold_irs_soi.observation_revision",
+            lineage_schema="gold_irs_soi",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is `<measure>` for all returns and
+            # `<measure>:<agi band>` for one band, the text the relations
+            # carry (and the fact stores) as `metric_key`.
+            lineage_key_column="metric_key",
+            # SOI names no release; the identity is the read.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure_id", "measure_id"),
+                ("measure_label", "measure_label"),
+                # SOI's item code: `A06500` is income tax after credits.
+                ("soi_column", "soi_column"),
+                ("agi_band", "agi_band"),
+                ("band_label", "band_label"),
+                # `county` (the county files, which also hold each state's
+                # total) or `state` (Historic Table 2).
+                ("product", "product"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "tax_year >= :year_from"),
+                ("year_to", "tax_year <= :year_to"),
+            ),
+            # One row per (metric, geography, tax year) in the latest view,
+            # and the metric is pinned by every query.
+            latest_order=("geo_id", "tax_year"),
+            released_order=("tax_year", "geo_id", "retrieved_at", "capture_id"),
             analysis_ready=True,
         ),
         ObservationDispatch(
@@ -1194,6 +1589,46 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             analysis_ready=True,
         ),
         ObservationDispatch(
+            source_code="DOL_CHILDCARE",
+            latest_relation="gold_dol_childcare.observation_latest",
+            released_relation="gold_dol_childcare.observation_revision",
+            lineage_schema="gold_dol_childcare",
+            lineage_relation="observation_revision",
+            # One metric per type of care and age group (`center_infant`),
+            # published for counties only (county-childcare-prices).
+            lineage_key_column="metric_key",
+            # The release is the workbook's name (`ndcp2022`); a price a later
+            # read repeats is not stored again, so retrieval orders the rest.
+            release_expression="release_key",
+            release_order_expression="retrieved_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("care_type", "care_type"),
+                ("age_group", "age_group"),
+                # Whether the Women's Bureau imputed the price, and which of
+                # its five imputations (`00001`: a year between surveys).
+                ("imputed", "imputed::TEXT"),
+                ("imputation_code", "imputation_code"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                _STATE_OF_GEO_ID_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "retrieved_at", "capture_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
             source_code="CENSUS_CBP",
             latest_relation="gold_census_cbp.observation_latest",
             released_relation="gold_census_cbp.observation_revision",
@@ -1202,6 +1637,7 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             # The publisher's lineage key is `<measure>:<sector>`, the same
             # text the relations carry as `metric_key`.
             lineage_key_column="metric_key",
+            lineage_key_columns=("measure", "naics_key"),
             # The files name no release; the identity is the read.
             release_expression="release_key",
             release_order_expression="retrieved_at",
@@ -1340,6 +1776,55 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("station_ids", "station_ids"),
                 ("station_count", "station_count::TEXT"),
                 ("boundary_vintage", "boundary_vintage::TEXT"),
+                # The calendar month of a monthly normal (1 to 12); absent
+                # for an annual one.
+                ("month", "month::TEXT"),
+                # Stations placed on the county as the nearest county
+                # boundary within 1,000 m, with their distances; absent when
+                # every station is inside the boundary.
+                ("placement_note", "placement_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year", "month"),
+            released_order=("year", "month", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "NOAA climate normals are 30-year averages (1991-2020), not "
+                "values of any one year, so a year-aligned analysis would pair "
+                "them with other sources' annual values; query /observations "
+                "instead"
+            ),
+        ),
+        ObservationDispatch(
+            source_code="TREASURY_MTS",
+            latest_relation="gold_treasury_mts.observation_latest",
+            released_relation="gold_treasury_mts.observation_revision",
+            lineage_schema="gold_treasury_mts",
+            lineage_relation="observation_revision",
+            # One metric per Monthly Treasury Statement Table 9 line
+            # (`outlays_national_defense`), for the nation only
+            # (WHERE_PUBLIC_MONEY_GOES_PLAN slice 3).
+            lineage_key_column="metric_key",
+            # `MTS <statement month> read <date>`: a restated statement read
+            # again is a second reading of the same fiscal year.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the September statement's fiscal-year-to-date column ...
+                # never a sum of months".
+                ("observation_basis", "observation_basis"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1352,11 +1837,137 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
             latest_order=("geo_id", "year"),
             released_order=("year", "geo_id", "release_key", "run_id"),
             analysis_restriction=(
-                "NOAA climate normals are 30-year averages (1991-2020), not "
-                "values of any one year, so a year-aligned analysis would pair "
-                "them with other sources' annual values; query /observations "
-                "instead"
+                "Monthly Treasury Statement totals are federal fiscal years "
+                "(October to September) for the nation only, so a year-aligned "
+                "analysis would pair them with other sources' calendar years; "
+                "query /observations instead"
             ),
+        ),
+        ObservationDispatch(
+            source_code="USASPENDING",
+            latest_relation="gold_usaspending.observation_latest",
+            released_relation="gold_usaspending.observation_revision",
+            lineage_schema="gold_usaspending",
+            lineage_relation="observation_revision",
+            # All federal award obligations and each award type group by
+            # place of performance, for states and counties
+            # (WHERE_PUBLIC_MONEY_GOES_PLAN slice 4).
+            lineage_key_column="metric_key",
+            # `USAspending FY<year> read <date>`: agencies keep reporting a
+            # year, so a later read of it is a second reading.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "Recorded where the awarded work is performed ... never add
+                # the two."
+                ("observation_basis", "observation_basis"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_restriction=(
+                "USAspending obligations are federal fiscal years (October to "
+                "September) recorded by place of performance, so a year-aligned "
+                "analysis would pair them with other sources' calendar years and "
+                "read them as where the money was felt; query /observations instead"
+            ),
+        ),
+        ObservationDispatch(
+            source_code="NOAA_CLIMDIV",
+            latest_relation="gold_noaa_climdiv.observation_latest",
+            released_relation="gold_noaa_climdiv.observation_revision",
+            lineage_schema="gold_noaa_climdiv",
+            lineage_relation="observation_revision",
+            # One metric per nClimDiv element (`monthly_precipitation_total`),
+            # for counties only (WEATHER_AND_DISASTER_HISTORY_PLAN slice 2).
+            lineage_key_column="metric_key",
+            # `nClimDiv <file name>`: NCEI stamps each monthly release in the
+            # file name, and a revised month is a second reading.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # "the value NCEI publishes for the county and calendar month,
+                # an area-weighted average of its 5 km nClimGrid grid".
+                ("observation_basis", "observation_basis"),
+                # The calendar month (1 to 12) and the value as NCEI wrote it.
+                ("month", "month::TEXT"),
+                ("value_source", "value_source"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year", "month"),
+            released_order=("year", "month", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="NOAA_STORM_EVENTS",
+            latest_relation="gold_noaa_storm_events.observation_latest",
+            released_relation="gold_noaa_storm_events.observation_revision",
+            lineage_schema="gold_noaa_storm_events",
+            lineage_relation="observation_revision",
+            # One count metric per NCEI event type (`storm_events_tornado`),
+            # all types, and six impact sums, for counties, states and the
+            # nation (WEATHER_AND_DISASTER_HISTORY_PLAN slice 1).
+            lineage_key_column="metric_key",
+            # `Storm Events <file name>`: NCEI stamps each yearly file with
+            # the day it created it; a restamped year is a new reading.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # How events were counted and which types each era records.
+                ("observation_basis", "observation_basis"),
+                ("event_type", "event_type"),
+                # Events counted, and how many were reported for the county
+                # itself and how many for a forecast zone covering it.
+                ("events_counted", "events_counted::TEXT"),
+                ("county_reported", "county_reported::TEXT"),
+                ("zone_reported", "zone_reported::TEXT"),
+                # Set while NCEI is still adding events for the year.
+                ("coverage_note", "coverage_note"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
         ),
         ObservationDispatch(
             source_code="FCC_BDC",
@@ -1427,6 +2038,43 @@ OBSERVATION_DISPATCH: dict[str, ObservationDispatch] = {
                 ("rating", "rating"),
                 ("missing_reason", "missing_reason"),
                 ("declarations", "declarations"),
+            ),
+            source_record_id_column="source_record_id",
+            capture_id_column="capture_id",
+            filter_conditions=(
+                _GEO_ID_FILTER,
+                _GEO_TYPE_GRAIN_FILTER,
+                ("year_from", "year >= :year_from"),
+                ("year_to", "year <= :year_to"),
+            ),
+            latest_order=("geo_id", "year"),
+            released_order=("year", "geo_id", "release_key", "run_id"),
+            analysis_ready=True,
+        ),
+        ObservationDispatch(
+            source_code="ELECTIONS",
+            latest_relation="gold_elections.observation_latest",
+            released_relation="gold_elections.observation_revision",
+            lineage_schema="gold_elections",
+            lineage_relation="observation_revision",
+            # The publisher's lineage key is the measure, the same text the
+            # relations carry as `metric_key`.
+            lineage_key_column="metric_key",
+            # The MEDSL file read ("MEDSL countypres_2000-2024.csv"); releases
+            # are ordered by when the warehouse published them.
+            release_expression="release_key",
+            release_order_expression="published_at",
+            period_start_expression="period_start::TEXT",
+            period_end_expression="period_end::TEXT",
+            geo_level_expression=_GRAIN_OF_GEO_TYPE,
+            value_status_column="value_status",
+            unit_expression="unit",
+            dimension_expressions=(
+                ("measure", "metric_key"),
+                # How the share or margin is counted (ADR-0014).
+                ("observation_basis", "observation_basis"),
+                ("missing_reason", "missing_reason"),
+                ("leading_party", "leading_party_code"),
             ),
             source_record_id_column="source_record_id",
             capture_id_column="capture_id",
@@ -1828,6 +2476,46 @@ def _sae_datasets() -> tuple[str, ...]:
     return tuple(dataset.dataset_id for dataset in DATASETS)
 
 
+def _decennial_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_decennial.registry import DATASETS
+
+    return tuple(dataset.dataset_id for dataset in DATASETS)
+
+
+def _nces_ipeds_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.nces_ipeds.registry import COMPONENTS
+
+    return tuple(component.component_id for component in COMPONENTS)
+
+
+def _hhs_hospital_capacity_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.hhs_hospital_capacity.config import DATASET_ID
+
+    return (DATASET_ID,)
+
+
+def _cdc_ilinet_datasets() -> tuple[str, ...]:
+    return ("fluview_ilinet",)
+
+
+def _cdc_covid_cases_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.cdc_covid_cases.config import DATASET_ID
+
+    return (DATASET_ID,)
+
+
+def _cms_ltc_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.cms_ltc.registry import SERIES
+
+    return tuple(series.series_id for series in SERIES)
+
+
+def _govfin_datasets() -> tuple[str, ...]:
+    from data_ingestion_toolbox.census_govfin.registry import DATASET_IDS
+
+    return DATASET_IDS
+
+
 def _fbi_datasets() -> tuple[str, ...]:
     from data_ingestion_toolbox.fbi_ucr.registry import enabled_products
 
@@ -1866,6 +2554,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
+            source_code="IRS_SOI",
+            display_name="IRS Statistics of Income county and state income",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
             source_code=SERVING_CONTRACTS["pep"].source_code,
             display_name=SERVING_CONTRACTS["pep"].display_name,
             route_segment="pep",
@@ -1887,6 +2581,13 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             dataset_provider=_fbi_datasets,
         ),
         SourceDiscovery(
+            source_code="CENSUS_GOVFIN",
+            display_name="Census Bureau State and Local Government Finances",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_govfin_datasets,
+        ),
+        SourceDiscovery(
             source_code="CENSUS_SAIPE_SAHIE",
             display_name=(
                 "Census Bureau Small Area Income and Poverty Estimates and "
@@ -1895,6 +2596,56 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
             dataset_provider=_sae_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CENSUS_DECENNIAL",
+            display_name="Census Bureau 2020 Decennial Census",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_decennial_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CMS_LTC",
+            display_name=(
+                "Centers for Medicare & Medicaid Services long-term care facility "
+                "characteristics and skilled nursing facility cost reports"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_cms_ltc_datasets,
+        ),
+        SourceDiscovery(
+            source_code="NCES_IPEDS",
+            display_name=(
+                "National Center for Education Statistics IPEDS college housing "
+                "capacity and fall enrolment"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_nces_ipeds_datasets,
+        ),
+        SourceDiscovery(
+            source_code="HHS_HOSPITAL_CAPACITY",
+            display_name=(
+                "HHS COVID-19 reported patient impact and hospital capacity by facility"
+            ),
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_hhs_hospital_capacity_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CDC_COVID_CASES",
+            display_name="CDC COVID-19 case surveillance record counts by county",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_cdc_covid_cases_datasets,
+        ),
+        SourceDiscovery(
+            source_code="CDC_ILINET",
+            display_name="CDC FluView ILINet weekly influenza-like illness",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+            dataset_provider=_cdc_ilinet_datasets,
         ),
         SourceDiscovery(
             source_code=SERVING_CONTRACTS["fred"].source_code,
@@ -1915,6 +2666,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
+            source_code="DOL_CHILDCARE",
+            display_name="DOL Women's Bureau National Database of Childcare Prices",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
             source_code="HUD_FMR_IL",
             display_name="HUD Fair Market Rents and Section 8 Income Limits",
             route_segment=None,
@@ -1923,6 +2680,12 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
         SourceDiscovery(
             source_code="FHFA_HPI",
             display_name="Federal Housing Finance Agency House Price Index",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="ELECTIONS",
+            display_name="Election Results and Seat Holders",
             route_segment=None,
             neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
@@ -1980,6 +2743,30 @@ SOURCE_DISCOVERY: dict[str, SourceDiscovery] = {
             display_name="NOAA U.S. Climate Normals 1991-2020",
             route_segment=None,
             neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="TREASURY_MTS",
+            display_name="Monthly Treasury Statement: federal receipts and outlays by function",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="USASPENDING",
+            display_name="USAspending: federal award obligations by place of performance",
+            route_segment=None,
+            neutral_paths=DISPATCH_NEUTRAL_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NOAA_CLIMDIV",
+            display_name="NOAA nClimDiv county monthly temperature and precipitation",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
+        ),
+        SourceDiscovery(
+            source_code="NOAA_STORM_EVENTS",
+            display_name="NOAA Storm Events Database (hazardous weather events since 1950)",
+            route_segment=None,
+            neutral_paths=DISPATCH_ANALYSIS_PATHS,
         ),
         SourceDiscovery(
             source_code="USDA_NASS",

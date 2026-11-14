@@ -1,6 +1,6 @@
 """Census ACS focus counties: a few more tables at tract grain for one county.
 
-Covers: ETL-085
+Covers: ETL-137
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_dane_county_is_the_configured_focus_county() -> None:
-    """Covers: ETL-085 — Dane's tracts carry race x sex x age, occupation and building age."""
+    """Covers: ETL-137 — Dane's tracts carry race x sex x age, occupation and building age."""
     (dane,) = CONFIG.focus_counties
     assert (dane.county_fips, dane.state_fips, dane.county_code) == (
         "55025",
@@ -31,14 +31,16 @@ def test_dane_county_is_the_configured_focus_county() -> None:
     assert RACE_ITERATED_SEX_BY_AGE == tuple(f"B01001{c}" for c in "ABCDEFGHI")
     assert set(dane.tables) == {
         *RACE_ITERATED_SEX_BY_AGE,
-        "B03002",
         "B24010",
         "B25034",
     }
+    # Hispanic or Latino by race is a tract table for every state already.
+    assert "B03002" in CONFIG.tract_tables
+    assert not set(dane.tables) & set(CONFIG.tract_tables)
 
 
 def test_focus_tables_are_synced_but_never_widen_the_other_slices() -> None:
-    """Covers: ETL-085 — county, place and state-wide tract slices are unchanged."""
+    """Covers: ETL-137 — county, place and state-wide tract slices are unchanged."""
     assert CONFIG.metadata_tables() >= set(RACE_ITERATED_SEX_BY_AGE)
     assert CONFIG.metadata_tables() >= set(CONFIG.curated_tables)
     assert not set(RACE_ITERATED_SEX_BY_AGE) & set(CONFIG.curated_tables)
@@ -46,7 +48,7 @@ def test_focus_tables_are_synced_but_never_widen_the_other_slices() -> None:
 
 
 def test_a_focus_request_asks_for_one_countys_tracts() -> None:
-    """Covers: ETL-085 — `in=state:55 county:025`, never the county wildcard."""
+    """Covers: ETL-137 — `in=state:55 county:025`, never the county wildcard."""
     assert build_geo_params("tract", "55", "acs5", "025") == {
         "for": "tract:*",
         "in": "state:55 county:025",
@@ -60,10 +62,13 @@ def test_a_focus_request_asks_for_one_countys_tracts() -> None:
 
 
 def test_focus_slices_follow_the_tract_years() -> None:
-    """Covers: ETL-085 — newest 5-year tract year only; the 1-year has none."""
+    """Covers: ETL-137 — newest 5-year tract year only; the 1-year has none."""
     years = [2020, 2021, 2022, 2023]
     slices = CONFIG.focus_slices("acs5", years)
-    assert [(year, county.county_fips) for year, county in slices] == [(2023, "55025")]
+    assert [(year, county.county_fips) for year, county in slices] == [
+        (year, "55025") for year in years
+    ]
+    assert CONFIG.focus_slices("dec2000sf1", [2000]) == []
     assert CONFIG.focus_slices("acs1", years) == []
 
 
@@ -80,13 +85,13 @@ def test_focus_slices_follow_the_tract_years() -> None:
 def test_a_malformed_focus_county_is_refused(
     county_fips: str, tables: list[str], message: str
 ) -> None:
-    """Covers: ETL-085 — a typo never becomes a request."""
+    """Covers: ETL-137 — a typo never becomes a request."""
     with pytest.raises(ValidationError, match=message):
         FocusCounty(county_fips=county_fips, tables=tables)
 
 
 def test_a_county_is_named_once() -> None:
-    """Covers: ETL-085 — two entries for one county would plan one slice twice."""
+    """Covers: ETL-137 — two entries for one county would plan one slice twice."""
     dane = FocusCounty(county_fips="55025", tables=["B03002"])
     with pytest.raises(ValidationError, match="named once"):
         AcsConfig(focus_counties=[dane, dane])
@@ -95,7 +100,7 @@ def test_a_county_is_named_once() -> None:
 
 
 def test_a_focus_slice_asks_for_its_countys_tables_and_county(monkeypatch) -> None:
-    """Covers: ETL-085 — the slice's variables and request name the county."""
+    """Covers: ETL-137 — the slice's variables and request name the county."""
     asked: dict[str, object] = {}
 
     def fake_variables(year, dataset, tables=None):

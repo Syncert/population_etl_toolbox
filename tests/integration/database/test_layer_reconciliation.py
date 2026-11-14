@@ -386,6 +386,7 @@ def test_publication_gate_holds_back_a_damaged_release(
                 cursor.execute("DELETE FROM silver_cdc.dim_measure")
                 cursor.execute("DELETE FROM silver_cdc.dim_stratum")
                 cursor.execute("DELETE FROM silver_cdc.dim_dataset_release")
+                cursor.execute("DELETE FROM control.cdc_release_page")
                 cursor.execute("DELETE FROM control.cdc_dataset_release")
                 for geo_id in sorted(tracked_geo_ids - preexisting):
                     delete_geography(cursor, geo_id)

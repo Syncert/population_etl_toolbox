@@ -36,6 +36,7 @@ export const STATIC_ROUTE_TITLES: Readonly<Record<string, string>> = {
   "/explain": "Explainers",
   "/us": "United States",
   "/data": "Where the numbers come from",
+  "/admin/warehouse": "Warehouse (admin)",
 };
 
 /**
@@ -134,7 +135,40 @@ export function placeRouteTitle(stateSegment?: string, countySegment?: string): 
   return parts.length ? parts.map(words).join(", ") : STATIC_ROUTE_TITLES["/us"]!;
 }
 
+/**
+ * A tract page's title from its address: "Census Tract 18.05, Travis County,
+ * Texas". The tract number is the segment's own (`tract-18-05`), so no
+ * catalog read is needed.
+ */
+export function tractRouteTitle(stateSegment: string, countySegment: string, tractSegment: string): string {
+  const match = /^tract-(\d{1,4})(?:-(\d{2}))?$/.exec(tractSegment);
+  const six = /^tract-(\d{6})$/.exec(tractSegment);
+  const number = match
+    ? `${Number(match[1])}${match[2] ? `.${match[2]}` : ""}`
+    : six
+      ? `${Number(six[1]!.slice(0, 4))}${six[1]!.slice(4) === "00" ? "" : `.${six[1]!.slice(4)}`}`
+      : "";
+  const place = placeRouteTitle(stateSegment, countySegment);
+  return number ? `Census Tract ${number}, ${place}` : place;
+}
+
+/**
+ * A metro page's title from its segment (web-metro-pages): the slug's words
+ * capitalised, "Metro area 12420" for a bare CBSA code. The "Metro Area" the
+ * published name ends with stays in the words, as it does in the heading.
+ */
+export function metroRouteTitle(segment?: string): string {
+  if (!segment || !PLACE_SEGMENT.test(segment)) return "Metro area";
+  if (/^[0-9]+$/.test(segment)) return `Metro area ${segment}`;
+  return segment.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
 /** A one-measure map's title: the catalog identity its address names. */
 export function measureMapTitle(metricCode: string): string {
   return titleOf("Map", [/^[A-Za-z0-9_.:-]{1,200}$/.test(metricCode) ? metricCode : undefined]);
+}
+
+/** An age map's title: the indicator's label (web-age-and-sex-structure). */
+export function ageMapTitle(label: string): string {
+  return titleOf("Map", [label || undefined]);
 }

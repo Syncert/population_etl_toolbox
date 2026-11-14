@@ -238,6 +238,8 @@ def test_geography_replay_retains_versions_and_cross_county_place_relationships(
                 ("part_of", "state:98", "exact_census_code_hierarchy"),
                 ("part_of", "us:1", "exact_census_code_hierarchy"),
             ]
+            _pair_rows_match_related(cursor, "state:98|county:764")
+            _pair_rows_match_related(cursor, "state:98|place:54321")
             cursor.execute(
                 """SELECT place_fips, place_name, boundary_vintage,
                           ST_IsValid(geo_geom), ST_SRID(geo_geom)
@@ -738,3 +740,22 @@ def test_a_retired_geography_stays_resolvable_and_keeps_naming_its_rows(
             assert cursor.fetchone() == ("current", None)
     finally:
         reader.close()
+
+
+def _pair_rows_match_related(cursor, geo_id: str) -> None:
+    """Every related row is what the pair query answers for that one place
+    (API-178): the comparison reads only the pair, and must not lose a row."""
+    cursor.execute(
+        str(catalog_queries.GEOGRAPHY_RELATED_QUERY).replace(":geo_id", "%(geo_id)s"),
+        {"geo_id": geo_id},
+    )
+    related = cursor.fetchall()
+    assert related
+    pair_sql = (
+        str(catalog_queries.GEOGRAPHY_PAIR_RELATIONSHIP_QUERY)
+        .replace(":other_geo_id", "%(other_geo_id)s")
+        .replace(":geo_id", "%(geo_id)s")
+    )
+    for other in sorted({row[1] for row in related}):
+        cursor.execute(pair_sql, {"geo_id": geo_id, "other_geo_id": other})
+        assert cursor.fetchall() == [row for row in related if row[1] == other]

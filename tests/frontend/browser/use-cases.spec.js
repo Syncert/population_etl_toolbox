@@ -175,10 +175,10 @@ test("housing cards show their requested dollar and household measures, never a 
   await page.goto("/use-cases/housing-affordability?place=state%3A55%7Ccounty%3A025");
   await expect(page.getByTestId("measure-value-median-gross-rent")).toHaveText("1,456 dollars");
   await expect(page.getByTestId("measure-value-median-monthly-housing-cost")).toHaveText("1,848 dollars");
-  await expect(page.getByTestId("measure-median-monthly-housing-cost")).toContainText("CENSUS_ACS:acs5:B25105_001");
+  await expect(page.getByTestId("measure-median-monthly-housing-cost").locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "CENSUS_ACS:acs5:B25105_001");
   await expect(page.getByTestId("measure-value-rent-share-of-income")).toHaveText("97,440 households");
   await expect(page.getByTestId("measure-value-occupancy")).toHaveText("280,000 housing units");
-  await expect(page.getByTestId("measure-median-home-value")).toContainText("CENSUS_ACS:acs5:B25077_001");
+  await expect(page.getByTestId("measure-median-home-value").locator("[data-metric-code]")).toHaveAttribute("data-metric-code", "CENSUS_ACS:acs5:B25077_001");
 });
 
 test("a housing response for a different metric is refused in both the card and history", async ({ page }) => {

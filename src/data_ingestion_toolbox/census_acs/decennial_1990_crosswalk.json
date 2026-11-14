@@ -1,0 +1,68 @@
+{
+  "description": "1990 census cells that measure what an ACS estimate measures, keyed by that ACS estimate. A measure the 1990 tables publish only as parts is the declared sum of its cells. Cells were read from each file's tables.dbf on the Bureau's archived discs on 2026-10-27 (decennial-2000-and-1990-history).",
+  "datasets": {
+    "dec1990stf1": {
+      "B01003_001E": {"cells": ["P0010001"], "label": "Total population"},
+      "B11001_001E": {"cells": ["P0030001"], "label": "Households"},
+      "B03002_012E": {"cells": ["P0080001"], "label": "Hispanic origin"},
+      "B03002_002E": {
+        "cells": ["P0100001", "P0100002", "P0100003", "P0100004", "P0100005"],
+        "label": "Not of Hispanic origin"
+      },
+      "B03002_003E": {
+        "cells": ["P0100001"],
+        "label": "Not of Hispanic origin, White",
+        "note": "1990 asked for one race; 'White' is the nearest match to 'White alone'"
+      },
+      "B25001_001E": {"cells": ["H0010001"], "label": "Housing units"},
+      "B25002_002E": {"cells": ["H0020001"], "label": "Occupied housing units"},
+      "B25002_003E": {"cells": ["H0020002"], "label": "Vacant housing units"},
+      "B25003_002E": {"cells": ["H0030001"], "label": "Owner-occupied housing units"},
+      "B25003_003E": {"cells": ["H0030002"], "label": "Renter-occupied housing units"}
+    },
+    "dec1990stf3": {
+      "B19013_001E": {"cells": ["P080A001"], "label": "Median household income", "dollars_of": 1989, "median": true},
+      "B19301_001E": {"cells": ["P114A001"], "label": "Per capita income", "dollars_of": 1989},
+      "B17001_001E": {
+        "cells": [
+          "P1170001", "P1170002", "P1170003", "P1170004", "P1170005", "P1170006",
+          "P1170007", "P1170008", "P1170009", "P1170010", "P1170011", "P1170012",
+          "P1170013", "P1170014", "P1170015", "P1170016", "P1170017", "P1170018",
+          "P1170019", "P1170020", "P1170021", "P1170022", "P1170023", "P1170024"
+        ],
+        "label": "Persons for whom poverty status is determined"
+      },
+      "B17001_002E": {
+        "cells": [
+          "P1170013", "P1170014", "P1170015", "P1170016", "P1170017", "P1170018",
+          "P1170019", "P1170020", "P1170021", "P1170022", "P1170023", "P1170024"
+        ],
+        "label": "Income below the poverty level",
+        "dollars_of": 1989
+      },
+      "B08301_001E": {
+        "cells": [
+          "P0490001", "P0490002", "P0490003", "P0490004", "P0490005", "P0490006", "P0490007",
+          "P0490008", "P0490009", "P0490010", "P0490011", "P0490012", "P0490013"
+        ],
+        "label": "Workers 16 and over"
+      },
+      "B08301_002E": {"cells": ["P0490001", "P0490002"], "label": "Commute by car, truck, or van"},
+      "B08301_003E": {"cells": ["P0490001"], "label": "Drove alone to work"},
+      "B25064_001E": {
+        "cells": ["H043A001"],
+        "label": "Median gross rent",
+        "dollars_of": 1990,
+        "median": true,
+        "note": "Specified renter-occupied units paying cash rent"
+      },
+      "B25077_001E": {
+        "cells": ["H061A001"],
+        "label": "Median home value",
+        "dollars_of": 1990,
+        "median": true,
+        "note": "Specified owner-occupied units only (one-family houses on less than ten acres, no business)"
+      }
+    }
+  }
+}

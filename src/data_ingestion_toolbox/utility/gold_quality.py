@@ -86,7 +86,7 @@ def check_bls_observation_constraints(hook: PostgresHook, month_start: date) -> 
           AND (
               series_id IS NULL
               OR program_code IS NULL
-              OR observation_basis NOT IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS')
+              OR observation_basis NOT IN ('PEOPLE', 'JOBS', 'PRICES', 'FLOWS', 'SPENDING')
           )
     """
     with hook.get_conn() as conn, conn.cursor() as cur:

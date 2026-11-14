@@ -12,6 +12,12 @@ Delaware's three counties are seeded with rectangular boundaries of boundary
 vintage 2024 that split the state at latitudes 38.86 and 39.38 between
 longitudes -75.8 and -75.0, so each Delaware station falls inside exactly
 one of them and the other stations fall inside none.
+
+``tests/fixtures/noaa_normals/monthly_by_station.tar.gz`` is NCEI's 1991-2020
+monthly by-station archive (v1.0.1, c20230404) trimmed to two station files
+copied verbatim (read through OFFICE_LAB on 2026-11-11): Wilmington, New
+Castle County, Delaware (USW00013781), and Madison, Wisconsin (USW00014837),
+which falls inside none of the seeded boundaries.
 """
 
 from __future__ import annotations
@@ -44,6 +50,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = (
     REPOSITORY_ROOT / "tests/fixtures/noaa_normals/annualseasonal_by_station.tar.gz"
 )
+MONTHLY_FIXTURE = (
+    REPOSITORY_ROOT / "tests/fixtures/noaa_normals/monthly_by_station.tar.gz"
+)
 
 KENT = "state:10|county:001"
 NEW_CASTLE = "state:10|county:003"
@@ -67,8 +76,12 @@ def fixture_bytes() -> bytes:
     return FIXTURE.read_bytes()
 
 
+def monthly_fixture_bytes() -> bytes:
+    return MONTHLY_FIXTURE.read_bytes()
+
+
 class FixtureClient:
-    """Answers the archive path with the fixture or an override."""
+    """Answers each archive path with its fixture, or an override."""
 
     def __init__(self, override: bytes | None = None, *, status: int = 200) -> None:
         self.override = override
@@ -78,7 +91,12 @@ class FixtureClient:
     def get(self, url: str, *, headers: dict[str, str]) -> httpx.Response:
         self.calls.append(url)
         request = httpx.Request("GET", url)
-        content = self.override if self.override is not None else fixture_bytes()
+        if self.override is not None:
+            content = self.override
+        elif "/normals-monthly/" in url:
+            content = monthly_fixture_bytes()
+        else:
+            content = fixture_bytes()
         return httpx.Response(self.status, content=content, request=request)
 
     def close(self) -> None:
@@ -89,12 +107,14 @@ def run_to_gold(
     connection_factory: Callable[[], connection],
     *,
     client: FixtureClient | None = None,
+    product: str = "annualseasonal",
 ) -> tuple[UUID, str, int, int]:
-    """Capture, replay and publish the archive; return (run, status, normals, published)."""
+    """Capture, replay and publish one archive; return (run, status, normals, published)."""
     run_id, status = capture_archive(
         connection_factory,
         config=NormalsConfig(min_spacing_seconds=0, max_attempts=1),
         client=client or FixtureClient(),
+        product=product,
     )
     normals = replay_run(connection_factory, run_id=run_id)
     published = publish_run(connection_factory, run_id=run_id)
@@ -175,6 +195,7 @@ def reviewed_warehouse(
                     (SOURCE_CODE,),
                 )
                 for table in (
+                    "silver_noaa_normals.station_monthly_normal",
                     "silver_noaa_normals.station_normal",
                     "silver_noaa_normals.station",
                     "silver_noaa_normals.quarantine",

@@ -21,14 +21,28 @@ from data_ingestion_toolbox.nces_ccd import schema as nces_ccd_schema
 from data_ingestion_toolbox.fhfa_hpi import schema as fhfa_hpi_schema
 from data_ingestion_toolbox.hud_fmr_il import schema as hud_fmr_il_schema
 from data_ingestion_toolbox.fema_nri import schema as fema_nri_schema
+from data_ingestion_toolbox.elections import schema as elections_schema
 from data_ingestion_toolbox.fcc_bdc import schema as fcc_bdc_schema
 from data_ingestion_toolbox.epa_aqs import schema as epa_aqs_schema
+from data_ingestion_toolbox.noaa_climdiv import schema as noaa_climdiv_schema
+from data_ingestion_toolbox.treasury_mts import schema as treasury_mts_schema
+from data_ingestion_toolbox.usaspending import schema as usaspending_schema
 from data_ingestion_toolbox.noaa_normals import schema as noaa_normals_schema
+from data_ingestion_toolbox.noaa_storm_events import schema as noaa_storm_events_schema
 from data_ingestion_toolbox.census_lodes import schema as census_lodes_schema
 from data_ingestion_toolbox.census_cbp import schema as census_cbp_schema
 from data_ingestion_toolbox.irs_migration import schema as irs_migration_schema
+from data_ingestion_toolbox.irs_soi import schema as irs_soi_schema
+from data_ingestion_toolbox.dol_childcare import schema as dol_childcare_schema
 from data_ingestion_toolbox.bls_qcew import schema as qcew_schema
+from data_ingestion_toolbox.census_decennial import schema as decennial_schema
+from data_ingestion_toolbox.cms_ltc import schema as cms_ltc_schema
+from data_ingestion_toolbox.nces_ipeds import schema as nces_ipeds_schema
+from data_ingestion_toolbox.hhs_hospital_capacity import schema as hhs_schema
+from data_ingestion_toolbox.cdc_covid_cases import schema as covid_schema
+from data_ingestion_toolbox.cdc_ilinet import schema as ilinet_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
+from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
 from data_ingestion_toolbox.eia import schema as eia_schema
 from data_ingestion_toolbox.cdc import schema as cdc_schema
@@ -75,11 +89,74 @@ SOURCES = [
         "CENSUS_SAIPE_SAHIE",
     ),
     (
+        "census_decennial_ingest",
+        "ensure_census_decennial_schema",
+        "ingest_batch_",
+        decennial_schema,
+        "CENSUS_DECENNIAL",
+    ),
+    (
+        "cms_ltc_ingest",
+        "ensure_cms_ltc_schema",
+        "ingest_batch_",
+        cms_ltc_schema,
+        "CMS_LTC",
+    ),
+    (
+        "nces_ipeds_ingest",
+        "ensure_nces_ipeds_schema",
+        "ingest_batch_",
+        nces_ipeds_schema,
+        "NCES_IPEDS",
+    ),
+    (
+        "hhs_hospital_capacity_ingest",
+        "ensure_hhs_hospital_capacity_schema",
+        "ingest_batch_",
+        hhs_schema,
+        "HHS_HOSPITAL_CAPACITY",
+    ),
+    (
+        "cdc_covid_cases_ingest",
+        "ensure_cdc_covid_cases_schema",
+        "ingest_state_month_",
+        covid_schema,
+        "CDC_COVID_CASES",
+    ),
+    (
+        "cdc_ilinet_ingest",
+        "ensure_cdc_ilinet_schema",
+        "ingest_fluview_",
+        ilinet_schema,
+        "CDC_ILINET",
+    ),
+    (
+        "census_govfin_ingest",
+        "ensure_census_govfin_schema",
+        "ingest_batch_",
+        govfin_schema,
+        "CENSUS_GOVFIN",
+    ),
+    (
         "irs_migration_ingest",
         "ensure_irs_migration_schema",
         "ingest_batch_",
         irs_migration_schema,
         "IRS_MIGRATION",
+    ),
+    (
+        "irs_soi_ingest",
+        "ensure_irs_soi_schema",
+        "ingest_batch_",
+        irs_soi_schema,
+        "IRS_SOI",
+    ),
+    (
+        "dol_childcare_ingest",
+        "ensure_dol_childcare_schema",
+        "ingest_batch_",
+        dol_childcare_schema,
+        "DOL_CHILDCARE",
     ),
     (
         "eia_retail_gasoline_ingest",
@@ -117,6 +194,34 @@ SOURCES = [
         "NOAA_NORMALS",
     ),
     (
+        "noaa_climdiv_ingest",
+        "ensure_noaa_climdiv_schema",
+        "ingest_batch_",
+        noaa_climdiv_schema,
+        "NOAA_CLIMDIV",
+    ),
+    (
+        "treasury_mts_ingest",
+        "ensure_treasury_mts_schema",
+        "ingest_batch_statements",
+        treasury_mts_schema,
+        "TREASURY_MTS",
+    ),
+    (
+        "usaspending_ingest",
+        "ensure_usaspending_schema",
+        "ingest_batch_awards",
+        usaspending_schema,
+        "USASPENDING",
+    ),
+    (
+        "noaa_storm_events_ingest",
+        "ensure_noaa_storm_events_schema",
+        "ingest_batch_",
+        noaa_storm_events_schema,
+        "NOAA_STORM_EVENTS",
+    ),
+    (
         "fcc_bdc_ingest",
         "ensure_fcc_bdc_schema",
         "ingest_batch_",
@@ -129,6 +234,13 @@ SOURCES = [
         "ingest_batch_",
         fema_nri_schema,
         "FEMA_NRI",
+    ),
+    (
+        "elections_ingest",
+        "ensure_elections_schema",
+        "ingest_batch_",
+        elections_schema,
+        "ELECTIONS",
     ),
     (
         "fhfa_hpi_ingest",

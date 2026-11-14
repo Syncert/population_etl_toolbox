@@ -63,6 +63,12 @@ DISTINCTIVE_MEASURES: tuple[str, ...] = (
     "CDC:places_county:CSMOKING:AgeAdjPrv",
     "CDC:places_county:ACCESS2:AgeAdjPrv",
     "CDC:places_county:DEPRESSION:AgeAdjPrv",
+    # Starting a family (starting-a-family-collection): each a median, a
+    # mean or a rate, ranked alone like the rest.
+    "DOL_CHILDCARE:center_infant",  # median weekly infant care price, centers
+    "HUD_FMR_IL:fmr_3br",  # three-bedroom Fair Market Rent (HUD area's)
+    "BLS_QCEW:annual_avg_weekly_wage:10:0",  # average weekly wage
+    "CENSUS_SAIPE_SAHIE:saipe:SAEPOVRT0_17",  # children under 18 in poverty
 )
 
 #: The fewest siblings with a value a rank is published over. Below ten, one
@@ -210,6 +216,7 @@ def distinctive_measures(
         .mappings()
         .all()
     ]
+    ranked_ids = sorted({*sibling_ids, geo_id})
     ranked: list[DistinctiveMeasure] = []
     not_ranked: list[NotRankedMeasure] = []
     for metric_code in measures:
@@ -253,6 +260,14 @@ def distinctive_measures(
             continue
         conditions.extend(filter_conditions)
         params.update(filter_params)
+        # Read only the geographies being ranked. `rank_measure` keeps only
+        # these anyway; naming them in the statement lets every source reach
+        # them through its (metric, geo_id) index or, for a view that ranks
+        # by geography, push the filter inside the ranking, instead of
+        # reading every row of the measure at every grain and period first
+        # (11.3 s for a Wisconsin county on the internal stack, October 2026).
+        conditions.append(f"{dispatch.geo_id_expression} = ANY(:sibling_ids)")
+        params["sibling_ids"] = ranked_ids
         require_relation(db, dispatch.latest_relation)
         rows = (
             db.execute(

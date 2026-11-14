@@ -109,7 +109,11 @@ def test_fred_capture_replay_retains_revisions_and_selects_latest_silver(
     postgres_connection_factory: Callable[[], connection],
     fred_silver_token: str,
 ) -> None:
-    """Covers: DB-010, DB-020, DB-022 — FRED replays offline by revision."""
+    """Covers: DB-010, DB-020, DB-022, DB-069 — FRED replays offline by revision.
+
+    The second capture reads 2099-01-02 as missing again; that repeat of the
+    newest stored revision is not stored a second time.
+    """
     run_id = uuid4()
     request_id = uuid4()
     series_id = f"TEST_FRED_SILVER_{fred_silver_token}_CAPTURE"
@@ -212,8 +216,8 @@ def test_fred_capture_replay_retains_revisions_and_selects_latest_silver(
                 (series_id,),
             )
             revisions = cursor.fetchall()
-            assert len(revisions) == 4
-            assert sum(row[2] == "missing" and row[1] == "." for row in revisions) == 2
+            assert len(revisions) == 3
+            assert sum(row[2] == "missing" and row[1] == "." for row in revisions) == 1
             cursor.execute(
                 """
                 SELECT value, source_value, realtime_start, capture_id

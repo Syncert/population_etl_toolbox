@@ -71,17 +71,31 @@ SOURCES: tuple[str, ...] = (
     "FHFA_HPI",
     "HUD_FMR_IL",
     "FEMA_NRI",
+    "ELECTIONS",
     "FCC_BDC",
     "EPA_AQS",
     "NOAA_NORMALS",
+    "NOAA_CLIMDIV",
+    "TREASURY_MTS",
+    "USASPENDING",
+    "NOAA_STORM_EVENTS",
     "CENSUS_LODES",
     "CENSUS_CBP",
     "IRS_MIGRATION",
+    "IRS_SOI",
     "CENSUS_SAIPE_SAHIE",
+    "CENSUS_DECENNIAL",
+    "CMS_LTC",
+    "NCES_IPEDS",
+    "HHS_HOSPITAL_CAPACITY",
+    "CDC_COVID_CASES",
+    "CDC_ILINET",
+    "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
     "BEA",
     "EIA",
+    "DOL_CHILDCARE",
 )
 
 RULE_ID_PATTERN = re.compile(r"\ADQ-[A-Z]+-\d{3}\Z")
@@ -551,6 +565,19 @@ _REFERENCE_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first reference load",
     ),
     _obj(
+        "silver_ref.tract_decade_crosswalk",
+        "reference",
+        "SHARED",
+        grain="earlier_vintage, earlier_geo_sk, later_geo_sk",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method=(
+            "one row per part of a 2000 or 2010 census tract lying in a tract "
+            "of the next census, from the Bureau's relationship files"
+        ),
+        cadence="per tract relationship file release",
+        empty_behavior="empty only before the decade tract references load",
+    ),
+    _obj(
         "silver_ref.geography_resolution",
         "reference",
         "SHARED",
@@ -678,6 +705,42 @@ _GLOSSARY_OBJECTS: tuple[WarehouseObject, ...] = (
         cadence="per geography vintage",
         empty_behavior="empty only before the first reference load",
     ),
+    _obj(
+        "gold_glossary.geo_search",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current state, county, metro, place and ZCTA)",
+        lineage="gold_glossary.dim_geography, gold_glossary.geo_relationship, "
+        "gold_census.mv_acs_latest",
+        scope_method="whole rebuild by gold_glossary.refresh_geo_search() in one "
+        "transaction, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first reconciliation run after the "
+        "first reference load",
+    ),
+    _obj(
+        "gold_glossary.tile_boundary_version",
+        "glossary",
+        "SHARED",
+        grain="geo_id, boundary_vintage (PLACE and METRO boundaries, every vintage)",
+        lineage="silver_ref.dim_geo_geometry_version, silver_ref.dim_geo_entity, "
+        "silver_ref.dim_geo_entity_version",
+        scope_method="incremental: gold_glossary.refresh_tile_boundaries() rewrites "
+        "a boundary only when its checksum or attributes changed and removes one "
+        "the reference no longer holds, after the geography projection refresh",
+        cadence="daily, with glossary_reconciliation",
+        empty_behavior="empty only before the first place or metro boundary load",
+    ),
+    _obj(
+        "gold_glossary.geo_boundary",
+        "glossary",
+        "SHARED",
+        grain="geo_id (current geographies with a boundary)",
+        lineage="gold_glossary.dim_geo_latest",
+        scope_method="view over the geography projection, current boundaries only",
+        cadence="per geography vintage",
+        empty_behavior="empty only before the first boundary load",
+    ),
 )
 
 _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
@@ -717,6 +780,13 @@ _LEGACY_SERVING_OBJECTS: tuple[WarehouseObject, ...] = tuple(
             "tile_tract",
             "geo_id (TRACT, current, with geometry)",
             "gold_glossary.dim_geo_latest",
+        ),
+        # What the place and metro tile layers hold per vintage
+        # (tiles-places-and-metros); the tile functions read the same table.
+        (
+            "tile_layer_vintage",
+            "geo_level, boundary_vintage (PLACE and METRO)",
+            "gold_glossary.tile_boundary_version",
         ),
         ("dim_geography", "geo_id (projection)", "gold_glossary.dim_geography"),
         (
@@ -806,6 +876,16 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first ACS capture",
     ),
     _obj(
+        "silver_census.transform_slice_state",
+        "silver",
+        "CENSUS_ACS",
+        grain="year, slice_key",
+        lineage="silver_census.observation_revision",
+        scope_method="one row per transform slice, with the content it last finished against",
+        cadence="per ACS silver transform",
+        empty_behavior="empty before the first ACS silver transform",
+    ),
+    _obj(
         "silver_census.transform_checkpoint",
         "silver",
         "CENSUS_ACS",
@@ -874,6 +954,52 @@ _ACS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="latest-vintage projection",
         cadence="per publication",
         empty_behavior="empty only before the first publication",
+    ),
+    _obj(
+        "gold_census.acs_tract_comparable",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id (2020 tract), observation_date, dataset_code, variable_code",
+        lineage=("gold_census.rpt_acs_observations, silver_ref.tract_decade_crosswalk"),
+        scope_method=(
+            "derived: earlier-decade tract counts apportioned to 2020 tracts; "
+            "count tables only"
+        ),
+        cadence="a view, current with its two inputs",
+        empty_behavior="empty until the tract crosswalk is loaded",
+    ),
+    _obj(
+        "gold_census.age_structure_summary",
+        "serving",
+        "CENSUS_ACS",
+        grain="geo_id, dataset_code, vintage_year, observation_date (unique index)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method=(
+            "derived (ADR-0013): broad age groups, dependency ratios and sex "
+            "ratio per place and release from B01001/B01002, Bureau margins"
+        ),
+        cadence="per publication, a release at a time after the serving refresh",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.age_structure_summary_build",
+        "control",
+        "CENSUS_ACS",
+        grain="dataset_code, vintage_year (primary key)",
+        lineage="gold_census.rpt_acs_observations",
+        scope_method="the partition watermark each release's summary was built from",
+        cadence="per age summary build",
+        empty_behavior="empty until the first age summary build",
+    ),
+    _obj(
+        "gold_census.tract_decade_change",
+        "serving",
+        "CENSUS_ACS",
+        grain="earlier_vintage, earlier_geo_id, later_geo_id",
+        lineage="silver_ref.tract_decade_crosswalk, silver_ref.dim_geo_entity",
+        scope_method="reference: relationship-file parts by tract geo_id",
+        cadence="a view, current with the tract crosswalk",
+        empty_behavior="empty until the tract crosswalk is loaded",
     ),
     _obj(
         "gold_census.fact_observation",
@@ -1400,8 +1526,18 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
         "CDC",
         grain="run_id; unique per (asset_id, release_watermark, run_id)",
         lineage="control.ingestion_run",
-        scope_method="registered Socrata assets (cdi, places_county)",
+        scope_method="registered Socrata assets (cdi, places_county, places_tract)",
         cadence="weekly metadata check",
+        empty_behavior="empty only before the first CDC run",
+    ),
+    _obj(
+        "control.cdc_release_page",
+        "control",
+        "CDC",
+        grain="run_id, page_offset",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every observation page a release run reads or resumes",
+        cadence="per CDC capture",
         empty_behavior="empty only before the first CDC run",
     ),
     _obj(
@@ -1512,6 +1648,36 @@ _CDC_OBJECTS: tuple[WarehouseObject, ...] = (
 # ---------------------------------------------------------------------------
 
 _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.fbi_return_a_year",
+        "control",
+        "FBI_UCR",
+        grain="release_key, data_year",
+        lineage="raw_capture.response_capture",
+        scope_method="registered years (2015 through last year) of fbi_ucr/return_a",
+        cadence="weekly (fbi_ucr_ingest); an unchanged file is not reloaded",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
+        "silver_fbi.return_a_source_row",
+        "silver",
+        "FBI_UCR",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every master-file line a loaded Return A year's facts name",
+        cadence="weekly with the Return A load; backfilled by fbi_ucr_ingest",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
+    _obj(
+        "silver_fbi.return_a_county_crosswalk",
+        "silver",
+        "FBI_UCR",
+        grain="release_key, data_year, state_code, fbi_county_code",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_current",
+        scope_method="every FBI county code a loaded Return A year uses",
+        cadence="per Return A load",
+        empty_behavior="empty until the first Return A year is loaded",
+    ),
     _obj(
         "control.fbi_ucr_release",
         "control",
@@ -1740,6 +1906,67 @@ _FBI_OBJECTS: tuple[WarehouseObject, ...] = (
         "(latest refresh per product)",
         lineage="gold_fbi.county_rollup",
         scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_fbi.county_agency_rate_month",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period",
+        lineage="gold_fbi.crime_observation, silver_fbi.agency_geography_relationship",
+        scope_method="every county-month of one product, recomputed by "
+        "gold_fbi.refresh_county_agency_rate in the transaction that "
+        "publishes that product",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_fbi.county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, measure_id, county geo_id, period "
+        "(declared-derived rate; ADR-0012)",
+        lineage="gold_fbi.county_agency_rate_month",
+        scope_method="reported offenses of single-county agencies over those "
+        "agencies' FBI populations, per 100,000; multi-county agencies and "
+        "agencies without a published population are excluded from both "
+        "sides; refused under 50 percent coverage",
+        cadence="per publication",
+        empty_behavior="a county-month with no usable report carries a refusal "
+        "reason and no rate, never a zero",
+    ),
+    _obj(
+        "gold_fbi.latest_county_agency_rate",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, measure_id, county geo_id, period "
+        "(latest refresh per product)",
+        lineage="gold_fbi.county_agency_rate",
+        scope_method="latest-refresh projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_fbi.release_fact_count",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, subject_type, period_start",
+        lineage="gold_fbi.latest_release_fact",
+        scope_method="every subject type and month of one product's newest "
+        "published release, recounted by gold_fbi.refresh_release_fact_count "
+        "in the transaction that publishes that product",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_fbi.latest_release_fact",
+        "gold",
+        "FBI_UCR",
+        grain="product_id, release_key, source record (latest refresh per product)",
+        lineage="silver_fbi.fact_crime_observation",
+        scope_method="the fact columns of latest_release_observation's rows, "
+        "without its participation, measure and release joins",
         cadence="per publication",
         empty_behavior="empty only before the first published release",
     ),
@@ -1978,7 +2205,10 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         "BEA",
         grain="table_code, line_code, geo_id, year, capture_id",
         lineage="silver_bea.observation_revision, silver_ref.geography_resolution",
-        scope_method="registered tables x registered lines x nation, states and counties",
+        scope_method=(
+            "registered tables x registered lines x nation, states and counties, "
+            "and metro areas summed from their counties (marked by derivation)"
+        ),
         cadence="per BEA replay",
         empty_behavior="a withheld or unavailable cell keeps its status and no number, never zero",
     ),
@@ -2001,6 +2231,23 @@ _BEA_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="newest-release projection, never a replacement",
         cadence="per publication",
         empty_behavior="empty only before the first published table",
+    ),
+    _obj(
+        "gold_bea.disposable_income_real",
+        "gold",
+        "BEA",
+        grain="geo_id, year (newest release of SAINC51 line 53)",
+        lineage="gold_bea.observation_revision, gold_fred.fact_fred_observation",
+        scope_method=(
+            "SAINC51 line 53 deflated by FRED PCEPI and SARPP line 1: the "
+            "nation and states BEA publishes disposable income for; the "
+            "regional-prices column only for years with a price parity (2008 on)"
+        ),
+        cadence="per publication",
+        empty_behavior=(
+            "empty only before SAINC51 is published; a year without twelve PCE "
+            "months or without a parity has no deflated figure, never zero"
+        ),
     ),
     _obj(
         "gold_bea.measure_export",
@@ -2324,6 +2571,887 @@ _SAE_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# CMS long-term care facilities (CMS Form 671 and SNF cost reports).
+# ---------------------------------------------------------------------------
+
+_CMS_LTC_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cms_ltc_file",
+        "control",
+        "CMS_LTC",
+        grain="run_id (one read of one catalog release's CSV)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="releases data.cms.gov/data.json lists for the two registered series",
+        cadence="monthly; releases not yet published from the same URL",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cms_ltc.dim_measure",
+        "silver",
+        "CMS_LTC",
+        grain="series_id, measure_id",
+        scope_method="registered figures in cms_ltc/registry.py",
+        cadence="per CMS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cms_ltc.quarantine",
+        "silver",
+        "CMS_LTC",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per CMS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_cms_ltc.facility_report",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, report_key",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every facility row of a replayed file; cost reports placed by county name",
+        cadence="per CMS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cms_ltc.facility_count",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, report_key, measure_id",
+        lineage="silver_cms_ltc.facility_report",
+        scope_method="registered figures of every stored facility row",
+        cadence="per CMS replay",
+        empty_behavior="a blank figure is retained with status missing, never zero",
+    ),
+    _obj(
+        "silver_cms_ltc.area_total",
+        "silver",
+        "CMS_LTC",
+        grain="run_id, measure_id, geo_id",
+        lineage="silver_cms_ltc.facility_count, silver_cms_ltc.facility_report",
+        scope_method="sums of published facility figures by county, state and nation",
+        cadence="per CMS replay",
+        empty_behavior="an area with no facility figure has no row",
+    ),
+    _obj(
+        "silver_cms_ltc.facility_place",
+        "silver",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report",
+        scope_method="each facility's county from its newest published cost report",
+        cadence="per CMS publication",
+        empty_behavior="empty only before the first published cost report",
+    ),
+    _obj(
+        "gold_cms_ltc.area_revision",
+        "gold",
+        "CMS_LTC",
+        grain="run_id, measure_id, geo_id (published files only)",
+        lineage="silver_cms_ltc.area_total, control.cms_ltc_file",
+        scope_method="published files; areas in the shared geography",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.area_latest",
+        "gold",
+        "CMS_LTC",
+        grain="metric_key, geo_id, period_start (newest capture)",
+        lineage="gold_cms_ltc.area_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.facility_latest",
+        "gold",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report, silver_cms_ltc.facility_count",
+        scope_method="newest published CMS-671 quarter and cost report per facility",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.facility_history",
+        "gold",
+        "CMS_LTC",
+        grain="ccn",
+        lineage="silver_cms_ltc.facility_report, silver_cms_ltc.facility_count",
+        scope_method="every facility in any published file, flagged when in the newest quarter",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_cms_ltc.measure_export",
+        "publisher",
+        "CMS_LTC",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cms_ltc.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cms_ltc.metric_publisher",
+        "publisher",
+        "CMS_LTC",
+        grain="source_object_key (series:measure)",
+        lineage="gold_cms_ltc.area_latest, silver_cms_ltc.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NCES IPEDS colleges (directory, housing capacity, fall enrolment).
+# ---------------------------------------------------------------------------
+
+_NCES_IPEDS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.nces_ipeds_file",
+        "control",
+        "NCES_IPEDS",
+        grain="run_id (one request of one component's file for one year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered components and years in nces_ipeds/registry.py",
+        cadence="monthly; years not yet answered and the year after the newest published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_nces_ipeds.dim_measure",
+        "silver",
+        "NCES_IPEDS",
+        grain="measure_id",
+        scope_method="registered figures in nces_ipeds/registry.py",
+        cadence="per IPEDS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_nces_ipeds.quarantine",
+        "silver",
+        "NCES_IPEDS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per IPEDS replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_nces_ipeds.institution",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, unitid",
+        lineage="raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every institution of a replayed directory file; county by published code",
+        cadence="per IPEDS replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_nces_ipeds.institution_value",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, unitid, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="registered figures of every institution of a replayed IC or EF A file",
+        cadence="per IPEDS replay",
+        empty_behavior="a not-applicable or not-reported figure is retained with its status, never zero",
+    ),
+    _obj(
+        "silver_nces_ipeds.area_total",
+        "silver",
+        "NCES_IPEDS",
+        grain="run_id, measure_id, geo_id",
+        lineage="silver_nces_ipeds.institution_value, silver_nces_ipeds.institution",
+        scope_method="sums of published institution figures by county, state and nation",
+        cadence="per IPEDS replay",
+        empty_behavior="an area with no institution figure has no row",
+    ),
+    _obj(
+        "gold_nces_ipeds.area_revision",
+        "gold",
+        "NCES_IPEDS",
+        grain="run_id, measure_id, geo_id (published files only)",
+        lineage="silver_nces_ipeds.area_total, control.nces_ipeds_file",
+        scope_method="published files",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ipeds.area_latest",
+        "gold",
+        "NCES_IPEDS",
+        grain="metric_key, geo_id, period_year (newest capture)",
+        lineage="gold_nces_ipeds.area_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_nces_ipeds.institution_year",
+        "gold",
+        "NCES_IPEDS",
+        grain="unitid, period_year",
+        lineage="silver_nces_ipeds.institution, silver_nces_ipeds.institution_value",
+        scope_method="newest published directory entry and figures per institution and year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published directory file",
+    ),
+    _obj(
+        "gold_nces_ipeds.measure_export",
+        "publisher",
+        "NCES_IPEDS",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_nces_ipeds.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_nces_ipeds.metric_publisher",
+        "publisher",
+        "NCES_IPEDS",
+        grain="source_object_key (ipeds:measure)",
+        lineage="gold_nces_ipeds.area_latest, silver_nces_ipeds.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# HHS COVID-19 hospital capacity by facility (healthdata.gov anag-cw7u).
+# ---------------------------------------------------------------------------
+
+_HHS_HOSPITAL_CAPACITY_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.hhs_hospital_capacity_snapshot",
+        "control",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id (one complete read of the frozen dataset)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered dataset; history runs only",
+        cadence="operator-triggered; never read again once published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.hhs_hospital_capacity_page",
+        "control",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="run_id (one page of one snapshot)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every page of a snapshot, in order; resumes at the next page",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.dim_measure",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="measure_id",
+        scope_method="registered figures in hhs_hospital_capacity/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.quarantine",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.facility",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, hospital_pk",
+        lineage="silver_hhs_hospital_capacity.facility_week_value, silver_ref.dim_geo_entity",
+        scope_method="every hospital of a snapshot as its newest week describes it; county by published FIPS code",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.facility_week_value",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, hospital_pk, collection_week, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="registered figures of every hospital week of a snapshot",
+        cadence="per replay",
+        empty_behavior="a suppressed (-999999) or omitted figure is retained with its status, never zero",
+    ),
+    _obj(
+        "silver_hhs_hospital_capacity.area_week",
+        "silver",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, measure_id, geo_id, collection_week",
+        lineage="silver_hhs_hospital_capacity.facility_week_value, silver_hhs_hospital_capacity.facility",
+        scope_method="sums of published hospital figures by county, state and nation, with reporting, suppressed and missing counts",
+        cadence="per replay",
+        empty_behavior="an area week with no hospital has no row",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.area_revision",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="snapshot_id, measure_id, geo_id, period_start (published snapshots only)",
+        lineage="silver_hhs_hospital_capacity.area_week, control.hhs_hospital_capacity_snapshot",
+        scope_method="published snapshots",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.area_latest",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="metric_key, geo_id, period_start (newest published snapshot)",
+        lineage="gold_hhs_hospital_capacity.area_revision",
+        scope_method="newest-snapshot projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.facility_latest",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="hospital_pk",
+        lineage="silver_hhs_hospital_capacity.facility",
+        scope_method="every hospital of the newest published snapshot",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.facility_week",
+        "gold",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="hospital_pk, period_start",
+        lineage="silver_hhs_hospital_capacity.facility_week_value",
+        scope_method="every hospital week of the newest published snapshot, figures with their status",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.measure_export",
+        "publisher",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_hhs_hospital_capacity.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_hhs_hospital_capacity.metric_publisher",
+        "publisher",
+        "HHS_HOSPITAL_CAPACITY",
+        grain="source_object_key (hospital:measure)",
+        lineage="silver_hhs_hospital_capacity.area_week, silver_hhs_hospital_capacity.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# CDC COVID-19 case surveillance record counts (data.cdc.gov n8mc-b4w4).
+# ---------------------------------------------------------------------------
+
+_CDC_COVID_CASES_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cdc_covid_cases_snapshot",
+        "control",
+        "CDC_COVID_CASES",
+        grain="snapshot_id (one complete read of the frozen dataset)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the registered dataset; history runs only",
+        cadence="operator-triggered; never read again once published",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.cdc_covid_cases_slice",
+        "control",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, slice_index (one state and case month)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every state-month the slice index names; resumes at the next pending slice",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.dim_measure",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="measure_id",
+        scope_method="registered counts in cdc_covid_cases/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.quarantine",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected group, with its record count; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every group conformed",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.slice_group",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, slice_index, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every group CDC's API returned per state-month: county, age group, hospitalisation and death text with its record count",
+        cadence="per replay",
+        empty_behavior="a combination with no published record has no row",
+    ),
+    _obj(
+        "silver_cdc_covid_cases.area_month",
+        "silver",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, measure_id, age_key, geo_id, case_month",
+        lineage="silver_cdc_covid_cases.slice_group, silver_ref.dim_geo_entity",
+        scope_method="counts of published case records by county, state and nation, month, age group and measure",
+        cadence="per replay",
+        empty_behavior="an area, month and age group with no published record has no row, never zero",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.area_revision",
+        "gold",
+        "CDC_COVID_CASES",
+        grain="snapshot_id, measure_id, age_key, geo_id, period_start (published snapshots only)",
+        lineage="silver_cdc_covid_cases.area_month, control.cdc_covid_cases_snapshot",
+        scope_method="published snapshots",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.area_latest",
+        "gold",
+        "CDC_COVID_CASES",
+        grain="metric_key, geo_id, period_start (newest published snapshot)",
+        lineage="gold_cdc_covid_cases.area_revision",
+        scope_method="newest-snapshot projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.measure_export",
+        "publisher",
+        "CDC_COVID_CASES",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cdc_covid_cases.dim_measure",
+        scope_method="registered counts",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cdc_covid_cases.metric_publisher",
+        "publisher",
+        "CDC_COVID_CASES",
+        grain="source_object_key (covid:measure:age)",
+        lineage="silver_cdc_covid_cases.area_month, silver_cdc_covid_cases.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published snapshot",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# CDC FluView ILINet (weekly outpatient influenza-like illness).
+# ---------------------------------------------------------------------------
+
+_CDC_ILINET_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.cdc_ilinet_release",
+        "control",
+        "CDC_ILINET",
+        grain="release_id (one read of FluView)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the init document and one download per region type",
+        cadence="weekly",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.cdc_ilinet_download",
+        "control",
+        "CDC_ILINET",
+        grain="release_id, region_type",
+        lineage="raw_capture.response_capture",
+        scope_method="national, HHS-region and state downloads of a release",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_cdc_ilinet.dim_measure",
+        "silver",
+        "CDC_ILINET",
+        grain="measure_id",
+        scope_method="registered figures in cdc_ilinet/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_ilinet.quarantine",
+        "silver",
+        "CDC_ILINET",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_cdc_ilinet.region",
+        "silver",
+        "CDC_ILINET",
+        grain="region_type, region",
+        lineage="silver_ref.dim_geo_entity",
+        scope_method="every ILINet reporting region read, with its placement or why it is not served",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_cdc_ilinet.week_value",
+        "silver",
+        "CDC_ILINET",
+        grain="region_type, region, mmwr_year, mmwr_week, measure_id, release_id",
+        lineage="raw_capture.response_capture",
+        scope_method="each figure as the release that first carried or changed it",
+        cadence="per replay",
+        empty_behavior="a figure CDC marks X is retained as not_published, never zero",
+    ),
+    _obj(
+        "gold_cdc_ilinet.area_revision",
+        "gold",
+        "CDC_ILINET",
+        grain="release_id, measure_id, geo_id, period_start (published releases only)",
+        lineage="silver_cdc_ilinet.week_value, silver_cdc_ilinet.region",
+        scope_method="published revisions of served regions",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_cdc_ilinet.area_latest",
+        "gold",
+        "CDC_ILINET",
+        grain="metric_key, geo_id, period_start (newest published revision)",
+        lineage="gold_cdc_ilinet.area_revision",
+        scope_method="newest-revision projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_cdc_ilinet.measure_export",
+        "publisher",
+        "CDC_ILINET",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_cdc_ilinet.dim_measure",
+        scope_method="registered figures",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_cdc_ilinet.metric_publisher",
+        "publisher",
+        "CDC_ILINET",
+        grain="source_object_key (ilinet:measure)",
+        lineage="silver_cdc_ilinet.week_value, silver_cdc_ilinet.dim_measure",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published release",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# 2020 Census redistricting data (group quarters by type).
+# ---------------------------------------------------------------------------
+
+_DECENNIAL_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_decennial_slice",
+        "control",
+        "CENSUS_DECENNIAL",
+        grain="run_id, geo_level, scope (one request per grain and area)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered slices: nation, states, counties, tracts by state, "
+        "blocks of declared counties",
+        cadence="operator-triggered; never-answered slices only",
+        empty_behavior="an area the API does not publish (HTTP 204) is status empty",
+    ),
+    _obj(
+        "silver_census_decennial.dim_variable",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id",
+        scope_method="registered variables in census_decennial/registry.py",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_decennial.observation_revision",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="capture_id, source_row_index, variable_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_census_decennial.observation_quarantine",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per rejected source row; populated only on failure",
+        cadence="per 2020 Census replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_census_decennial.fact_count",
+        "silver",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id, capture_id",
+        lineage="silver_census_decennial.observation_revision, "
+        "silver_ref.geography_resolution",
+        scope_method="registered variables x registered slices",
+        cadence="per 2020 Census replay",
+        empty_behavior="a missing count is retained with status missing, never zero",
+    ),
+    _obj(
+        "gold_census_decennial.count_revision",
+        "gold",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id, capture_id (published slices only)",
+        lineage="silver_census_decennial.fact_count, control.census_decennial_slice",
+        scope_method="published slices; blocks are not served",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_decennial.count_latest",
+        "gold",
+        "CENSUS_DECENNIAL",
+        grain="dataset_id, variable_id, geo_id (newest capture)",
+        lineage="gold_census_decennial.count_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_decennial.measure_export",
+        "publisher",
+        "CENSUS_DECENNIAL",
+        grain="source_dataset, source_measure_code",
+        lineage="silver_census_decennial.dim_variable",
+        scope_method="registered variables",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_decennial.metric_publisher",
+        "publisher",
+        "CENSUS_DECENNIAL",
+        grain="source_object_key (dataset:variable)",
+        lineage="gold_census_decennial.count_latest, silver_census_decennial.dim_variable",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Census state and local government finance.
+# ---------------------------------------------------------------------------
+
+_GOVFIN_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.census_govfin_slice",
+        "control",
+        "CENSUS_GOVFIN",
+        grain="run_id, slice_key (one run per dataset and period)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method=(
+            "Census of Governments editions x their archives; annual finance years and "
+            "QTAX years x us/state"
+        ),
+        cadence="monthly; periods never answered are captured on the next run",
+        empty_behavior="a grain the API does not publish (HTTP 204) is status empty",
+    ),
+    _obj(
+        "silver_census_govfin.dim_measure",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, measure_id",
+        scope_method="registered measures in census_govfin/registry.py",
+        cadence="per government finance replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_census_govfin.measure_item",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="measure_id, item_code",
+        lineage="silver_census_govfin.unit_amount, silver_census_govfin.state_type_total",
+        scope_method="each Census item code read, mapped to the measures it counts toward",
+        cadence="per unit-file replay",
+        empty_behavior="empty only before the first unit-file replay",
+    ),
+    _obj(
+        "silver_census_govfin.unit_government",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every government of an edition's directory file",
+        cadence="per unit-file replay",
+        empty_behavior="empty only before the first unit-file replay",
+    ),
+    _obj(
+        "silver_census_govfin.unit_amount",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="every (government, item, amount) record of an edition's unit file",
+        cadence="per unit-file replay",
+        empty_behavior="a non-numeric amount is kept with status missing, never zero",
+    ),
+    _obj(
+        "silver_census_govfin.state_type_total",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="Census's state totals at the state-and-local, state and local levels",
+        cadence="per unit-file replay",
+        empty_behavior="empty for 2002, whose public files carry no state totals",
+    ),
+    _obj(
+        "silver_census_govfin.api_revision",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, source_row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="registered annual finance and QTAX rows of each captured slice",
+        cadence="per government finance replay",
+        empty_behavior="empty only before the first API capture",
+    ),
+    _obj(
+        "silver_census_govfin.quarantine",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="capture_id, member, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable record; populated only on failure",
+        cadence="per government finance replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_census_govfin.fact_observation",
+        "silver",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, measure_id, government_level, fiscal_year, quarter, geo_id, capture_id",
+        lineage=(
+            "silver_census_govfin.api_revision, silver_census_govfin.unit_amount, "
+            "silver_census_govfin.unit_government, silver_ref.geography_resolution"
+        ),
+        scope_method="registered measures x periods x nation, states and county areas",
+        cadence="per government finance replay",
+        empty_behavior="a missing figure is retained with status missing, never zero",
+    ),
+    _obj(
+        "gold_census_govfin.observation_revision",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="metric_key, geo_id, fiscal_year, quarter, capture_id (published slices only)",
+        lineage="silver_census_govfin.fact_observation, control.census_govfin_slice",
+        scope_method="published slices; every capture of a figure kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_govfin.observation_latest",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="metric_key, geo_id, fiscal_year, quarter (newest capture)",
+        lineage="gold_census_govfin.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published slice",
+    ),
+    _obj(
+        "gold_census_govfin.county_area_government",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="census_year, government_code",
+        lineage="silver_census_govfin.unit_government, control.census_govfin_slice",
+        scope_method="local governments of each edition's newest published directory",
+        cadence="per publication",
+        empty_behavior="empty only before the first published unit file",
+    ),
+    _obj(
+        "gold_census_govfin.tax_mix",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, government_level, measure_id, fiscal_year, quarter, geo_id",
+        lineage="gold_census_govfin.observation_latest",
+        scope_method="each tax type's share of taxes in the same dataset, level, period and place",
+        cadence="per publication",
+        empty_behavior="no share where the total is missing or zero, with the reason",
+    ),
+    _obj(
+        "gold_census_govfin.spending_mix",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="dataset_id, government_level, measure_id, fiscal_year, geo_id",
+        lineage="gold_census_govfin.observation_latest",
+        scope_method="each Census spending line's share of direct general spending in the same dataset, level, year and place",
+        cadence="per publication",
+        empty_behavior="no share where the total is missing or zero, with the reason; county areas only in Census of Governments years",
+    ),
+    _obj(
+        "gold_census_govfin.tax_burden",
+        "gold",
+        "CENSUS_GOVFIN",
+        grain="geo_id, fiscal_year",
+        lineage="gold_census_govfin.observation_latest, gold_bea.observation_latest",
+        scope_method="taxes against BEA personal income and population for the same place and year",
+        cadence="per publication",
+        empty_behavior="no ratio where the BEA denominator is not loaded, with the reason",
+    ),
+    _obj(
+        "gold_census_govfin.measure_export",
+        "publisher",
+        "CENSUS_GOVFIN",
+        grain="source_object_key (dataset:measure:government level)",
+        lineage="silver_census_govfin.dim_measure",
+        scope_method="registered measures x government levels",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "gold_census_govfin.metric_publisher",
+        "publisher",
+        "CENSUS_GOVFIN",
+        grain="source_object_key (dataset:measure:government level)",
+        lineage="gold_census_govfin.observation_latest, gold_census_govfin.measure_export",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published slice",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # IRS Statistics of Income county-to-county migration.
 # ---------------------------------------------------------------------------
 
@@ -2366,7 +3494,7 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
         lineage="silver_irs_migration.flow_revision, silver_ref.dim_geo_entity",
         scope_method="registered files; county flows with both ends resolved and SOI's own categories",
         cadence="per SOI migration replay",
-        empty_behavior="a deleted category is withheld with no value, never zero; a flow under 20 returns is in its Other flows category",
+        empty_behavior="a deleted category is withheld with no value, never zero; a flow under SOI's threshold (20 returns; 10 or 20 before 2018-2019) is in its Other flows category",
     ),
     _obj(
         "gold_irs_migration.flow_revision",
@@ -2429,6 +3557,210 @@ _IRS_MIGRATION_OBJECTS: tuple[WarehouseObject, ...] = (
     ),
 )
 
+_IRS_SOI_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.irs_soi_file",
+        "control",
+        "IRS_SOI",
+        grain="run_id (one run per product and tax year)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered files in irs_soi/registry.py; the newest two years and every year never published",
+        cadence="monthly; an unchanged file adds a capture and no observation",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.dim_measure",
+        "silver",
+        "IRS_SOI",
+        grain="measure_id",
+        scope_method="the curated items in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.dim_agi_band",
+        "silver",
+        "IRS_SOI",
+        grain="agi_band",
+        scope_method="the AGI bands in irs_soi/registry.py, written at replay",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_irs_soi.observation_revision",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, measure_id",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures",
+        cadence="per SOI income replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_irs_soi.observation_quarantine",
+        "silver",
+        "IRS_SOI",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable row; row 0 for a file refused whole",
+        cadence="per SOI income replay",
+        empty_behavior="empty when every row was read",
+    ),
+    _obj(
+        "silver_irs_soi.fact_observation",
+        "silver",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id",
+        lineage="silver_irs_soi.observation_revision, silver_ref.dim_geo_entity",
+        scope_method="registered files; every row read, resolved or unmapped",
+        cadence="per SOI income replay",
+        empty_behavior="a cell that is not a number is missing with SOI's text, never zero",
+    ),
+    _obj(
+        "gold_irs_soi.observation_revision",
+        "gold",
+        "IRS_SOI",
+        grain="file_kind, metric_key, tax_year, geo_id, capture_id (published files, resolved places)",
+        lineage="silver_irs_soi.fact_observation, control.irs_soi_file",
+        scope_method="published files; every capture kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.observation_latest",
+        "gold",
+        "IRS_SOI",
+        grain="metric_key, geo_id, tax_year (county files first, newest capture)",
+        lineage="gold_irs_soi.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_irs_soi.measure_export",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        scope_method="registered items x AGI bands",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first replay writes the dimensions",
+    ),
+    _obj(
+        "gold_irs_soi.metric_publisher",
+        "publisher",
+        "IRS_SOI",
+        grain="source_object_key (measure or measure:agi band)",
+        lineage="gold_irs_soi.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+_NDCP_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.dol_childcare_file",
+        "control",
+        "DOL_CHILDCARE",
+        grain="run_id (one run per read of a registered NDCP release)",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="registered releases in dol_childcare/registry.py, every one read each month",
+        cadence="monthly; an unchanged workbook adds a capture and no price",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.dol_childcare_page",
+        "control",
+        "DOL_CHILDCARE",
+        grain="release, request_key (one API page of a read not yet captured)",
+        lineage="",
+        scope_method="the pages of a read stopped before its capture, kept to resume it",
+        cadence="per read; removed once the read's capture is committed",
+        empty_behavior="empty whenever no read is stopped part way",
+    ),
+    _obj(
+        "silver_dol_childcare.price_revision",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="capture_id, source_row_index, metric_key",
+        lineage="raw_capture.response_capture",
+        scope_method=(
+            "deterministic replay of committed captures; a price that repeats the "
+            "newest stored one is not stored again"
+        ),
+        cadence="per NDCP replay",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "silver_dol_childcare.observation_quarantine",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable row; row 0 for a workbook refused whole",
+        cadence="per NDCP replay",
+        empty_behavior="empty when every row was read",
+    ),
+    _obj(
+        "silver_dol_childcare.fact_price",
+        "silver",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year, capture_id",
+        lineage="silver_dol_childcare.price_revision, silver_ref.dim_geo_entity",
+        scope_method="registered releases x eight prices x every county and study year",
+        cadence="per NDCP replay",
+        empty_behavior="a blank price cell is missing (provider_missing), never zero",
+    ),
+    _obj(
+        "gold_dol_childcare.measure_definition",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key",
+        scope_method="the eight measures in dol_childcare/registry.py",
+        cadence="per deploy",
+        empty_behavior="never empty",
+    ),
+    _obj(
+        "gold_dol_childcare.observation_revision",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year, capture_id (published reads, resolved counties)",
+        lineage="silver_dol_childcare.fact_price, control.dol_childcare_file",
+        scope_method="published reads; every stored price kept",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_dol_childcare.observation_latest",
+        "gold",
+        "DOL_CHILDCARE",
+        grain="metric_key, geo_id, study_year (newest stored price)",
+        lineage="gold_dol_childcare.observation_revision",
+        scope_method="newest-capture projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_dol_childcare.measure_export",
+        "publisher",
+        "DOL_CHILDCARE",
+        grain="source_object_key (metric_key)",
+        scope_method="the eight registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty",
+    ),
+    _obj(
+        "gold_dol_childcare.metric_publisher",
+        "publisher",
+        "DOL_CHILDCARE",
+        grain="source_object_key (metric_key)",
+        lineage="silver_dol_childcare.fact_price, control.dol_childcare_file",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
 _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
     _obj(
         "control.eia_read",
@@ -2481,11 +3813,38 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a week with no reported price keeps the row as missing, never zero",
     ),
     _obj(
+        "silver_eia.energy_price_revision",
+        "silver",
+        "EIA",
+        grain="capture_id, row_index",
+        lineage="raw_capture.response_capture",
+        scope_method="deterministic replay of committed captures of the energy routes",
+        cadence="per EIA replay",
+        empty_behavior="empty only before the first energy capture",
+    ),
+    _obj(
+        "silver_eia.fact_energy_price",
+        "silver",
+        "EIA",
+        grain="series_id, period_start, capture_id",
+        lineage="silver_eia.energy_price_revision, silver_ref.geography_resolution",
+        scope_method=(
+            "registered energy routes (residential electricity, natural gas, "
+            "heating oil and propane, diesel) x every nation and state area EIA "
+            "publishes them for"
+        ),
+        cadence="per EIA replay",
+        empty_behavior=(
+            "a period with no reported price keeps the row as missing, never "
+            "zero; a summer heating fuel week has no row (not surveyed)"
+        ),
+    ),
+    _obj(
         "gold_eia.observation_revision",
         "gold",
         "EIA",
         grain="series_id, week_start, capture_id (published reads only)",
-        lineage="silver_eia.fact_retail_price, control.eia_read",
+        lineage="silver_eia.fact_retail_price, silver_eia.fact_energy_price, control.eia_read",
         scope_method="published reads; every reading of a week kept",
         cadence="per publication",
         empty_behavior="empty only before the first published read",
@@ -2505,8 +3864,8 @@ _EIA_OBJECTS: tuple[WarehouseObject, ...] = (
         "publisher",
         "EIA",
         grain="source_object_key (EIA product code)",
-        lineage="silver_eia.fact_retail_price",
-        scope_method="registered gasoline grades",
+        lineage="silver_eia.fact_retail_price, silver_eia.fact_energy_price",
+        scope_method="registered gasoline grades and energy metrics",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first replay",
     ),
@@ -2692,12 +4051,41 @@ _LODES_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="never empty: the measures are registered",
     ),
     _obj(
+        "gold_census_lodes.observation_fact",
+        "gold",
+        "CENSUS_LODES",
+        grain="metric_key, geo_id, year, release_key, run_id",
+        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
+        scope_method="county and state sums of each published state-year",
+        cadence="per publication (refresh_observation_fact)",
+        empty_behavior="empty only before the first published state-year",
+    ),
+    _obj(
+        "gold_census_lodes.coverage_gap",
+        "gold",
+        "CENSUS_LODES",
+        grain="run_id, metric_key",
+        lineage="gold_census_lodes.observation_fact",
+        scope_method=(
+            "published state-years whose state total of jobs or resident "
+            "workers is under a tenth of the state's upper-quartile year "
+            "(LEHD had not yet covered that file), and residence totals of "
+            "state-years with no workplace total; the measures the file "
+            "feeds are not served"
+        ),
+        cadence="rebuilt with every refresh_observation_fact",
+        empty_behavior="empty when every published state-year was covered",
+    ),
+    _obj(
         "gold_census_lodes.observation_revision",
         "gold",
         "CENSUS_LODES",
         grain="metric_key, geo_id, year, run_id (published vintages only)",
-        lineage="silver_census_lodes.fact_area, silver_census_lodes.fact_flow",
-        scope_method="published state-years; every vintage kept",
+        lineage="gold_census_lodes.observation_fact",
+        scope_method=(
+            "published state-years; measures a coverage gap hides left out; "
+            "every vintage kept"
+        ),
         cadence="per publication",
         empty_behavior="empty only before the first published state-year",
     ),
@@ -2875,11 +4263,21 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a withheld normal is missing or not applicable, never 0",
     ),
     _obj(
+        "silver_noaa_normals.station_monthly_normal",
+        "silver",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable, month",
+        lineage="silver_noaa_normals.station",
+        scope_method="every registered monthly normal a station publishes, one row per calendar month",
+        cadence="per normals replay",
+        empty_behavior="a withheld normal is missing or not applicable, never 0",
+    ),
+    _obj(
         "gold_noaa_normals.measure_definition",
         "gold",
         "NOAA_NORMALS",
         grain="measure",
-        scope_method="the six published measures",
+        scope_method="the six annual and seven monthly published measures",
         cadence="static",
         empty_behavior="never empty: the measures are registered",
     ),
@@ -2894,11 +4292,21 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="empty only before the first published archive",
     ),
     _obj(
+        "gold_noaa_normals.station_monthly_observation",
+        "gold",
+        "NOAA_NORMALS",
+        grain="run_id, station_id, variable, month",
+        lineage="silver_noaa_normals.station_monthly_normal, silver_noaa_normals.station, control.noaa_normals_file",
+        scope_method="published monthly station normals: the lineage of every monthly county figure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published monthly archive",
+    ),
+    _obj(
         "gold_noaa_normals.observation_revision",
         "gold",
         "NOAA_NORMALS",
-        grain="metric_key, geo_id, year, run_id",
-        lineage="gold_noaa_normals.station_observation",
+        grain="metric_key, geo_id, year, month, run_id",
+        lineage="gold_noaa_normals.station_observation, gold_noaa_normals.station_monthly_observation",
         scope_method="the mean of standard or representative stations per county and read",
         cadence="per publication",
         empty_behavior="a county with no such station has no row",
@@ -2907,7 +4315,7 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold_noaa_normals.observation_latest",
         "gold",
         "NOAA_NORMALS",
-        grain="metric_key, geo_id, year (newest read)",
+        grain="metric_key, geo_id, year, month (newest read)",
         lineage="gold_noaa_normals.observation_revision",
         scope_method="newest-read projection, never a replacement",
         cadence="per publication",
@@ -2932,6 +4340,549 @@ _NORMALS_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published archive",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Monthly Treasury Statement, Table 9: federal receipts and outlays, nation.
+# ---------------------------------------------------------------------------
+
+_TREASURY_MTS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.treasury_mts_page",
+        "control",
+        "TREASURY_MTS",
+        grain="run_id, page_number",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every page of a Table 9 read from three months before the newest published statement",
+        cadence="monthly",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_treasury_mts.quarantine",
+        "silver",
+        "TREASURY_MTS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated statement line; populated only on failure",
+        cadence="per Table 9 replay",
+        empty_behavior="empty when every line conformed",
+    ),
+    _obj(
+        "silver_treasury_mts.statement_line",
+        "silver",
+        "TREASURY_MTS",
+        grain="record_date, line_code",
+        lineage="control.treasury_mts_page, raw_capture.response_capture",
+        scope_method="the current published row of every statement month and line; a heading line is missing",
+        cadence="per Table 9 replay; only changed or new lines are written",
+        empty_behavior="a heading line's null carries no number, never 0",
+    ),
+    _obj(
+        "silver_treasury_mts.statement_line_revision",
+        "silver",
+        "TREASURY_MTS",
+        grain="record_date, line_code, run_id",
+        lineage="silver_treasury_mts.statement_line",
+        scope_method="every row a later read replaced, as it was published",
+        cadence="per Table 9 replay",
+        empty_behavior="empty until Treasury restates a published month",
+    ),
+    _obj(
+        "gold_treasury_mts.line_definition",
+        "gold",
+        "TREASURY_MTS",
+        grain="line_code",
+        scope_method="the registered Table 9 lines (receipts 20 to 120, outlays 140 to 340)",
+        cadence="static",
+        empty_behavior="never empty: the lines are registered",
+    ),
+    _obj(
+        "gold_treasury_mts.statement_line_revision",
+        "gold",
+        "TREASURY_MTS",
+        grain="record_date, line_code, run_id",
+        lineage="silver_treasury_mts.statement_line, silver_treasury_mts.statement_line_revision, control.treasury_mts_page",
+        scope_method="every statement line of a published page, current and replaced",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_treasury_mts.observation_revision",
+        "gold",
+        "TREASURY_MTS",
+        grain="metric_key, year, run_id",
+        lineage="gold_treasury_mts.statement_line_revision",
+        scope_method="every published fiscal-year total (September fiscal-year-to-date column), current and replaced",
+        cadence="per publication",
+        empty_behavior="a fiscal year with no September statement yet has no row",
+    ),
+    _obj(
+        "gold_treasury_mts.observation_latest",
+        "gold",
+        "TREASURY_MTS",
+        grain="metric_key, year",
+        lineage="silver_treasury_mts.statement_line, control.treasury_mts_page",
+        scope_method="the current published fiscal-year total of each registered line",
+        cadence="per publication",
+        empty_behavior="a fiscal year with no September statement yet has no row",
+    ),
+    _obj(
+        "gold_treasury_mts.outlays_by_function",
+        "gold",
+        "TREASURY_MTS",
+        grain="period_kind, statement_date, line_code",
+        lineage="silver_treasury_mts.statement_line, control.treasury_mts_page, gold_treasury_mts.line_definition",
+        scope_method="each budget function's outlays and share of total outlays: fiscal years, the open fiscal year to date, months",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the line or the total is not published",
+    ),
+    _obj(
+        "gold_treasury_mts.measure_export",
+        "publisher",
+        "TREASURY_MTS",
+        grain="source_object_key (measure)",
+        lineage="gold_treasury_mts.line_definition",
+        scope_method="registered lines",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_treasury_mts.metric_publisher",
+        "publisher",
+        "TREASURY_MTS",
+        grain="source_object_key (measure)",
+        lineage="gold_treasury_mts.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published September statement",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# USAspending federal award obligations by place of performance.
+# ---------------------------------------------------------------------------
+
+_USASPENDING_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.usaspending_request",
+        "control",
+        "USASPENDING",
+        grain="run_id, fiscal_year, geo_layer, cut_kind, cut_key",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="every geography read and agency-list page of the fiscal years a run works on",
+        cadence="weekly; history reads continue from requests never captured",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_usaspending.quarantine",
+        "silver",
+        "USASPENDING",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated place or agency; populated only on failure",
+        cadence="per USAspending replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_usaspending.agency_year",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, agency_code",
+        lineage="control.usaspending_request, raw_capture.response_capture",
+        scope_method="the awarding agencies USAspending names for each fiscal year",
+        cadence="per USAspending replay; only changed agencies are written",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_usaspending.geography_amount",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code",
+        lineage="control.usaspending_request, raw_capture.response_capture",
+        scope_method="the current published obligations of every request key and place; an empty shape code is kept unsupported",
+        cadence="per USAspending replay; only changed, new or withdrawn rows are written",
+        empty_behavior="a null amount carries no number, never 0",
+    ),
+    _obj(
+        "silver_usaspending.geography_amount_revision",
+        "silver",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id",
+        lineage="silver_usaspending.geography_amount",
+        scope_method="every row a later answer replaced or no longer listed, as it was published",
+        cadence="per USAspending replay",
+        empty_behavior="empty until a fiscal year is read again with a change",
+    ),
+    _obj(
+        "gold_usaspending.measure_definition",
+        "gold",
+        "USASPENDING",
+        grain="measure",
+        scope_method="the registered measures: all awards and five award type groups",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_usaspending.geography_amount_served",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_layer, cut_kind, cut_key, shape_code, run_id",
+        lineage="silver_usaspending.geography_amount, silver_usaspending.geography_amount_revision, control.usaspending_request, silver_ref.dim_geo_entity",
+        scope_method="every placed, published row, current and replaced",
+        cadence="per publication",
+        empty_behavior="a place the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_usaspending.observation_revision",
+        "gold",
+        "USASPENDING",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="every published fiscal-year amount of each measure, current and replaced",
+        cadence="per publication",
+        empty_behavior="a place the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_usaspending.observation_latest",
+        "gold",
+        "USASPENDING",
+        grain="metric_key, geo_id, year",
+        lineage="silver_usaspending.geography_amount, control.usaspending_request, silver_ref.dim_geo_entity",
+        scope_method="the current published amount of each measure, place and fiscal year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_usaspending.awards_by_award_type",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_id, award_group",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="each award type group's obligations and share of the place's all-award total",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the total is not published",
+    ),
+    _obj(
+        "gold_usaspending.awards_by_agency",
+        "gold",
+        "USASPENDING",
+        grain="fiscal_year, geo_id, agency_code",
+        lineage="gold_usaspending.geography_amount_served",
+        scope_method="each awarding agency's obligations and share of the place's all-award total",
+        cadence="per publication",
+        empty_behavior="a share is null with unavailable_reason when the total is not published",
+    ),
+    _obj(
+        "gold_usaspending.measure_export",
+        "publisher",
+        "USASPENDING",
+        grain="source_object_key (measure)",
+        lineage="gold_usaspending.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_usaspending.metric_publisher",
+        "publisher",
+        "USASPENDING",
+        grain="source_object_key (measure)",
+        lineage="gold_usaspending.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published read",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NOAA nClimDiv county monthly temperature and precipitation, 1895 onward.
+# ---------------------------------------------------------------------------
+
+_CLIMDIV_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_climdiv_file",
+        "control",
+        "NOAA_CLIMDIV",
+        grain="run_id, file_element",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the newest county file per registered element the NCEI directory lists",
+        cadence="monthly; a file name already published is already_loaded and is not downloaded",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_climdiv.quarantine",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable, out-of-range or repeated county line; populated only on failure",
+        cadence="per nClimDiv replay",
+        empty_behavior="empty when every line conformed",
+    ),
+    _obj(
+        "silver_noaa_climdiv.county_month",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="ncei_state_code, county_fips, measure, year, month",
+        lineage="control.noaa_climdiv_file, raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="the current published value of every county month; a month NCEI has not published is missing",
+        cadence="per nClimDiv replay; only changed or new months are written",
+        empty_behavior="a missing month carries no number, never 0",
+    ),
+    _obj(
+        "silver_noaa_climdiv.county_month_revision",
+        "silver",
+        "NOAA_CLIMDIV",
+        grain="ncei_state_code, county_fips, measure, year, month, run_id",
+        lineage="silver_noaa_climdiv.county_month",
+        scope_method="every value a later release replaced, as it was published",
+        cadence="per nClimDiv replay",
+        empty_behavior="empty until NCEI revises a published month",
+    ),
+    _obj(
+        "gold_noaa_climdiv.measure_definition",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="measure",
+        scope_method="the six registered monthly measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_noaa_climdiv.observation_revision",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="metric_key, geo_id, year, month, run_id",
+        lineage="silver_noaa_climdiv.county_month, silver_noaa_climdiv.county_month_revision, control.noaa_climdiv_file",
+        scope_method="every published value of a resolved county month, current and replaced",
+        cadence="per publication",
+        empty_behavior="a county the shared geography does not hold has no row",
+    ),
+    _obj(
+        "gold_noaa_climdiv.observation_latest",
+        "gold",
+        "NOAA_CLIMDIV",
+        grain="metric_key, geo_id, year, month",
+        lineage="silver_noaa_climdiv.county_month, control.noaa_climdiv_file",
+        scope_method="the current published value of each resolved county month",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_climdiv.measure_export",
+        "publisher",
+        "NOAA_CLIMDIV",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_climdiv.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_noaa_climdiv.metric_publisher",
+        "publisher",
+        "NOAA_CLIMDIV",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_climdiv.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# NOAA Storm Events Database and NWS zone-county files.
+# ---------------------------------------------------------------------------
+
+_STORM_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.noaa_storm_events_file",
+        "control",
+        "NOAA_STORM_EVENTS",
+        grain="run_id, file_name",
+        lineage="control.ingestion_run, raw_capture.response_capture",
+        scope_method="the NWS zone-county files and the newest details file of every year the listings name",
+        cadence="monthly; a file name already published is already_loaded and is not downloaded",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_storm_events.quarantine",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated event or zone row; populated only on failure",
+        cadence="per Storm Events replay",
+        empty_behavior="empty when every row conformed",
+    ),
+    _obj(
+        "silver_noaa_storm_events.zone_county",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="zone_file, state, zone, county_fips5",
+        lineage="control.noaa_storm_events_file, raw_capture.response_capture, silver_ref.dim_geo_entity",
+        scope_method="every zone and county row of every published NWS zone-county file",
+        cadence="per zone-county file",
+        empty_behavior="empty only before the first read",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id",
+        lineage="control.noaa_storm_events_file, raw_capture.response_capture",
+        scope_method="the current published version of every event; withdrawn events kept and not counted",
+        cadence="per Storm Events replay; only changed or new events are written",
+        empty_behavior="a blank death, injury or damage field is not reported, never 0",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_revision",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id, run_id, superseded_by_run_id",
+        lineage="silver_noaa_storm_events.event",
+        scope_method="every event version a later file replaced or withdrew",
+        cadence="per Storm Events replay",
+        empty_behavior="empty until NCEI revises a published year",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_place",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_id, geo_id",
+        lineage="silver_noaa_storm_events.event, silver_noaa_storm_events.zone_county, silver_ref.dim_geo_entity",
+        scope_method="each county a current event is counted in: its own county, or every county of a matched zone",
+        cadence="per Storm Events replay; only changed placements are written",
+        empty_behavior="an unplaced, withdrawn or marine event has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.place_year",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="silver_noaa_storm_events.event, silver_noaa_storm_events.event_place",
+        scope_method="counts and impact sums per county, state and nation, year and measure",
+        cadence="per Storm Events replay; only changed figures are written",
+        empty_behavior="a place and year with no reported event of a type has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.state_year",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="state_fips, year",
+        lineage="silver_noaa_storm_events.event",
+        scope_method="per state code and year, events reported and where they were counted",
+        cadence="per Storm Events replay; only changed counts are written",
+        empty_behavior="a state and year with no reported event has no row",
+    ),
+    _obj(
+        "silver_noaa_storm_events.event_type",
+        "silver",
+        "NOAA_STORM_EVENTS",
+        grain="event_type_key",
+        lineage="silver_noaa_storm_events.place_year",
+        scope_method="every event type a replay has counted",
+        cadence="per Storm Events replay",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.recording_era",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="first_year",
+        scope_method="the three recording eras of the Storm Events Database",
+        cadence="static",
+        empty_behavior="never empty: the eras are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.place_kind",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_type",
+        scope_method="the geography types counts are kept for",
+        cadence="static",
+        empty_behavior="never empty: the types are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.measure_definition",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="measure",
+        lineage="silver_noaa_storm_events.event_type",
+        scope_method="one count measure per published event type, all types, and six impact measures",
+        cadence="per publication",
+        empty_behavior="never empty: the impact measures are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.year_release",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="year",
+        lineage="control.noaa_storm_events_file",
+        scope_method="the newest published details file of every year",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.observation_revision",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="silver_noaa_storm_events.place_year, gold_noaa_storm_events.year_release",
+        scope_method="every count and impact of a year with a published file",
+        cadence="per publication",
+        empty_behavior="a year with no published file has no row",
+    ),
+    _obj(
+        "gold_noaa_storm_events.observation_latest",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="metric_key, geo_id, year",
+        lineage="gold_noaa_storm_events.observation_revision",
+        scope_method="the current count and impact of each place, year and measure",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.event_detail",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_id, event_id",
+        lineage="silver_noaa_storm_events.event_place, silver_noaa_storm_events.event",
+        scope_method="every current event counted in a county, as NCEI published it",
+        cadence="per publication",
+        empty_behavior="a county with no placed event has no row",
+    ),
+    _obj(
+        "gold_noaa_storm_events.state_coverage",
+        "gold",
+        "NOAA_STORM_EVENTS",
+        grain="geo_id, year",
+        lineage="silver_noaa_storm_events.state_year, gold_noaa_storm_events.year_release",
+        scope_method="per state and year, events reported and where they were counted",
+        cadence="per publication",
+        empty_behavior="empty only before the first published file",
+    ),
+    _obj(
+        "gold_noaa_storm_events.measure_export",
+        "publisher",
+        "NOAA_STORM_EVENTS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_storm_events.measure_definition",
+        scope_method="registered and published measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the impact measures are registered",
+    ),
+    _obj(
+        "gold_noaa_storm_events.metric_publisher",
+        "publisher",
+        "NOAA_STORM_EVENTS",
+        grain="source_object_key (measure)",
+        lineage="gold_noaa_storm_events.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published file",
     ),
 )
 
@@ -3126,11 +5077,21 @@ _FEMA_OBJECTS: tuple[WarehouseObject, ...] = (
         empty_behavior="a county-year with no declaration has no row",
     ),
     _obj(
+        "gold_fema_nri.declaration_count_by_incident",
+        "gold",
+        "FEMA_NRI",
+        grain="metric_key, geo_id, year",
+        lineage="silver_fema_nri.declaration_revision, control.fema_nri_run",
+        scope_method="distinct declarations of any type per county, year and FEMA incident type from the newest revision of each row",
+        cadence="per publication",
+        empty_behavior="a county-year with no declaration of the incident type has no row",
+    ),
+    _obj(
         "gold_fema_nri.observation_revision",
         "gold",
         "FEMA_NRI",
         grain="metric_key, geo_id, year, run_id",
-        lineage="gold_fema_nri.nri_observation, gold_fema_nri.declaration_count",
+        lineage="gold_fema_nri.nri_observation, gold_fema_nri.declaration_count, gold_fema_nri.declaration_count_by_incident",
         scope_method="both streams in the observation shape",
         cadence="per publication",
         empty_behavior="empty only before the first published read",
@@ -3164,6 +5125,377 @@ _FEMA_OBJECTS: tuple[WarehouseObject, ...] = (
         scope_method="publisher view harvested into the glossary",
         cadence="per glossary harvest",
         empty_behavior="empty only before the first published read",
+    ),
+)
+
+# ---------------------------------------------------------------------------
+# Elections: seat terms, governors and MEDSL results.
+# ---------------------------------------------------------------------------
+
+_ELECTIONS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.elections_run",
+        "control",
+        "ELECTIONS",
+        grain="run_id (one run per read of a stream)",
+        lineage="control.ingestion_run",
+        scope_method="the six streams: legislators, governors and four MEDSL results files",
+        cadence="monthly; a read whose files match the last published read is unchanged",
+        empty_behavior="empty only before the first capture",
+    ),
+    _obj(
+        "control.elections_file",
+        "control",
+        "ELECTIONS",
+        grain="run_id, file_index",
+        lineage="control.elections_run, raw_capture.response_capture",
+        scope_method="every committed file of every read",
+        cadence="per capture",
+        empty_behavior="a run with no file failed and was withdrawn",
+    ),
+    _obj(
+        "silver_elections.quarantine",
+        "silver",
+        "ELECTIONS",
+        grain="capture_id, record_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per unreadable or repeated record; populated only on failure",
+        cadence="per elections replay",
+        empty_behavior="empty when every record conformed",
+    ),
+    _obj(
+        "silver_elections.seat_term",
+        "silver",
+        "ELECTIONS",
+        grain="run_id, term_key",
+        lineage="control.elections_file, silver_ref.dim_geo_entity",
+        scope_method="every congressional and governor term span ending on or after 1969-01-01",
+        cadence="per elections replay",
+        empty_behavior="a term whose party changed is one span per affiliation",
+    ),
+    _obj(
+        "silver_elections.candidate_result",
+        "silver",
+        "ELECTIONS",
+        grain="run_id, result_key",
+        lineage="control.elections_file, silver_ref.dim_geo_entity",
+        scope_method="every MEDSL row of a replayed results file",
+        cadence="per elections replay",
+        empty_behavior="a House row's area is its district, kept and never served as a place",
+    ),
+    _obj(
+        "gold_elections.office_definition",
+        "gold",
+        "ELECTIONS",
+        grain="office",
+        lineage="",
+        scope_method="the four offices",
+        cadence="static",
+        empty_behavior="never empty: the offices are registered",
+    ),
+    _obj(
+        "gold_elections.party_definition",
+        "gold",
+        "ELECTIONS",
+        grain="party_code",
+        lineage="",
+        scope_method="the four party codes",
+        cadence="static",
+        empty_behavior="never empty: the parties are registered",
+    ),
+    _obj(
+        "gold_elections.current_read",
+        "gold",
+        "ELECTIONS",
+        grain="stream",
+        lineage="control.elections_run",
+        scope_method="the newest published read of each stream",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_elections.seat_term",
+        "gold",
+        "ELECTIONS",
+        grain="term_key (current reads)",
+        lineage="silver_elections.seat_term, gold_elections.current_read",
+        scope_method="resolved seat-term spans of the current legislators and governors reads",
+        cadence="per publication",
+        empty_behavior="empty only before the first published read",
+    ),
+    _obj(
+        "gold_elections.candidate_tally",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area, candidate",
+        lineage="silver_elections.candidate_result, control.elections_run",
+        scope_method="every published read; one mode per area, filtered by run_id when stored",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_tally",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.candidate_tally",
+        scope_method="contest totals of every published read, stored per read by sync_contest_result",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_result_store",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.contest_tally",
+        scope_method="contest rows of the current reads, written once when a read is published",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.candidate_total",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area, candidate",
+        lineage="gold_elections.candidate_tally, gold_elections.current_read",
+        scope_method="one mode per area: the TOTAL line where published, else the sum of modes",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.contest_result",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, area",
+        lineage="gold_elections.contest_result_store, gold_elections.current_read",
+        scope_method="major-party votes, total votes and the leading party per contest and area",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "silver_elections.district_county_share",
+        "silver",
+        "ELECTIONS",
+        grain="run_id, plan_key, state_fips, district, county_fips",
+        lineage="raw_capture.response_capture, control.elections_file",
+        scope_method="the census population of each county piece of each House district, per tabulated plan",
+        cadence="once per registered plan",
+        empty_behavior="empty only before the first published district read",
+    ),
+    _obj(
+        "gold_elections.district_plan_definition",
+        "gold",
+        "ELECTIONS",
+        grain="plan_key",
+        lineage="",
+        scope_method="the Census tabulations of House plans by county piece",
+        cadence="static",
+        empty_behavior="never empty: the plans are registered",
+    ),
+    _obj(
+        "gold_elections.house_plan_year",
+        "gold",
+        "ELECTIONS",
+        grain="election_year",
+        lineage="gold_elections.district_plan_definition",
+        scope_method="the plan each House general election from 2006 was held under",
+        cadence="static",
+        empty_behavior="never empty: the years are registered",
+    ),
+    _obj(
+        "gold_elections.district_county_share",
+        "gold",
+        "ELECTIONS",
+        grain="plan_key, state_code, district, geo_id",
+        lineage="silver_elections.district_county_share, control.elections_run",
+        scope_method="newest published read of each plan, resolved counties only",
+        cadence="once per registered plan",
+        empty_behavior="empty only before the first published district read",
+    ),
+    _obj(
+        "gold_elections.precinct_county_check",
+        "gold",
+        "ELECTIONS",
+        grain="run_id, office, election_year, stage, special, state_code",
+        lineage="gold_elections.contest_result_store, gold_elections.current_read",
+        scope_method="each state's county sums from the precinct read against the statewide file's count",
+        cadence="per publication",
+        empty_behavior="empty only before the first published precinct read",
+    ),
+    _obj(
+        "gold_elections.county_house_district",
+        "gold",
+        "ELECTIONS",
+        grain="geo_id, election_year, district",
+        lineage="gold_elections.district_county_share, gold_elections.house_plan_year, "
+        "gold_elections.contest_result",
+        scope_method="each House district covering a county from 2006, its population share and the district's result",
+        cadence="per publication",
+        empty_behavior="empty only before the first published district read",
+    ),
+    _obj(
+        "gold_elections.measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        lineage="",
+        scope_method="the three published presidential measures",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.observation_revision",
+        "gold",
+        "ELECTIONS",
+        grain="metric_key, geo_id, year, run_id",
+        lineage="gold_elections.contest_result",
+        scope_method="presidential general-election measures by county and state in the observation shape",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.observation_latest",
+        "gold",
+        "ELECTIONS",
+        grain="metric_key, geo_id, year (newest release)",
+        lineage="gold_elections.observation_revision",
+        scope_method="newest-release projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.measure_export",
+        "publisher",
+        "ELECTIONS",
+        grain="source_object_key (measure)",
+        lineage="gold_elections.measure_definition",
+        scope_method="registered measures",
+        cadence="per glossary harvest",
+        empty_behavior="never empty: the metrics are registered",
+    ),
+    _obj(
+        "gold_elections.metric_publisher",
+        "publisher",
+        "ELECTIONS",
+        grain="source_object_key (measure)",
+        lineage="gold_elections.observation_latest",
+        scope_method="publisher view harvested into the glossary",
+        cadence="per glossary harvest",
+        empty_behavior="empty only before the first published results read",
+    ),
+    _obj(
+        "gold_elections.lean_measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        scope_method="the five measures a lean group compares, one at a time (ADR-0014)",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.lean_band_definition",
+        "gold",
+        "ELECTIONS",
+        grain="lean_band",
+        scope_method="the four bands of the window-start two-party margin",
+        cadence="static",
+        empty_behavior="never empty: the bands are registered",
+    ),
+    _obj(
+        "gold_elections.lean_peer_definition",
+        "gold",
+        "ELECTIONS",
+        grain="peer_type",
+        scope_method="the peer groups a lean comparison can be narrowed to",
+        cadence="static",
+        empty_behavior="never empty: the peer types are registered",
+    ),
+    _obj(
+        "gold_elections.lean_refresh",
+        "gold",
+        "ELECTIONS",
+        grain="refresh_id",
+        scope_method="one row per daily rebuild check, rebuilt or unchanged",
+        cadence="daily (elections_lean_groups)",
+        empty_behavior="empty only before the first rebuild check",
+    ),
+    _obj(
+        "gold_elections.lean_place_change",
+        "gold",
+        "ELECTIONS",
+        grain="window_start_year, window_end_year, measure, geo_id",
+        lineage="gold_elections.observation_latest, gold_bea.observation_latest, "
+        "gold_bls_qcew.observation_latest, gold_census_sae.estimate_latest, "
+        "gold_bls.provider_annual_average, gold_fred.fact_fred_observation, "
+        "gold_usda_ers.observation_latest, gold_census_govfin.tax_burden",
+        scope_method="every county with a presidential vote at the window's start and the "
+        "measure at both ends, windows between election years from 2000",
+        cadence="rebuilt daily when an input published",
+        empty_behavior="empty until the elections and an economic source are loaded",
+    ),
+    _obj(
+        "gold_elections.lean_group_change",
+        "gold",
+        "ELECTIONS",
+        grain="window_start_year, window_end_year, measure, peer_type, peer_group, lean_band",
+        lineage="gold_elections.lean_place_change",
+        scope_method="every lean band within every peer group that holds a county",
+        cadence="rebuilt with gold_elections.lean_place_change",
+        empty_behavior="empty when gold_elections.lean_place_change is",
+    ),
+    # Governor tenures with taxes and public money (taxes-and-public-money T-6).
+    _obj(
+        "gold_elections.governor_fiscal_measure_definition",
+        "gold",
+        "ELECTIONS",
+        grain="measure",
+        scope_method="the fiscal measures the governor table compares",
+        cadence="static",
+        empty_behavior="never empty: the measures are registered",
+    ),
+    _obj(
+        "gold_elections.governor_tenure",
+        "gold",
+        "ELECTIONS",
+        grain="state_fips, tenure_number",
+        lineage="gold_elections.seat_term",
+        scope_method="every governor term, consecutive terms of one holder and party joined",
+        cadence="with gold_elections.seat_term",
+        empty_behavior="empty until the governor stream is loaded",
+    ),
+    _obj(
+        "gold_elections.governor_fiscal_series",
+        "gold",
+        "ELECTIONS",
+        grain="measure, geo_id, year",
+        lineage="gold_census_govfin.tax_burden, gold_bea.observation_revision",
+        scope_method="every state and the nation in every year both inputs publish",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until Census government finance or the BEA state tables are loaded",
+    ),
+    _obj(
+        "gold_elections.governor_term_fiscal",
+        "gold",
+        "ELECTIONS",
+        grain="tenure_key, measure",
+        lineage="gold_elections.governor_tenure, gold_elections.governor_fiscal_series",
+        scope_method="every governor tenure and fiscal measure; a value only where both "
+        "window years are published for the state and the nation",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until the governor stream is loaded; values null until "
+        "Census government finance and BEA state tables are",
+    ),
+    _obj(
+        "gold_elections.governor_term_tax_mix",
+        "gold",
+        "ELECTIONS",
+        grain="tenure_key, tax_group",
+        lineage="gold_elections.governor_tenure, gold_elections.governor_fiscal_series, "
+        "gold_census_govfin.observation_revision",
+        scope_method="every governor tenure whose window's last fiscal year Census publishes",
+        cadence="with its inputs (views)",
+        empty_behavior="empty until Census government finance is loaded",
     ),
 )
 
@@ -3429,7 +5761,7 @@ _CCD_OBJECTS: tuple[WarehouseObject, ...] = (
         "gold",
         "NCES_CCD",
         grain="measure",
-        scope_method="the eight published measures",
+        scope_method="the ten published measures",
         cadence="static",
         empty_behavior="never empty: the measures are registered",
     ),
@@ -3608,17 +5940,31 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _HPI_OBJECTS
     + _HUD_OBJECTS
     + _FEMA_OBJECTS
+    + _GOVFIN_OBJECTS
+    + _ELECTIONS_OBJECTS
     + _BDC_OBJECTS
     + _AQS_OBJECTS
     + _NORMALS_OBJECTS
+    + _CLIMDIV_OBJECTS
+    + _TREASURY_MTS_OBJECTS
+    + _USASPENDING_OBJECTS
+    + _STORM_OBJECTS
     + _LODES_OBJECTS
     + _CBP_OBJECTS
     + _IRS_MIGRATION_OBJECTS
+    + _IRS_SOI_OBJECTS
     + _SAE_OBJECTS
+    + _DECENNIAL_OBJECTS
+    + _CMS_LTC_OBJECTS
+    + _NCES_IPEDS_OBJECTS
+    + _HHS_HOSPITAL_CAPACITY_OBJECTS
+    + _CDC_COVID_CASES_OBJECTS
+    + _CDC_ILINET_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
     + _EIA_OBJECTS
+    + _NDCP_OBJECTS
 )
 
 
@@ -3999,19 +6345,32 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_bls.metric_publisher",
             "gold_fred.metric_publisher",
             "gold_irs_migration.metric_publisher",
+            "gold_irs_soi.metric_publisher",
             "gold_pep.metric_publisher",
             "gold_census_sae.metric_publisher",
+            "gold_census_decennial.metric_publisher",
+            "gold_cms_ltc.metric_publisher",
+            "gold_nces_ipeds.metric_publisher",
+            "gold_hhs_hospital_capacity.metric_publisher",
+            "gold_cdc_covid_cases.metric_publisher",
+            "gold_cdc_ilinet.metric_publisher",
+            "gold_census_govfin.metric_publisher",
             "gold_cdc.metric_publisher",
             "gold_census_bps.metric_publisher",
             "gold_fbi.metric_publisher",
             "gold_nass.metric_publisher",
             "gold_bea.metric_publisher",
             "gold_eia.metric_publisher",
+            "gold_dol_childcare.metric_publisher",
             "gold_census_cbp.metric_publisher",
             "gold_census_lodes.metric_publisher",
             "gold_bls_qcew.metric_publisher",
             "gold_epa_aqs.metric_publisher",
             "gold_noaa_normals.metric_publisher",
+            "gold_noaa_climdiv.metric_publisher",
+            "gold_treasury_mts.metric_publisher",
+            "gold_usaspending.metric_publisher",
+            "gold_noaa_storm_events.metric_publisher",
             "gold_fcc_bdc.metric_publisher",
             "gold_fema_nri.metric_publisher",
             "gold_fhfa_hpi.metric_publisher",
@@ -4089,6 +6448,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census.fact_acs_observation",
             "gold_census.rpt_acs_observations",
             "gold_census.mv_acs_latest",
+            "gold_census.acs_tract_comparable",
+            "gold_census.age_structure_summary",
+            "gold_census.tract_decade_change",
         ),
         automation="enforced",
         automation_note=(
@@ -4098,7 +6460,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "the silver one -- they add the geography and the metric code the "
             "catalog publishes -- and both are declared below and checked "
             "against the warehouse. `fact_acs_observation` carries no index "
-            "because it is a view over the silver fact."
+            "because it is a view over the silver fact; `acs_tract_comparable` "
+            "is a view grouped by its own grain, so it holds one row per 2020 "
+            "tract, release and variable by construction; `tract_decade_change` "
+            "is a join of the crosswalk to the geography dimension on unique "
+            "keys, so it holds the crosswalk's primary key, one row per part; "
+            "the age structure summary's unique index holds one row per place "
+            "and release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -4125,6 +6493,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
                     "variable_code",
                     "metric_code",
                 ),
+            ),
+            EnforcedGrain(
+                "gold_census.age_structure_summary",
+                ("geo_id", "dataset_code", "vintage_year", "observation_date"),
             ),
         ),
     ),
@@ -4233,7 +6605,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         ),
         automation="automated",
         automation_note=(
-            "`quality.sources.acs_contract_conformance` reads the conformance direction, which is the one that cannot lag: every group of served rows must trace to published facts with the same count and the same values. Grouped by `(metric_code, vintage)` rather than compared row by row, because the row-level form is a join between two hundred-million-row relations -- the first attempt at this rule was exactly that, passed on the fixture warehouse, and timed out after fifty minutes against 99,783,997 real rows. Two grouped scans answer the same question in 815 seconds: a row the warehouse does not hold changes its group's count, an altered value changes its digest -- taken over a rendering that distinguishes NULL from every number, so a withheld value is compared as a withheld value -- and a wrongly derived metric code produces a served group with no published counterpart. What is given up is the identity of the offending row; evidence names the group. Completeness is deliberately not measured: the serving layer is rebuilt a year at a time with a commit per chunk, so a fact published since the last refresh is legitimately absent and DQ-ACS-002 measures that ledger. A group whose silver rows moved after the last refresh is exempt for the same reason."
+            "`quality.sources.acs_contract_conformance` reads the conformance direction, which is the one that cannot lag: every group of served rows must trace to published facts with the same count and the same values. Grouped by `(metric_code, vintage)` rather than compared row by row, because the row-level form is a join between two hundred-million-row relations -- the first attempt at this rule was exactly that, passed on the fixture warehouse, and timed out after fifty minutes against 99,783,997 real rows. Two grouped scans answer the same question in 815 seconds: a row the warehouse does not hold changes its group's count, an altered value changes its digest -- taken over a rendering that distinguishes NULL from every number, so a withheld value is compared as a withheld value -- and a wrongly derived metric code produces a served group with no published counterpart. What is given up is the identity of the offending row; evidence names the group. Completeness is deliberately not measured: the serving layer is rebuilt a year at a time with a commit per chunk, so a fact published since the last refresh is legitimately absent and DQ-ACS-002 measures that ledger. A group whose silver rows moved after the last refresh is exempt for the same reason. Measured one served release partition at a time since the history loads made the served relation 1.19 billion rows: each outcome names its partition and carries that partition's fingerprint (newest `updated_at`, file node, write counters) as its watermark, a scheduled run re-measures only partitions whose fingerprint moved since their last pass, and the monthly sweep and release certification re-measure all of them."
         ),
     ),
     _rule(
@@ -4716,9 +7088,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "BLOCK",
         "completeness",
         "A CDC release publishes only when complete; partial pages cannot "
-        "advance the published watermark.",
+        "advance the published watermark, and a bulk release's paged total "
+        "must equal CDC's own count(*).",
         (
             "control.cdc_dataset_release",
+            "control.cdc_release_page",
             "silver_cdc.fact_health_observation",
             "gold_cdc.health_observation",
         ),
@@ -4857,13 +7231,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fbi.fact_reporting_participation",
             "gold_fbi.crime_observation",
             "gold_fbi.latest_release_observation",
+            "gold_fbi.latest_release_fact",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: both grains are UNIQUE constraints -- on "
             "the crime-observation fact and on the reporting-participation fact "
             "-- so a duplicate is refused at write time and never becomes an "
-            "evidence row. The two gold relations carry no constraint because "
+            "evidence row. The gold relations carry no constraint because "
             "they are views over those facts."
         ),
         enforced_grains=(
@@ -5032,6 +7407,56 @@ ALL_RULES: tuple[QualityRule, ...] = (
             ),
         ),
     ),
+    _rule(
+        "DQ-FBI-010",
+        "BLOCK",
+        "reconciliation",
+        "A county crime rate (ADR-0012) divides the reported offenses of "
+        "exactly the agencies it lists as contributing by exactly their FBI "
+        "populations; no contributing agency is also excluded as "
+        "multi-county; a rate is present exactly when no refusal reason is; "
+        "and no rate is published under the 50 percent coverage floor.",
+        (
+            "gold_fbi.county_agency_rate",
+            "gold_fbi.latest_county_agency_rate",
+        ),
+    ),
+    _rule(
+        "DQ-FBI-014",
+        "BLOCK",
+        "freshness",
+        "The served county crime rate rows of every product were computed in "
+        "or after that product's newest publication, and a product with "
+        "county-linked agencies and a published release has served rows; "
+        "likewise every published product's fact counts.",
+        ("gold_fbi.county_agency_rate_month", "gold_fbi.release_fact_count"),
+    ),
+    _rule(
+        "DQ-FBI-011",
+        "WARN",
+        "reconciliation",
+        "Violent and property totals summed from the Return A master file's "
+        "offense components equal the CDE's published totals for every "
+        "agency and month both publish; a gap of at most three offenses or 5 "
+        "percent is the CDE's revision after the master file was cut and "
+        "warns, naming the month, and a larger gap fails.",
+        ("gold_fbi.latest_release_observation",),
+    ),
+    _rule(
+        "DQ-FBI-015",
+        "BLOCK",
+        "referential_integrity",
+        "Every FBI fact names a source row silver still holds: a CDE fact its "
+        "observation or participation revision row, a Return A fact the "
+        "master-file line it was read from.",
+        (
+            "silver_fbi.fact_crime_observation",
+            "silver_fbi.fact_reporting_participation",
+            "silver_fbi.observation_revision",
+            "silver_fbi.participation_revision",
+            "silver_fbi.return_a_source_row",
+        ),
+    ),
     # -- USDA NASS ---------------------------------------------------------
     _rule(
         "DQ-NASS-001",
@@ -5186,6 +7611,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "is a second reading beside the first.",
         (
             "silver_eia.fact_retail_price",
+            "silver_eia.fact_energy_price",
             "gold_eia.observation_revision",
             "gold_eia.observation_latest",
         ),
@@ -5199,6 +7625,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 "silver_eia.fact_retail_price",
                 ("series_id", "week_start", "capture_id"),
             ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("series_id", "period_start", "capture_id"),
+            ),
         ),
     ),
     _rule(
@@ -5211,6 +7641,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "control.eia_read",
             "control.eia_page",
             "silver_eia.price_revision",
+            "silver_eia.energy_price_revision",
             "silver_eia.observation_quarantine",
         ),
     ),
@@ -5218,10 +7649,11 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "DQ-EIA-003",
         "BLOCK",
         "conformance",
-        "A price is a positive number of dollars per gallon or a missing week "
-        "with no number; a missing week is never zero.",
+        "A price is a positive number in its route's stated unit or a missing "
+        "period with no number; a missing period is never zero.",
         (
             "silver_eia.fact_retail_price",
+            "silver_eia.fact_energy_price",
             "silver_eia.price_revision",
             "gold_eia.measure_export",
         ),
@@ -5244,6 +7676,18 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 kind="check",
                 constraint_name="eia_fact_valid_value_present",
             ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_energy_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_eia.fact_energy_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="eia_energy_fact_valid_value_present",
+            ),
         ),
     ),
     _rule(
@@ -5261,6 +7705,92 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "unmapped area."
         ),
     ),
+    _rule(
+        "DQ-EIA-005",
+        "WARN",
+        "temporal_integrity",
+        "A heating oil or propane price falls in a month EIA surveys (October "
+        "to March): a value outside the season is kept as published and "
+        "reported, never dropped.",
+        ("silver_eia.fact_energy_price",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.eia_outside_survey_season` reports every valid "
+            "energy price the replay flagged `outside_survey_season` (a month "
+            "the route's registry entry does not survey) in a published read "
+            "(home-heating-fuel-prices). A summer week EIA does not publish has "
+            "no row and is not a finding."
+        ),
+    ),
+    # -- DOL Women's Bureau childcare prices (county-childcare-prices) -------
+    _rule(
+        "DQ-NDCP-001",
+        "BLOCK",
+        "uniqueness",
+        "NDCP prices are unique per (measure, county, study year, capture): a "
+        "price a later workbook restates is a second row beside the first.",
+        (
+            "silver_dol_childcare.fact_price",
+            "gold_dol_childcare.observation_revision",
+            "gold_dol_childcare.observation_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("metric_key", "geo_id", "study_year", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-NDCP-002",
+        "BLOCK",
+        "conformance",
+        "A childcare price is a positive weekly dollar amount or a blank cell "
+        "kept as missing with no number; a missing price is never zero.",
+        (
+            "silver_dol_childcare.fact_price",
+            "silver_dol_childcare.price_revision",
+            "gold_dol_childcare.measure_definition",
+            "gold_dol_childcare.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid row "
+            "without a value, a missing row with one, and any value that is not "
+            "positive."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.fact_price",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.price_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_revision_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_dol_childcare.price_revision",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="dol_childcare_revision_missing_value_absent",
+            ),
+        ),
+    ),
     # -- BEA regional economic accounts --------------------------------------
     _rule(
         "DQ-BEA-001",
@@ -5272,11 +7802,14 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_bea.fact_observation",
             "gold_bea.observation_revision",
             "gold_bea.observation_latest",
+            "gold_bea.disposable_income_real",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: the grain is the fact table's primary key; "
-            "the gold relations are views over it."
+            "the gold relations are views over it, and "
+            "`disposable_income_real` keeps one row per geography and year by "
+            "its DISTINCT ON over the newest release."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -5670,6 +8203,470 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "re-measures retained runs afterwards."
         ),
     ),
+    # -- CMS long-term care facilities ----------------------------------------
+    _rule(
+        "DQ-CMSLTC-001",
+        "BLOCK",
+        "uniqueness",
+        "A CMS file holds one row per report: a CMS-671 facility once per "
+        "quarter, a cost report once per year's file; a second read is a "
+        "second run beside the first, never an overwrite. Each facility has "
+        "one current county placement.",
+        (
+            "silver_cms_ltc.facility_report",
+            "silver_cms_ltc.facility_count",
+            "silver_cms_ltc.area_total",
+            "gold_cms_ltc.area_revision",
+            "gold_cms_ltc.area_latest",
+            "gold_cms_ltc.facility_latest",
+            "gold_cms_ltc.facility_history",
+            "silver_cms_ltc.facility_place",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated report key aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_cms_ltc.facility_report", ("run_id", "report_key")),
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count", ("run_id", "report_key", "measure_id")
+            ),
+            EnforcedGrain(
+                "silver_cms_ltc.area_total", ("run_id", "measure_id", "geo_id")
+            ),
+            EnforcedGrain("silver_cms_ltc.facility_place", ("ccn",)),
+        ),
+    ),
+    _rule(
+        "DQ-CMSLTC-002",
+        "BLOCK",
+        "conformance",
+        "A valid CMS figure carries a whole number and a blank one carries "
+        "none: a blank is never stored as zero.",
+        (
+            "silver_cms_ltc.facility_count",
+            "gold_cms_ltc.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cms_ltc_count_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_cms_ltc.facility_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cms_ltc_count_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CMSLTC-003",
+        "WARN",
+        "completeness",
+        "Facilities in the newest published CMS-671 quarter that no cost "
+        "report places on a county (no cost report, or a county name that "
+        "matches no county or two) are counted; each offender says which. "
+        "CMS-671 lists Medicaid-only nursing facilities, which file no Medicare "
+        "cost report, so a steady count is expected. They are in their "
+        "state's and the nation's sums and in no county's.",
+        (
+            "silver_cms_ltc.facility_report",
+            "control.cms_ltc_file",
+        ),
+    ),
+    # -- NCES IPEDS colleges ---------------------------------------------------
+    _rule(
+        "DQ-IPEDS-001",
+        "BLOCK",
+        "uniqueness",
+        "An IPEDS file holds one row per institution (EF A: per institution "
+        "and level); a second read is a second run beside the first, never an "
+        "overwrite.",
+        (
+            "silver_nces_ipeds.institution",
+            "silver_nces_ipeds.institution_value",
+            "silver_nces_ipeds.area_total",
+            "gold_nces_ipeds.area_revision",
+            "gold_nces_ipeds.area_latest",
+            "gold_nces_ipeds.institution_year",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated institution aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_nces_ipeds.institution", ("run_id", "unitid")),
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("run_id", "unitid", "measure_id"),
+            ),
+            EnforcedGrain(
+                "silver_nces_ipeds.area_total", ("run_id", "measure_id", "geo_id")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IPEDS-002",
+        "BLOCK",
+        "conformance",
+        "A valid IPEDS figure carries a whole number; a not-applicable or "
+        "not-reported one carries none: neither is stored as zero.",
+        (
+            "silver_nces_ipeds.institution_value",
+            "gold_nces_ipeds.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ipeds_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_nces_ipeds.institution_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="nces_ipeds_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-IPEDS-003",
+        "WARN",
+        "referential_integrity",
+        "Institutions in the newest published directory whose published point "
+        "lies outside the county their published county code names are "
+        "counted. They stay on the county IPEDS names; the point is reported, "
+        "never used to move them.",
+        (
+            "silver_nces_ipeds.institution",
+            "silver_ref.dim_geo_geometry_version",
+        ),
+    ),
+    # -- HHS hospital capacity ------------------------------------------------
+    _rule(
+        "DQ-HHS-001",
+        "BLOCK",
+        "uniqueness",
+        "An HHS snapshot holds one row per hospital, week and figure, and one "
+        "area sum per figure, area and week; a second read is a second "
+        "snapshot beside the first, never an overwrite.",
+        (
+            "silver_hhs_hospital_capacity.facility",
+            "silver_hhs_hospital_capacity.facility_week_value",
+            "silver_hhs_hospital_capacity.area_week",
+            "gold_hhs_hospital_capacity.area_revision",
+            "gold_hhs_hospital_capacity.area_latest",
+            "gold_hhs_hospital_capacity.facility_latest",
+            "gold_hhs_hospital_capacity.facility_week",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated hospital week aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility", ("snapshot_id", "hospital_pk")
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("snapshot_id", "hospital_pk", "collection_week", "measure_id"),
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.area_week",
+                ("snapshot_id", "measure_id", "geo_id", "collection_week"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HHS-002",
+        "BLOCK",
+        "conformance",
+        "A valid HHS figure carries a value; a suppressed (-999999) or omitted "
+        "one carries none: neither is stored as zero.",
+        (
+            "silver_hhs_hospital_capacity.facility_week_value",
+            "gold_hhs_hospital_capacity.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hhs_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_hhs_hospital_capacity.facility_week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="hhs_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-HHS-003",
+        "WARN",
+        "completeness",
+        "Hospitals of the newest published snapshot that HHS's published "
+        "county FIPS code places on no county (no code, or a code the shared "
+        "geography does not hold for the hospital's state) are counted. They "
+        "are in their state's and the nation's sums and in no county's.",
+        (
+            "silver_hhs_hospital_capacity.facility",
+            "control.hhs_hospital_capacity_snapshot",
+        ),
+    ),
+    # -- CDC COVID-19 case surveillance counts --------------------------------
+    _rule(
+        "DQ-COVID-001",
+        "BLOCK",
+        "uniqueness",
+        "A CDC case surveillance snapshot holds one row per returned group and "
+        "one count per measure, age group, area and month; a second read is a "
+        "second snapshot beside the first, never an overwrite.",
+        (
+            "control.cdc_covid_cases_slice",
+            "silver_cdc_covid_cases.slice_group",
+            "silver_cdc_covid_cases.area_month",
+            "gold_cdc_covid_cases.area_revision",
+            "gold_cdc_covid_cases.area_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "control.cdc_covid_cases_slice", ("snapshot_id", "slice_index")
+            ),
+            EnforcedGrain(
+                "silver_cdc_covid_cases.slice_group",
+                ("snapshot_id", "slice_index", "source_row_index"),
+            ),
+            EnforcedGrain(
+                "silver_cdc_covid_cases.area_month",
+                ("snapshot_id", "measure_id", "age_key", "geo_id", "case_month"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-COVID-002",
+        "BLOCK",
+        "conformance",
+        "A hospitalised, died or not-known count never exceeds the case "
+        "records of its area, month and age group.",
+        (
+            "silver_cdc_covid_cases.area_month",
+            "silver_cdc_covid_cases.dim_measure",
+            "gold_cdc_covid_cases.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: a named CHECK constraint refuses a count "
+            "above the case records."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_covid_cases.area_month",
+                ("value", "case_record_count"),
+                kind="check",
+                constraint_name="cdc_covid_area_within_records",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-COVID-003",
+        "WARN",
+        "completeness",
+        "Records of the newest published CDC case surveillance snapshot that "
+        "were set aside (a group whose county code, age group or count could "
+        "not be read) are counted. They are in no served count.",
+        (
+            "silver_cdc_covid_cases.quarantine",
+            "control.cdc_covid_cases_snapshot",
+        ),
+    ),
+    # -- CDC FluView ILINet --------------------------------------------------
+    _rule(
+        "DQ-ILINET-001",
+        "BLOCK",
+        "uniqueness",
+        "An ILINet figure has one row per region, MMWR week, measure and the "
+        "release that first carried or changed it; an unchanged figure is "
+        "never written again.",
+        (
+            "control.cdc_ilinet_download",
+            "silver_cdc_ilinet.region",
+            "silver_cdc_ilinet.week_value",
+            "gold_cdc_ilinet.area_revision",
+            "gold_cdc_ilinet.area_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parser sets a repeated region week aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                (
+                    "region_type",
+                    "region",
+                    "mmwr_year",
+                    "mmwr_week",
+                    "measure_id",
+                    "release_id",
+                ),
+            ),
+            EnforcedGrain("silver_cdc_ilinet.region", ("region_type", "region")),
+        ),
+    ),
+    _rule(
+        "DQ-ILINET-002",
+        "BLOCK",
+        "conformance",
+        "A valid ILINet figure carries a value; one CDC marks X (not "
+        "published) or leaves empty carries none: neither is stored as zero.",
+        (
+            "silver_cdc_ilinet.week_value",
+            "silver_cdc_ilinet.dim_measure",
+            "gold_cdc_ilinet.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cdc_ilinet_value_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_cdc_ilinet.week_value",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="cdc_ilinet_value_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ILINET-003",
+        "WARN",
+        "completeness",
+        "Rows of the newest published ILINet release that were set aside (a "
+        "row whose week, region type or a figure could not be read) are "
+        "counted. They are in no served figure.",
+        (
+            "silver_cdc_ilinet.quarantine",
+            "control.cdc_ilinet_release",
+        ),
+    ),
+    # -- 2020 Census redistricting data (group quarters) ---------------------
+    _rule(
+        "DQ-DECENNIAL-001",
+        "BLOCK",
+        "uniqueness",
+        "2020 Census counts are unique per (dataset, variable, geography, "
+        "capture): a second read is a second row beside the first, never an "
+        "overwrite.",
+        (
+            "silver_census_decennial.fact_count",
+            "gold_census_decennial.count_revision",
+            "gold_census_decennial.count_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary "
+            "key; the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("dataset_id", "variable_id", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-002",
+        "BLOCK",
+        "conformance",
+        "A valid count carries a number and a missing one carries none: a "
+        "null or non-numeric count is never coerced to zero.",
+        (
+            "silver_census_decennial.fact_count",
+            "silver_census_decennial.observation_revision",
+            "gold_census_decennial.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints on the revision "
+            "and the fact refuse a status that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="decennial_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_decennial.fact_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="decennial_fact_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-003",
+        "WARN",
+        "reconciliation",
+        "For every area, a count's published parts add to it: the group "
+        "quarters types to the institutional and noninstitutional totals, "
+        "those to all group quarters, and occupied plus vacant to housing "
+        "units. A mismatch is reported and the counts stay as published.",
+        (
+            "silver_census_decennial.fact_count",
+            "silver_census_decennial.dim_variable",
+            "control.census_decennial_slice",
+        ),
+    ),
+    _rule(
+        "DQ-DECENNIAL-004",
+        "WARN",
+        "reconciliation",
+        "A county's tracts add to the county's own published count, for "
+        "every variable. A mismatch is reported and the counts stay as "
+        "published.",
+        (
+            "silver_census_decennial.fact_count",
+            "control.census_decennial_slice",
+        ),
+    ),
     # -- IRS SOI county migration -------------------------------------------
     _rule(
         "DQ-IRS-001",
@@ -5771,6 +8768,62 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "when none is withheld, and never exceed it when one is.",
         ("silver_irs_migration.flow_revision", "control.irs_migration_file"),
     ),
+    # -- IRS SOI county and state income ------------------------------------
+    _rule(
+        "DQ-SOI-001",
+        "BLOCK",
+        "uniqueness",
+        "SOI income values are unique per (file, metric, tax year, place, "
+        "capture): a revised file is a second row beside the one it revised.",
+        (
+            "silver_irs_soi.fact_observation",
+            "gold_irs_soi.observation_revision",
+            "gold_irs_soi.observation_latest",
+            "gold_irs_soi.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is the fact table's primary key; "
+            "the gold relations are views over it."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_irs_soi.fact_observation",
+                ("file_kind", "metric_key", "tax_year", "geo_id", "capture_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-SOI-002",
+        "QUARANTINE",
+        "reconciliation",
+        "Each replayed SOI file accounts for every captured row as values or "
+        "a quarantined row, and no captured file is left unreplayed.",
+        (
+            "control.irs_soi_file",
+            "silver_irs_soi.observation_revision",
+            "silver_irs_soi.observation_quarantine",
+            "silver_irs_soi.fact_observation",
+        ),
+    ),
+    _rule(
+        "DQ-SOI-003",
+        "WARN",
+        "reconciliation",
+        "In the newest published county totals file, a state's counties sum "
+        "to the file's own state total within 1 percent, in returns and in "
+        "adjusted gross income.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
+    ),
+    _rule(
+        "DQ-SOI-004",
+        "WARN",
+        "reconciliation",
+        "A place's returns in the AGI bands of the newest published band file "
+        "sum to its all-returns count within 1 percent, so the band shares sum "
+        "to 100.",
+        ("silver_irs_soi.fact_observation", "control.irs_soi_file"),
+    ),
     _rule(
         "DQ-BEA-005",
         "BLOCK",
@@ -5781,6 +8834,44 @@ ALL_RULES: tuple[QualityRule, ...] = (
         automation="automated",
         automation_note=(
             "`quality.sources.bea_price_parity_reference` reads the newest published release of line 1 (all items) for `us:1` in SARPP, MARPP and PARPP and fails any year whose value is not exactly 100 -- a parity table whose national row is not 100 is not relative to the nation, and every area's level in it would be misread (grocery-and-gasoline-prices)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-006",
+        "WARN",
+        "reconciliation",
+        "Transfer receipts and personal current taxes add up within one "
+        "release: government, nonprofit and business receipts make the total "
+        "(line 1000), the seven program groups make government receipts (line "
+        "2000), and federal, state, local and property taxes make personal "
+        "current taxes (SAINC50 line 60), each within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_component_sums` reads the newest published "
+            "release of each CAINC35, SAINC35 and SAINC50 geography-year and "
+            "warns where every part is a valid figure and the parts differ from "
+            "their total by more than 0.5 percent (or three thousand dollars, "
+            "BEA's rounding). Refundable tax credits (line 5000) overlap the "
+            "programs and are never added to them (taxes-and-public-money, T-1)."
+        ),
+    ),
+    _rule(
+        "DQ-BEA-007",
+        "WARN",
+        "reconciliation",
+        "A county's transfer receipts by program (CAINC35 line 1000) agree with "
+        "the transfer line of its personal income (CAINC4 line 47) in the same "
+        "release, within 0.5 percent.",
+        ("silver_bea.fact_observation",),
+        automation="automated",
+        automation_note=(
+            "`quality.sources.bea_transfer_total_agreement` pairs each CAINC35 "
+            "line 1000 figure with the CAINC4 line 47 figure for the same "
+            "geography, year and release date, and warns past 0.5 percent. BEA "
+            "publishes the program detail later than the totals, so a release of "
+            "one with no release of the other is not compared, and the result is "
+            "`not_applicable` when no release date is shared."
         ),
     ),
     # -- Census County Business Patterns ------------------------------------
@@ -5884,11 +8975,13 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "gold_census_lodes.observation_revision",
             "gold_census_lodes.observation_latest",
             "gold_census_lodes.measure_definition",
+            "gold_census_lodes.coverage_gap",
         ),
         automation="enforced",
         automation_note=(
             "Enforced, not measured: the grains are the two fact tables' primary "
-            "keys; the gold relations are views over them."
+            "keys and the coverage gaps' (one row per run and measure); the "
+            "gold relations are views over them."
         ),
         enforced_grains=(
             EnforcedGrain(
@@ -5898,6 +8991,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
             EnforcedGrain(
                 "silver_census_lodes.fact_flow",
                 ("run_id", "part", "home_geo_id", "work_geo_id"),
+            ),
+            EnforcedGrain(
+                "gold_census_lodes.coverage_gap",
+                ("run_id", "metric_key"),
             ),
         ),
     ),
@@ -5952,6 +9049,37 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "in each county (main and aux) equal the workplace file's total for "
         "that county.",
         ("silver_census_lodes.fact_flow", "silver_census_lodes.fact_area"),
+    ),
+    _rule(
+        "DQ-LODES-005",
+        "QUARANTINE",
+        "reconciliation",
+        "Every published state-year whose residence or workplace file had "
+        "readable rows serves its county and state sums: a publish that "
+        "computed no served row fails rather than leaving the year blank.",
+        (
+            "control.census_lodes_slice",
+            "gold_census_lodes.observation_fact",
+        ),
+    ),
+    _rule(
+        "DQ-LODES-006",
+        "WARN",
+        "completeness",
+        "A year the site serves has every registered state published: a "
+        "history load that stopped part way shows as the states it is missing.",
+        ("control.census_lodes_slice",),
+    ),
+    _rule(
+        "DQ-LODES-007",
+        "WARN",
+        "plausibility",
+        "A state's served LODES jobs do not move by more than a quarter "
+        "between consecutive published years; a larger step is a coverage "
+        "break in the files to explain, not an economy. State-years whose jobs "
+        "LEHD had not yet covered (a jobs row in gold_census_lodes.coverage_gap) "
+        "are not served and not compared.",
+        ("gold_census_lodes.observation_fact", "gold_census_lodes.coverage_gap"),
     ),
     # -- EPA air quality (AirData annual monitor files) ------------------------
     _rule(
@@ -6045,7 +9173,9 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_noaa_normals.station",
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "gold_noaa_normals.station_observation",
+            "gold_noaa_normals.station_monthly_observation",
             "gold_noaa_normals.observation_revision",
             "gold_noaa_normals.observation_latest",
             "gold_noaa_normals.measure_definition",
@@ -6060,6 +9190,10 @@ ALL_RULES: tuple[QualityRule, ...] = (
             EnforcedGrain(
                 "silver_noaa_normals.station_normal",
                 ("run_id", "station_id", "variable"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("run_id", "station_id", "variable", "month"),
             ),
         ),
     ),
@@ -6082,6 +9216,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
         "does: no withheld value becomes a zero.",
         (
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "gold_noaa_normals.measure_export",
         ),
         automation="enforced",
@@ -6102,20 +9237,422 @@ ALL_RULES: tuple[QualityRule, ...] = (
                 kind="check",
                 constraint_name="noaa_normals_withheld_value_absent",
             ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_monthly_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_normals.station_monthly_normal",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_normals_monthly_withheld_value_absent",
+            ),
         ),
     ),
     _rule(
         "DQ-NOAA-004",
         "WARN",
         "referential_integrity",
-        "In every published archive, no precipitation or degree-day normal is "
-        "negative, no station sits on a county boundary, and every station "
+        "In every published archive, no precipitation, snowfall or degree-day "
+        "normal is negative, no station sits on a county boundary, and every station "
         "NCEI codes to the United States (GHCN country US) falls inside a "
-        "county of the recorded boundary vintage.",
+        "county of the recorded boundary vintage or is placed on the nearest "
+        "county within 1,000 metres of it.",
         (
             "silver_noaa_normals.station",
             "silver_noaa_normals.station_normal",
+            "silver_noaa_normals.station_monthly_normal",
             "control.noaa_normals_file",
+        ),
+    ),
+    # -- NOAA nClimDiv county monthly series -----------------------------------
+    _rule(
+        "DQ-CLIMDIV-001",
+        "BLOCK",
+        "uniqueness",
+        "A county month is unique per (NCEI state code, county, measure, "
+        "year, month): a repeated line is quarantined, and a replaced value "
+        "is kept once per run in the revision table.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "silver_noaa_climdiv.county_month_revision",
+            "gold_noaa_climdiv.observation_revision",
+            "gold_noaa_climdiv.observation_latest",
+            "gold_noaa_climdiv.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("ncei_state_code", "county_fips", "measure", "year", "month"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month_revision",
+                (
+                    "ncei_state_code",
+                    "county_fips",
+                    "measure",
+                    "year",
+                    "month",
+                    "run_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and no stored county month "
+        "names a run whose file for that element was not published.",
+        (
+            "control.noaa_climdiv_file",
+            "silver_noaa_climdiv.quarantine",
+            "silver_noaa_climdiv.county_month",
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-003",
+        "BLOCK",
+        "conformance",
+        "A month NCEI has not published (its missing marker) carries no "
+        "number, and a valid one always does: no marker becomes a value.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "gold_noaa_climdiv.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "month without a value and a missing one with a value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_climdiv_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_noaa_climdiv.county_month",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="noaa_climdiv_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-CLIMDIV-004",
+        "WARN",
+        "referential_integrity",
+        "No precipitation or degree-day month the newest published file "
+        "wrote is negative, and no temperature lies outside -50 to 140 "
+        "degrees F.",
+        (
+            "silver_noaa_climdiv.county_month",
+            "control.noaa_climdiv_file",
+        ),
+    ),
+    # -- Monthly Treasury Statement, Table 9 ------------------------------------
+    _rule(
+        "DQ-TREASURY-001",
+        "BLOCK",
+        "uniqueness",
+        "A statement line is unique per (record date, line code): a repeated "
+        "line in a read is quarantined, and a replaced row is kept once per "
+        "run in the revision table.",
+        (
+            "silver_treasury_mts.statement_line",
+            "silver_treasury_mts.statement_line_revision",
+            "gold_treasury_mts.statement_line_revision",
+            "gold_treasury_mts.observation_revision",
+            "gold_treasury_mts.observation_latest",
+            "gold_treasury_mts.line_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("record_date", "line_code"),
+            ),
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line_revision",
+                ("record_date", "line_code", "run_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured page is left unreplayed, and no stored statement line "
+        "names a page that was not published.",
+        (
+            "control.treasury_mts_page",
+            "silver_treasury_mts.quarantine",
+            "silver_treasury_mts.statement_line",
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-003",
+        "BLOCK",
+        "conformance",
+        "A line Treasury prints as null carries no number, and a valid one "
+        "always carries its fiscal-year-to-date amount: no null becomes zero.",
+        (
+            "silver_treasury_mts.statement_line",
+            "gold_treasury_mts.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "line without an amount and a missing one with an amount."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("value_status", "current_fytd_amount"),
+                kind="check",
+                constraint_name="treasury_mts_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_treasury_mts.statement_line",
+                ("value_status", "current_fytd_amount"),
+                kind="check",
+                constraint_name="treasury_mts_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-TREASURY-004",
+        "WARN",
+        "reconciliation",
+        "For every published statement month, the budget-function outlay "
+        "lines (140 to 330) add to total outlays (line 340) within one "
+        "dollar, in the fiscal-year-to-date column.",
+        (
+            "silver_treasury_mts.statement_line",
+            "gold_treasury_mts.outlays_by_function",
+        ),
+    ),
+    # -- USAspending federal award obligations -----------------------------------
+    _rule(
+        "DQ-USASPENDING-001",
+        "BLOCK",
+        "uniqueness",
+        "A place's obligations are unique per (fiscal year, layer, cut, key, "
+        "shape code): a repeated shape in an answer is quarantined, and a "
+        "replaced or withdrawn row is kept once per run in the revision table.",
+        (
+            "silver_usaspending.geography_amount",
+            "silver_usaspending.geography_amount_revision",
+            "silver_usaspending.agency_year",
+            "gold_usaspending.geography_amount_served",
+            "gold_usaspending.observation_revision",
+            "gold_usaspending.observation_latest",
+            "gold_usaspending.measure_definition",
+            "gold_usaspending.awards_by_award_type",
+            "gold_usaspending.awards_by_agency",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the current and revision "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("fiscal_year", "geo_layer", "cut_kind", "cut_key", "shape_code"),
+            ),
+            EnforcedGrain(
+                "silver_usaspending.geography_amount_revision",
+                (
+                    "fiscal_year",
+                    "geo_layer",
+                    "cut_kind",
+                    "cut_key",
+                    "shape_code",
+                    "run_id",
+                ),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured request is left unreplayed, and no stored row names a "
+        "request that was not published.",
+        (
+            "control.usaspending_request",
+            "silver_usaspending.quarantine",
+            "silver_usaspending.geography_amount",
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-003",
+        "BLOCK",
+        "conformance",
+        "An amount USAspending wrote as null carries no number, and a valid "
+        "one always does: no null becomes zero.",
+        (
+            "silver_usaspending.geography_amount",
+            "gold_usaspending.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a valid "
+            "row without an amount and a missing one with an amount."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="usaspending_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_usaspending.geography_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="usaspending_missing_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-USASPENDING-004",
+        "WARN",
+        "reconciliation",
+        "For every published state-layer fiscal year, the award type groups "
+        "add to the all-awards total within 0.1% of it (USAspending leaves a "
+        "few awards outside every group).",
+        (
+            "silver_usaspending.geography_amount",
+            "gold_usaspending.awards_by_award_type",
+        ),
+    ),
+    # -- NOAA Storm Events Database ---------------------------------------------
+    _rule(
+        "DQ-STORM-001",
+        "BLOCK",
+        "uniqueness",
+        "An event is unique per NCEI event id, a placement per (event, "
+        "county), a count per (measure, place, year) and a zone-county row "
+        "per (zone file, state, zone, county): a repeated event id is "
+        "quarantined, and a replaced or withdrawn event is kept once per run "
+        "in the revision table.",
+        (
+            "silver_noaa_storm_events.event",
+            "silver_noaa_storm_events.event_revision",
+            "silver_noaa_storm_events.event_place",
+            "silver_noaa_storm_events.place_year",
+            "silver_noaa_storm_events.state_year",
+            "silver_noaa_storm_events.zone_county",
+            "gold_noaa_storm_events.observation_revision",
+            "gold_noaa_storm_events.observation_latest",
+            "gold_noaa_storm_events.event_detail",
+            "gold_noaa_storm_events.measure_definition",
+            "gold_noaa_storm_events.year_release",
+            "gold_noaa_storm_events.state_coverage",
+            "gold_noaa_storm_events.place_kind",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the silver primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_noaa_storm_events.event", ("event_id",)),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event_revision",
+                ("event_id", "run_id", "superseded_by_run_id"),
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event_place", ("event_id", "geo_id")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.place_year", ("metric_key", "geo_id", "year")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.state_year", ("state_fips", "year")
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.zone_county",
+                ("zone_file", "state", "zone", "county_fips5"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-STORM-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured file is left unreplayed, and the current events of "
+        "each year plus its quarantined rows equal the rows of the year's "
+        "newest published file.",
+        (
+            "control.noaa_storm_events_file",
+            "silver_noaa_storm_events.quarantine",
+            "silver_noaa_storm_events.event",
+        ),
+    ),
+    _rule(
+        "DQ-STORM-003",
+        "BLOCK",
+        "conformance",
+        "A damage figure has a number exactly when NCEI published one that "
+        "reads (a blank is not reported, never zero), and an event is "
+        "'zone_matched' exactly when it names the zone-county file it was "
+        "placed with.",
+        (
+            "silver_noaa_storm_events.event",
+            "gold_noaa_storm_events.measure_export",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints tie each damage "
+            "status to its number and the zone placement to its file."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("damage_property_status", "damage_property_usd"),
+                kind="check",
+                constraint_name="noaa_storm_events_damage_property_reported",
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("damage_crops_status", "damage_crops_usd"),
+                kind="check",
+                constraint_name="noaa_storm_events_damage_crops_reported",
+            ),
+            EnforcedGrain(
+                "silver_noaa_storm_events.event",
+                ("placement_status", "zone_file"),
+                kind="check",
+                constraint_name="noaa_storm_events_zone_file_when_matched",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-STORM-004",
+        "WARN",
+        "referential_integrity",
+        "No current event before 1996 has an event type its recording era "
+        "does not hold (1950-1954 tornado; 1955-1995 tornado, thunderstorm "
+        "wind and hail).",
+        (
+            "silver_noaa_storm_events.event",
+            "gold_noaa_storm_events.recording_era",
         ),
     ),
     # -- FCC Broadband Data Collection (fixed availability) --------------------
@@ -6215,6 +9752,7 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fema_nri.declaration_revision",
             "gold_fema_nri.nri_observation",
             "gold_fema_nri.declaration_count",
+            "gold_fema_nri.declaration_count_by_incident",
             "gold_fema_nri.observation_revision",
             "gold_fema_nri.observation_latest",
             "gold_fema_nri.measure_definition",
@@ -6285,6 +9823,265 @@ ALL_RULES: tuple[QualityRule, ...] = (
             "silver_fema_nri.nri_fact",
             "silver_fema_nri.declaration_revision",
             "control.fema_nri_run",
+        ),
+    ),
+    # -- Elections: seat terms, governors and MEDSL results --------------------
+    _rule(
+        "DQ-ELEC-001",
+        "BLOCK",
+        "uniqueness",
+        "A seat-term span is unique per (read, term key) and a result row per "
+        "(read, result key): a repeated span or a repeated candidate line in one "
+        "contest, area and mode is quarantined.",
+        (
+            "silver_elections.seat_term",
+            "silver_elections.candidate_result",
+            "gold_elections.seat_term",
+            "gold_elections.candidate_tally",
+            "gold_elections.candidate_total",
+            "gold_elections.contest_tally",
+            "gold_elections.contest_result_store",
+            "gold_elections.contest_result",
+            "silver_elections.district_county_share",
+            "gold_elections.district_plan_definition",
+            "gold_elections.house_plan_year",
+            "gold_elections.district_county_share",
+            "gold_elections.county_house_district",
+            "gold_elections.precinct_county_check",
+            "gold_elections.observation_revision",
+            "gold_elections.observation_latest",
+            "gold_elections.office_definition",
+            "gold_elections.party_definition",
+            "gold_elections.current_read",
+            "gold_elections.measure_definition",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the two silver tables' "
+            "primary keys; the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain("silver_elections.seat_term", ("run_id", "term_key")),
+            EnforcedGrain(
+                "silver_elections.candidate_result", ("run_id", "result_key")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-002",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured elections read is left unreplayed, and every replayed read "
+        "with readable records reached its terms or results.",
+        (
+            "control.elections_run",
+            "control.elections_file",
+            "silver_elections.quarantine",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-003",
+        "BLOCK",
+        "temporal_integrity",
+        "No two current seat-term spans hold one seat (a state's governorship, "
+        "Senate class or House district) on the same day.",
+        ("gold_elections.seat_term",),
+    ),
+    _rule(
+        "DQ-ELEC-004",
+        "WARN",
+        "reconciliation",
+        "Each state's county presidential and U.S. Senate totals sum to within "
+        "0.5 percent of its state total for the same contest, and every county "
+        "and state row of the current results reads resolved to the shared "
+        "geography.",
+        (
+            "gold_elections.contest_result",
+            "gold_elections.measure_export",
+            "gold_elections.metric_publisher",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-005",
+        "BLOCK",
+        "reconciliation",
+        "Every lean-group county row is its change minus the nation's, in the "
+        "band its window-start margin names (no tie in any band), and every lean "
+        "group of all counties counts exactly the county rows of its window, "
+        "measure and band (ADR-0014).",
+        (
+            "gold_elections.lean_place_change",
+            "gold_elections.lean_group_change",
+            "gold_elections.lean_refresh",
+            "gold_elections.lean_measure_definition",
+            "gold_elections.lean_band_definition",
+            "gold_elections.lean_peer_definition",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-006",
+        "BLOCK",
+        "reconciliation",
+        "Every governor tenure's fiscal change is the state's change minus the "
+        "nation's over the same window, a value only where both ends are "
+        "published, no two tenures of one state overlap, and each tenure's tax "
+        "mix adds to 100 within half a point (ADR-0014 fiscal section).",
+        (
+            "gold_elections.governor_term_fiscal",
+            "gold_elections.governor_term_tax_mix",
+            "gold_elections.governor_tenure",
+            "gold_elections.governor_fiscal_measure_definition",
+            "gold_elections.governor_fiscal_series",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-007",
+        "WARN",
+        "reconciliation",
+        "Where Algara & Amlani's county presidential returns overlap MEDSL's "
+        "(2000 to 2020), each county's two-party margin agrees within half a "
+        "point; only MEDSL's years are served, so the overlap vouches for the "
+        "1992 and 1996 counties.",
+        ("silver_elections.candidate_result", "gold_elections.contest_result"),
+    ),
+    _rule(
+        "DQ-ELEC-008",
+        "WARN",
+        "completeness",
+        "Every House district result from 2006 has county pieces in the Census "
+        "plan registered for its year, and every county piece has its "
+        "district's result; a gap is reported, never filled in.",
+        (
+            "silver_elections.district_county_share",
+            "gold_elections.district_county_share",
+            "gold_elections.county_house_district",
+        ),
+    ),
+    _rule(
+        "DQ-ELEC-009",
+        "WARN",
+        "reconciliation",
+        "County Senate rows summed from MEDSL's precinct file are served as "
+        "published; each state whose county sums miss the statewide count by "
+        "more than 1% is named with both counts, never filled in.",
+        (
+            "gold_elections.precinct_county_check",
+            "gold_elections.contest_result",
+        ),
+    ),
+    # -- Census state and local government finance -------------------------
+    _rule(
+        "DQ-GOVFIN-001",
+        "BLOCK",
+        "uniqueness",
+        "A government finance figure is unique per (dataset, measure, government "
+        "level, fiscal year, quarter, place, capture), and a unit-file record per "
+        "(capture, row): a revised publication is a second row, never an overwrite.",
+        (
+            "silver_census_govfin.fact_observation",
+            "silver_census_govfin.unit_amount",
+            "silver_census_govfin.unit_government",
+            "silver_census_govfin.state_type_total",
+            "silver_census_govfin.api_revision",
+            "silver_census_govfin.dim_measure",
+            "silver_census_govfin.measure_item",
+            "gold_census_govfin.observation_revision",
+            "gold_census_govfin.observation_latest",
+            "gold_census_govfin.county_area_government",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grains are the tables' primary keys; "
+            "the gold relations are views over them."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                (
+                    "dataset_id",
+                    "measure_id",
+                    "government_level",
+                    "fiscal_year",
+                    "quarter",
+                    "geo_id",
+                    "capture_id",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.unit_amount", ("capture_id", "source_row_index")
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-002",
+        "BLOCK",
+        "conformance",
+        "A valid figure carries a number and a missing one carries none; only "
+        "Census of Governments figures are warehouse roll-ups, and each roll-up "
+        "states which records it sums.",
+        (
+            "silver_census_govfin.fact_observation",
+            "silver_census_govfin.unit_amount",
+            "gold_census_govfin.tax_mix",
+            "gold_census_govfin.spending_mix",
+            "gold_census_govfin.tax_burden",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value and a roll-up outside the unit files."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="govfin_fact_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="govfin_fact_missing_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.fact_observation",
+                ("derivation", "dataset_id"),
+                kind="check",
+                constraint_name="govfin_fact_rollup_is_unit_file",
+            ),
+            EnforcedGrain(
+                "silver_census_govfin.unit_amount",
+                ("value_status", "amount"),
+                kind="check",
+                constraint_name="unit_amount_valid_value_present",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-003",
+        "QUARANTINE",
+        "reconciliation",
+        "No captured government finance slice is left unreplayed, and every "
+        "replayed run with readable records reached the fact.",
+        (
+            "control.census_govfin_slice",
+            "silver_census_govfin.quarantine",
+            "silver_census_govfin.fact_observation",
+        ),
+    ),
+    _rule(
+        "DQ-GOVFIN-004",
+        "WARN",
+        "reconciliation",
+        "Each published unit file's state government records and local "
+        "government records sum, item by item, to within 1 percent of Census's "
+        "own state and local totals for that state.",
+        (
+            "silver_census_govfin.unit_amount",
+            "silver_census_govfin.state_type_total",
+            "gold_census_govfin.measure_export",
+            "gold_census_govfin.metric_publisher",
         ),
     ),
     # -- FHFA annual House Price Index ----------------------------------------

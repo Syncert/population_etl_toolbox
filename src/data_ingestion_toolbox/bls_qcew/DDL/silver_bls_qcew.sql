@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS control.bls_qcew_slice (
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     captured_row_count INTEGER NOT NULL DEFAULT 0 CHECK (captured_row_count >= 0),
     in_scope_row_count INTEGER NOT NULL DEFAULT 0 CHECK (in_scope_row_count >= 0),
-    status TEXT NOT NULL CHECK (status IN (
-        'captured', 'empty', 'silver_ready', 'quarantined', 'published'
+    status TEXT NOT NULL CONSTRAINT bls_qcew_slice_status_check CHECK (status IN (
+        'captured', 'empty', 'unchanged', 'silver_ready', 'quarantined', 'published'
     )),
     published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -118,3 +118,29 @@ CREATE TABLE IF NOT EXISTS silver_bls_qcew.fact_observation (
 CREATE INDEX IF NOT EXISTS bls_qcew_fact_lookup_idx
     ON silver_bls_qcew.fact_observation (measure_id, industry_code, own_code, geo_id, period_start);
 CREATE INDEX IF NOT EXISTS bls_qcew_fact_run_idx ON silver_bls_qcew.fact_observation (run_id);
+
+-- A read whose bytes repeat the last published one is recorded `unchanged`
+-- and replays nothing (utility/unchanged.py). A warehouse created before
+-- that has the older status list; the control table holds one row per
+-- file or slice, so revalidating the CHECK is instant.
+DO $$
+DECLARE
+    old_check RECORD;
+BEGIN
+    FOR old_check IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'control.bls_qcew_slice'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) LIKE '%silver_ready%'
+          AND pg_get_constraintdef(oid) NOT LIKE '%unchanged%'
+    LOOP
+        EXECUTE format('ALTER TABLE control.bls_qcew_slice DROP CONSTRAINT %I', old_check.conname);
+    END LOOP;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'control.bls_qcew_slice'::regclass AND conname = 'bls_qcew_slice_status_check'
+    ) THEN
+        ALTER TABLE control.bls_qcew_slice ADD CONSTRAINT bls_qcew_slice_status_check
+            CHECK (status IN ('captured', 'empty', 'unchanged', 'silver_ready', 'quarantined', 'published'));
+    END IF;
+END $$;

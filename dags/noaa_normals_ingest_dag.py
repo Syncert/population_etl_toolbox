@@ -1,12 +1,13 @@
 """Capture-first NOAA U.S. Climate Normals 1991-2020 pipeline.
 
-Each run reads the registered annual/seasonal by-station archive and, when
+Each run reads the registered annual/seasonal and monthly by-station
+archives and, for each one, when
 its bytes differ from the last published capture, replays it into silver,
 assigns each station to a county from its coordinates, and publishes it.
 NCEI names a new archive for a new version, so a changed archive is a
 registry change; the scheduled read proves the registered one still serves.
 
-One task through the one-slot ``noaa_normals_files`` pool.
+One task per archive through the one-slot ``noaa_normals_files`` pool.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.noaa_normals.capture import capture_archive
 from data_ingestion_toolbox.noaa_normals.config import NormalsConfig
+from data_ingestion_toolbox.noaa_normals.registry import MONTHLY
 from data_ingestion_toolbox.noaa_normals.schema import ensure_noaa_normals_schema
 from data_ingestion_toolbox.noaa_normals.silver_noaa_normals.load import (
     publish_run,
     replay_run,
+    place_published_stations,
     settle_unreplayed_runs,
 )
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -76,7 +79,28 @@ def noaa_normals_ingest():
         # A retry after a failed replay reads the archive again under a new
         # run; finish the run it left behind first (DQ-NOAA-002).
         settled = settle_unreplayed_runs(connection_factory)
+        # A placement rule added after a run was published reaches its
+        # stations here, since an unchanged archive replays nothing.
+        replaced = place_published_stations(connection_factory)
         run_id, status = capture_archive(connection_factory, config=NormalsConfig())
+        normals = replay_run(connection_factory, run_id=UUID(str(run_id)))
+        published = publish_run(connection_factory, run_id=UUID(str(run_id)))
+        return {
+            "run_id": str(run_id),
+            "status": status,
+            "settled_runs": [str(settled_run) for settled_run in settled],
+            "replaced_runs": [str(replaced_run) for replaced_run in replaced],
+            "normals": normals,
+            "published": published,
+        }
+
+    @task(pool="noaa_normals_files")
+    def ingest_monthly_archive() -> dict[str, Any]:
+        connection_factory = _get_postgres_hook().get_conn
+        settled = settle_unreplayed_runs(connection_factory)
+        run_id, status = capture_archive(
+            connection_factory, config=NormalsConfig(), product=MONTHLY
+        )
         normals = replay_run(connection_factory, run_id=UUID(str(run_id)))
         published = publish_run(connection_factory, run_id=UUID(str(run_id)))
         return {
@@ -91,7 +115,7 @@ def noaa_normals_ingest():
         task_id="ensure_noaa_normals_schema"
     )()
     geography = require_shared_geography()
-    schema >> geography >> ingest_batch_archive()
+    schema >> geography >> ingest_batch_archive() >> ingest_monthly_archive()
 
 
 noaa_normals_ingest()

@@ -2,18 +2,46 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import logging
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
+
+from .warehouse_manifest import (
+    assets_for_files,
+    assets_recorded_current,
+    record_task_applied_assets,
+)
 
 if TYPE_CHECKING:
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class GrainStep:
+    """One committed part of a year chunk: the served grains it rewrites.
+
+    A source whose year holds grains of very different size (ACS: a place year
+    is ten times its counties) refreshes the year one step at a time, each in
+    its own transaction under its own timeout, so the small grains readers ask
+    for most are never held behind the large one.
+    """
+
+    name: str
+    geo_levels: tuple[str, ...]
+    statement_timeout: str
+    #: Published one state per session, `step_workers` sessions at once, when
+    #: the source declares `state_list_sql`: the grain's rows are state-scoped
+    #: (a tract or a place lies in one state), so the sessions never touch the
+    #: same row.
+    by_state: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,6 +79,45 @@ class ServingRefreshChunkConfig:
     #: analyse a latest relation", which is what a source serving a view
     #: rather than a table wants.
     latest_table: str = ""
+    #: When set, each year chunk is refreshed as these steps in order, and
+    #: ``report_procedure`` takes the step's grains as a third argument. The
+    #: chunk's checkpoint completes only when every step has.
+    grain_steps: tuple[GrainStep, ...] = ()
+    #: Whether a grain step has anything to publish: a query taking the
+    #: named parameters `year`, `geo_levels` (the step's grains) and `since`
+    #: (the chunk's last completed refresh),
+    #: answering one row whose single column is true when silver changed any
+    #: of those grains in that year since then. Empty means "always publish".
+    #: It must answer true whenever it cannot tell (skip-unchanged-grains).
+    step_changed_sql: str = ""
+    #: Whether silver holds publishable rows for a chunk: a query taking the
+    #: chunk's start and end dates and answering one boolean. A chunk that
+    #: served no report rows while this answers true fails instead of being
+    #: checkpointed complete: the 1990 census's first serve dropped all 1.67M
+    #: silver rows (no gold dimension rows for its datasets) and recorded the
+    #: year as served. Empty means "do not check".
+    silver_rows_sql: str = ""
+    #: The states a `by_state` step is published for, one row each; no
+    #: parameters. Empty means "never split by state".
+    state_list_sql: str = ""
+    #: How many states of a `by_state` step publish at once.
+    step_workers: int = 1
+    #: How many served rows of a year (`%(start)s` to `%(end)s`) at the step's
+    #: `%(geo_levels)s` carry no state. Any such row is outside every state's
+    #: session, so the step is then published whole instead.
+    stateless_rows_sql: str = ""
+    #: Which states of a `by_state` step have anything to publish: a query
+    #: taking the same named parameters as ``step_changed_sql`` and answering
+    #: one row of two columns -- the states changed since `since` (NULL when
+    #: it cannot tell per state, which publishes every state) and every state
+    #: it knows about. A state it does not know about is published, so the
+    #: answer can only ever skip a state it has evidence is unchanged. Empty
+    #: means "publish every state of a step that has changes".
+    #:
+    #: Without it a change to one state's tracts re-published every state's:
+    #: the 2024 tract step deleted and re-inserted all ~157k tract rows of each
+    #: state, and its ~157k latest rows, about 450 seconds a state (2026-11-06).
+    state_changed_sql: str = ""
 
 
 @dataclass(frozen=True, order=True)
@@ -111,24 +178,38 @@ SOURCE_SCHEMA_COMPONENTS: dict[str, str] = {
     "CENSUS_ACS": "gold_ddl_acs",
     "CENSUS_PEP": "gold_ddl_pep",
     "CENSUS_SAIPE_SAHIE": "gold_ddl_census_sae",
+    "CENSUS_DECENNIAL": "gold_ddl_census_decennial",
+    "CMS_LTC": "gold_ddl_cms_ltc",
+    "NCES_IPEDS": "gold_ddl_nces_ipeds",
+    "HHS_HOSPITAL_CAPACITY": "gold_ddl_hhs_hospital_capacity",
+    "CDC_COVID_CASES": "gold_ddl_cdc_covid_cases",
+    "CDC_ILINET": "gold_ddl_cdc_ilinet",
+    "CENSUS_GOVFIN": "gold_ddl_census_govfin",
     "FBI_UCR": "gold_ddl_fbi",
     "FRED": "gold_ddl_fred",
     "IRS_MIGRATION": "gold_ddl_irs_migration",
+    "IRS_SOI": "gold_ddl_irs_soi",
     "USDA_NASS": "gold_ddl_nass",
     "USDA_ERS": "gold_ddl_usda_ers",
     "NCES_CCD": "gold_ddl_nces_ccd",
     "FHFA_HPI": "gold_ddl_fhfa_hpi",
     "HUD_FMR_IL": "gold_ddl_hud_fmr_il",
     "FEMA_NRI": "gold_ddl_fema_nri",
+    "ELECTIONS": "gold_ddl_elections",
     "FCC_BDC": "gold_ddl_fcc_bdc",
     "EPA_AQS": "gold_ddl_epa_aqs",
     "NOAA_NORMALS": "gold_ddl_noaa_normals",
+    "NOAA_CLIMDIV": "gold_ddl_noaa_climdiv",
+    "TREASURY_MTS": "gold_ddl_treasury_mts",
+    "USASPENDING": "gold_ddl_usaspending",
+    "NOAA_STORM_EVENTS": "gold_ddl_noaa_storm_events",
     "CENSUS_LODES": "gold_ddl_census_lodes",
     "CENSUS_CBP": "gold_ddl_census_cbp",
     "CENSUS_BPS": "gold_ddl_census_bps",
     "BLS_QCEW": "gold_ddl_bls_qcew",
     "BEA": "gold_ddl_bea",
     "EIA": "gold_ddl_eia",
+    "DOL_CHILDCARE": "gold_ddl_dol_childcare",
 }
 
 
@@ -207,17 +288,49 @@ def ensure_gold_schema_from_files(
     ordered_files = sorted(ddl_files)
     current_hash = _compute_ddl_hash(ordered_files)
 
+    # The files that are also bootstrap-manifest assets. Applying one here
+    # is applying that manifest step, so the ledger row DQ-SHARED-004 reads
+    # is written here too; without it the step read as drifted from the
+    # first DDL change a task applied (DQ-SHARED-004 fail, 2026-11-08).
+    manifest_files = assets_for_files(ordered_files)
+    ledger_assets = list(manifest_files.values())
+
     with hook.get_conn() as conn, conn.cursor() as cur:
         _ensure_schema_state_table(cur)
         recorded_hash = _get_recorded_hash(cur, component_name)
         bootstrapped = _is_bootstrapped(cur, required_relations, required_procedures)
 
         if bootstrapped and recorded_hash == current_hash:
+            # The component row proves these exact bytes were applied, so a
+            # manifest row still at an older hash is brought level. Rows
+            # already current are not rewritten.
+            changed = record_task_applied_assets(cur, ledger_assets)
             logger.info(
-                "Gold schema component %s already bootstrapped with matching hash; skipping",
+                "Gold schema component %s already bootstrapped with matching hash; "
+                "skipping%s",
                 component_name,
+                f" (manifest ledger brought level: {', '.join(changed)})"
+                if changed
+                else "",
             )
             conn.commit()
+            return
+
+        if (
+            bootstrapped
+            and len(ledger_assets) == len(ordered_files)
+            and assets_recorded_current(cur, ledger_assets)
+        ):
+            # Every file is a manifest step the applier already ran at these
+            # bytes (`apply_warehouse_manifest --only-flagged`); applying them
+            # again would only repeat that work.
+            _record_hash(cur, component_name, current_hash)
+            conn.commit()
+            logger.info(
+                "Gold schema component %s already applied by the warehouse "
+                "manifest at these bytes; recorded and skipping",
+                component_name,
+            )
             return
 
         for ddl_file in ordered_files:
@@ -228,6 +341,7 @@ def ensure_gold_schema_from_files(
             logger.info("Applied gold DDL (%s): %s", component_name, ddl_file)
 
         _record_hash(cur, component_name, current_hash)
+        record_task_applied_assets(cur, ledger_assets)
         conn.commit()
 
     logger.info(
@@ -354,6 +468,158 @@ def _analyze_after_chunk(
             config.log_label,
             ", ".join(relations),
         )
+
+
+def _step_has_changes(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+) -> bool:
+    """Whether one grain step of a chunk has silver changes to publish.
+
+    A chunk never completed, or a source declaring no `step_changed_sql`,
+    always publishes; so does any answer other than an explicit false.
+    """
+    if not config.step_changed_sql or chunk.get("completed_at") is None:
+        return True
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            config.step_changed_sql,
+            {
+                "year": chunk["start"].year,
+                "geo_levels": list(step.geo_levels),
+                "since": chunk["completed_at"],
+                # The silver watermark the last complete serve published.
+                "served_through": chunk.get("completed"),
+            },
+        )
+        row = cur.fetchone()
+    return not (row is not None and row[0] is False)
+
+
+def _changed_states(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+    states: list[str],
+) -> list[str]:
+    """The states of a `by_state` step that have silver changes to publish.
+
+    Every state, unless the source declares `state_changed_sql`, the chunk was
+    served before, and the query names the changed states. A state the query
+    does not know about is kept: only evidence of no change skips a state.
+    """
+    if not config.state_changed_sql or chunk.get("completed_at") is None:
+        return states
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            config.state_changed_sql,
+            {
+                "year": chunk["start"].year,
+                "geo_levels": list(step.geo_levels),
+                "since": chunk["completed_at"],
+                "served_through": chunk.get("completed"),
+            },
+        )
+        row = cur.fetchone()
+    if row is None or row[0] is None:
+        return states
+    changed = {str(state) for state in row[0]}
+    known = {str(state) for state in (row[1] or ())}
+    return [state for state in states if state in changed or state not in known]
+
+
+def _serve_step_by_state(
+    hook: PostgresHook,
+    config: ServingRefreshChunkConfig,
+    step: GrainStep,
+    chunk: dict[str, Any],
+    log: logging.Logger,
+    force_full: bool = False,
+) -> bool:
+    """Publish one grain step state by state, several sessions at once.
+
+    Returns False, having done nothing, when the step is not split: the
+    source declares no state list, one worker, or the year holds served rows
+    of these grains with no state (which no state's session would clear).
+    Each state commits on its own; a failure raises after the others finish,
+    and the chunk is not checkpointed, so a retry re-publishes every changed
+    state. Outside a forced run a state no slice changed since the chunk was
+    last served is skipped (`state_changed_sql`).
+    """
+    if not (step.by_state and config.state_list_sql and config.step_workers > 1):
+        return False
+    with hook.get_conn() as conn, conn.cursor() as cur:
+        if config.stateless_rows_sql:
+            cur.execute(
+                config.stateless_rows_sql,
+                {
+                    "start": chunk["start"],
+                    "end": chunk["end"],
+                    "geo_levels": list(step.geo_levels),
+                },
+            )
+            if int(cur.fetchone()[0]):
+                log.warning(
+                    "[%s SERVING REFRESH] start=%s step=%s has served rows with no "
+                    "state; publishing it whole",
+                    config.log_label,
+                    chunk["start"],
+                    step.name,
+                )
+                return False
+        cur.execute(config.state_list_sql)
+        states = [str(row[0]) for row in cur.fetchall()]
+
+    listed = len(states)
+    if not force_full:
+        states = _changed_states(hook, config, step, chunk, states)
+    if len(states) < listed:
+        log.info(
+            "[%s SERVING REFRESH] start=%s step=%s states_changed=%d "
+            "states_skipped=%d reason=unchanged_since=%s",
+            config.log_label,
+            chunk["start"],
+            step.name,
+            len(states),
+            listed - len(states),
+            chunk["completed_at"],
+        )
+
+    def publish(state: str) -> None:
+        # A hook of its own per session: `PostgresHook.get_conn` stores the
+        # connection on the hook and returns that attribute, so threads
+        # sharing one hook can be handed each other's connection.
+        with copy.copy(hook).get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SET LOCAL lock_timeout = '30s'")
+            cur.execute(f"SET LOCAL statement_timeout = '{step.statement_timeout}'")
+            cur.execute(
+                f"CALL {config.report_procedure}(%s, %s, %s, %s)",
+                (chunk["start"], chunk["end"], list(step.geo_levels), state),
+            )
+            cur.execute(
+                f"CALL {config.latest_procedure}(%s, %s)",
+                (chunk["start"], chunk["end"]),
+            )
+            # Each state's own timings, so a slow state is visible.
+            _forward_procedure_notices(conn, log)
+            conn.commit()
+
+    log.info(
+        "[%s SERVING REFRESH] start=%s step=%s publishing %d states on %d sessions",
+        config.log_label,
+        chunk["start"],
+        step.name,
+        len(states),
+        config.step_workers,
+    )
+    with ThreadPoolExecutor(
+        max_workers=config.step_workers, thread_name_prefix="serve-state"
+    ) as pool:
+        list(pool.map(publish, states))
+    return True
 
 
 def refresh_serving_layer_in_year_chunks(
@@ -622,19 +888,73 @@ def refresh_serving_layer_in_year_chunks(
             chunk["target"],
         )
         try:
+            for step in config.grain_steps:
+                if not force_full and not _step_has_changes(hook, config, step, chunk):
+                    log.info(
+                        "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=SKIPPED reason=unchanged_since=%s",
+                        config.log_label,
+                        position,
+                        len(planned_chunks),
+                        chunk["start"],
+                        step.name,
+                        chunk["completed_at"],
+                    )
+                    continue
+                # Each grain step commits on its own, so the year's small
+                # grains are served (and released) before the large one starts.
+                step_started = time.monotonic()
+                if _serve_step_by_state(
+                    hook, config, step, chunk, log, force_full=force_full
+                ):
+                    log.info(
+                        "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=COMPLETE duration_seconds=%.2f",
+                        config.log_label,
+                        position,
+                        len(planned_chunks),
+                        chunk["start"],
+                        step.name,
+                        time.monotonic() - step_started,
+                    )
+                    continue
+                with hook.get_conn() as conn, conn.cursor() as cur:
+                    cur.execute("SET LOCAL lock_timeout = '30s'")
+                    cur.execute(
+                        f"SET LOCAL statement_timeout = '{step.statement_timeout}'"
+                    )
+                    del conn.notices[:]
+                    cur.execute(
+                        f"CALL {config.report_procedure}(%s, %s, %s)",
+                        (chunk["start"], chunk["end"], list(step.geo_levels)),
+                    )
+                    cur.execute(
+                        f"CALL {config.latest_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    _forward_procedure_notices(conn, log)
+                    conn.commit()
+                log.info(
+                    "[%s SERVING REFRESH] chunk=%d/%d start=%s step=%s status=COMPLETE duration_seconds=%.2f",
+                    config.log_label,
+                    position,
+                    len(planned_chunks),
+                    chunk["start"],
+                    step.name,
+                    time.monotonic() - step_started,
+                )
             with hook.get_conn() as conn, conn.cursor() as cur:
                 cur.execute("SET LOCAL lock_timeout = '30s'")
                 cur.execute(f"SET LOCAL statement_timeout = '{statement_timeout}'")
                 del conn.notices[:]
-                cur.execute(
-                    f"CALL {config.report_procedure}(%s, %s)",
-                    (chunk["start"], chunk["end"]),
-                )
-                cur.execute(
-                    f"CALL {config.latest_procedure}(%s, %s)",
-                    (chunk["start"], chunk["end"]),
-                )
-                _forward_procedure_notices(conn, log)
+                if not config.grain_steps:
+                    cur.execute(
+                        f"CALL {config.report_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    cur.execute(
+                        f"CALL {config.latest_procedure}(%s, %s)",
+                        (chunk["start"], chunk["end"]),
+                    )
+                    _forward_procedure_notices(conn, log)
                 cur.execute(
                     f"""
                     SELECT COUNT(*)
@@ -645,6 +965,14 @@ def refresh_serving_layer_in_year_chunks(
                     (chunk["start"], chunk["end"]),
                 )
                 report_rows = int(cur.fetchone()[0])
+                if report_rows == 0 and config.silver_rows_sql:
+                    cur.execute(config.silver_rows_sql, (chunk["start"], chunk["end"]))
+                    if cur.fetchone()[0]:
+                        raise RuntimeError(
+                            f"{config.log_label} chunk {chunk['start']} served no "
+                            "report rows although silver holds publishable rows "
+                            "for it; check that its gold dimensions are built"
+                        )
                 cur.execute(
                     """
                     UPDATE control.serving_refresh_chunk_state

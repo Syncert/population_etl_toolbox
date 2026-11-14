@@ -19,7 +19,49 @@ from psycopg2.extras import execute_values
 from data_ingestion_toolbox.capture import load_captured_payload
 
 from ..config import SOURCE_CODE
+from ..routes import GASOLINE, route_for
 from .parse import parse_page
+
+
+_REVISION_COLUMNS = (
+    "capture_id, row_index, run_id, series_id, week_start, duoarea, area_name, "
+    "product, product_name, units, geo_type, geo_id, state_usps, value_source, "
+    "value, value_status, source_record_id"
+)
+
+_INCOMING_TABLE_SQL = """
+    DROP TABLE IF EXISTS pg_temp.eia_incoming_revision;
+    CREATE TEMP TABLE eia_incoming_revision
+        (LIKE silver_eia.price_revision INCLUDING DEFAULTS) ON COMMIT DROP
+"""
+
+#: Every routine read goes back eight weeks so a revised week is read again,
+#: and seven of those weeks are usually what the warehouse already holds:
+#: 4,176 of 75,864 revision rows (and as many fact rows) on OFFICE_LAB repeated
+#: the previous read of the same week (refresh-churn audit, 2026-11-06). A
+#: price is stored again only when its value or status differs from the
+#: newest stored revision of that series and week; the served price is the
+#: newest stored one, so a skipped repeat changes nothing served.
+_STORE_NEW_REVISIONS_SQL = f"""
+    INSERT INTO silver_eia.price_revision ({_REVISION_COLUMNS})
+    SELECT {_REVISION_COLUMNS}
+    FROM eia_incoming_revision AS incoming
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM (
+            SELECT stored.value, stored.value_status
+            FROM silver_eia.price_revision AS stored
+            WHERE stored.series_id = incoming.series_id
+              AND stored.week_start = incoming.week_start
+              AND stored.capture_id <> incoming.capture_id
+            ORDER BY stored.created_at DESC, stored.capture_id DESC
+            LIMIT 1
+        ) AS newest
+        WHERE newest.value IS NOT DISTINCT FROM incoming.value
+          AND newest.value_status = incoming.value_status
+    )
+    ON CONFLICT (capture_id, row_index) DO NOTHING
+"""
 
 
 class EiaReconciliationError(RuntimeError):
@@ -30,8 +72,32 @@ class EiaPublicationError(RuntimeError):
     """A read has not reached the silver publication gate."""
 
 
+def _route_of(connection_factory: Callable[[], Any], run_id: UUID) -> str:
+    connection = connection_factory()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT route FROM control.eia_read WHERE run_id = %s", (str(run_id),)
+            )
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+    return row[0] if row else GASOLINE
+
+
 def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
-    """Parse and conform one captured read; return the fact count."""
+    """Parse and conform one captured read of any route; return the fact count.
+
+    Gasoline replays exactly as before the route registry; every other
+    route replays into ``silver_eia.fact_energy_price``.
+    """
+    route = _route_of(connection_factory, run_id)
+    if route != GASOLINE:
+        from .energy_load import replay_energy_run
+
+        return replay_energy_run(
+            connection_factory, run_id=run_id, route=route_for(route)
+        )
     connection = connection_factory()
     try:
         with connection.cursor() as cursor:
@@ -49,6 +115,7 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 raise EiaReconciliationError(f"run {run_id} has no captured EIA page")
             parsed_rows = rejected = 0
             payload_rejected = False
+            cursor.execute(_INCOMING_TABLE_SQL)
             for capture_id in captures:
                 page = parse_page(
                     load_captured_payload(connection_factory, UUID(capture_id))
@@ -62,13 +129,12 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     execute_values(
                         cursor,
                         """
-                        INSERT INTO silver_eia.price_revision (
+                        INSERT INTO eia_incoming_revision (
                             capture_id, row_index, run_id, series_id, week_start,
                             duoarea, area_name, product, product_name, units,
                             geo_type, geo_id, state_usps, value_source, value,
                             value_status, source_record_id
                         ) VALUES %s
-                        ON CONFLICT (capture_id, row_index) DO NOTHING
                         """,
                         [
                             (
@@ -114,6 +180,18 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                             for q in page.quarantined
                         ],
                     )
+            cursor.execute(_STORE_NEW_REVISIONS_SQL)
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM eia_incoming_revision AS incoming
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM silver_eia.price_revision AS stored
+                    WHERE stored.capture_id = incoming.capture_id
+                      AND stored.row_index = incoming.row_index
+                )
+                """
+            )
+            repeated = int(cursor.fetchone()[0])
             # The area each row names, by its code: a state through the USPS
             # code of its current reference version, anything else by its id.
             cursor.execute(
@@ -163,6 +241,11 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                     status = EXCLUDED.status,
                     reason_code = EXCLUDED.reason_code,
                     resolved_at = NOW()
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.geography_resolution.source_label, silver_ref.geography_resolution.geo_sk, silver_ref.geography_resolution.resolution_method, silver_ref.geography_resolution.status, silver_ref.geography_resolution.reason_code)
+                      IS DISTINCT FROM
+                      (EXCLUDED.source_label, EXCLUDED.geo_sk, EXCLUDED.resolution_method, EXCLUDED.status, EXCLUDED.reason_code)
                 """,
                 (SOURCE_CODE, str(run_id)),
             )
@@ -198,19 +281,23 @@ def replay_run(connection_factory: Callable[[], Any], *, run_id: UUID) -> int:
                 (str(run_id),),
             )
             facts = int(cursor.fetchone()[0])
-            if revisions + rejected != parsed_rows or facts != revisions:
+            # A row repeating the stored week is accounted for, not stored.
+            if revisions + repeated + rejected != parsed_rows or facts != revisions:
                 raise EiaReconciliationError(
-                    f"run {run_id} reconciles {revisions} revisions, {rejected} set aside "
+                    f"run {run_id} reconciles {revisions} revisions, {repeated} "
+                    f"repeats of a stored week, {rejected} set aside "
                     f"and {facts} facts against {parsed_rows} captured rows"
                 )
             cursor.execute(
                 """
                 UPDATE control.eia_read
-                   SET parsed_row_count = %s, status = %s, updated_at = NOW()
+                   SET parsed_row_count = %s, repeated_row_count = %s,
+                       status = %s, updated_at = NOW()
                  WHERE run_id = %s AND status <> 'published'
                 """,
                 (
                     parsed_rows,
+                    repeated,
                     "quarantined" if payload_rejected else "silver_ready",
                     str(run_id),
                 ),

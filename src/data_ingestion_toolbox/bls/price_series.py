@@ -23,7 +23,9 @@ CPI_PRICE_ITEMS: tuple[str, ...] = ("SAF11", "SETB01", "SAF1", "SA0E")
 
 #: Average-price items (`ap`), dollars per unit: regular and all-types
 #: gasoline per gallon, eggs per dozen, whole milk per gallon, white bread,
-#: ground beef, boneless chicken breast, bananas and ground coffee per pound.
+#: ground beef, boneless chicken breast, bananas and ground coffee per pound;
+#: electricity per kilowatt-hour and utility (piped) gas per therm
+#: (cost-of-living-section).
 AVERAGE_PRICE_ITEMS: tuple[str, ...] = (
     "74714",
     "7471A",
@@ -34,6 +36,8 @@ AVERAGE_PRICE_ITEMS: tuple[str, ...] = (
     "FF1101",
     "711211",
     "717311",
+    "72610",
+    "72620",
 )
 
 PRICE_ITEMS: Mapping[str, tuple[str, ...]] = {

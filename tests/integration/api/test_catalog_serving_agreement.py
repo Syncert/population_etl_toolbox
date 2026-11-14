@@ -36,13 +36,27 @@ from tests.support import census_cbp as cbp_support
 from tests.support import bea as bea_support
 from tests.support import eia as eia_support
 from tests.support import irs_migration as irs_support
+from tests.support import dol_childcare as ndcp_support
+from tests.support import irs_soi as soi_support
+from tests.support import census_decennial as decennial_support
+from tests.support import cms_ltc as cms_support
+from tests.support import nces_ipeds as ipeds_support
+from tests.support import cdc_covid_cases as covid_support
+from tests.support import cdc_ilinet as ilinet_support
+from tests.support import hhs_hospital_capacity as hhs_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
 from tests.support import fbi_release
 from tests.support import bls_qcew as qcew_support
 from tests.support import epa_aqs as aqs_support
+from tests.support import noaa_climdiv as climdiv_support
+from tests.support import treasury_mts as mts_support
+from tests.support import usaspending as usaspending_support
+from tests.support import noaa_storm_events as storm_support
 from tests.support import noaa_normals as normals_support
 from tests.support import fcc_bdc as bdc_support
+from tests.support import elections as elections_support
+from tests.support import census_govfin as govfin_support
 from tests.support import fema_nri as fema_support
 from tests.support import fhfa_hpi as hpi_support
 from tests.support import hud_fmr_il as hud_support
@@ -941,6 +955,78 @@ def published_bps_metric(
 
 
 @pytest.fixture
+def published_decennial_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the 2020 Census counts through their real pipeline."""
+    factory = decennial_support.reviewed_warehouse(postgres_connection_factory, request)
+    decennial_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_census_decennial"))
+    return _one_published_code(factory, "CENSUS_DECENNIAL")
+
+
+@pytest.fixture
+def published_cms_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the CMS long-term care figures through their real pipeline."""
+    factory = cms_support.reviewed_warehouse(postgres_connection_factory, request)
+    cms_support.load_releases(factory)
+    harvest_publisher(factory, Publisher("gold_cms_ltc"))
+    return _one_published_code(factory, "CMS_LTC")
+
+
+@pytest.fixture
+def published_ipeds_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the IPEDS figures through their real pipeline."""
+    factory = ipeds_support.reviewed_warehouse(postgres_connection_factory, request)
+    ipeds_support.load_files(factory)
+    harvest_publisher(factory, Publisher("gold_nces_ipeds"))
+    return _one_published_code(factory, "NCES_IPEDS")
+
+
+@pytest.fixture
+def published_covid_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the CDC case counts through their real pipeline."""
+    factory = covid_support.reviewed_warehouse(postgres_connection_factory, request)
+    covid_support.load_snapshot(factory)
+    harvest_publisher(factory, Publisher("gold_cdc_covid_cases"))
+    return _one_published_code(factory, "CDC_COVID_CASES")
+
+
+@pytest.fixture
+def published_ilinet_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish CDC FluView ILINet through its real pipeline."""
+    factory = ilinet_support.reviewed_warehouse(postgres_connection_factory, request)
+    ilinet_support.load_release(factory)
+    harvest_publisher(factory, Publisher("gold_cdc_ilinet"))
+    return _one_published_code(factory, "CDC_ILINET")
+
+
+@pytest.fixture
+def published_hhs_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the HHS hospital weeks through their real pipeline."""
+    factory = hhs_support.reviewed_warehouse(postgres_connection_factory, request)
+    hhs_support.load_snapshot(factory)
+    harvest_publisher(factory, Publisher("gold_hhs_hospital_capacity"))
+    return _one_published_code(factory, "HHS_HOSPITAL_CAPACITY")
+
+
+@pytest.fixture
 def published_sae_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -965,6 +1051,31 @@ def published_irs_migration_metric(
     irs_support.run_to_gold(factory, "inflow", "2022-2023")
     harvest_publisher(factory, Publisher("gold_irs_migration"))
     return _one_published_code(factory, "IRS_MIGRATION")
+
+
+@pytest.fixture
+def published_irs_soi_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish SOI county and state income through their real pipeline."""
+    factory = soi_support.reviewed_warehouse(postgres_connection_factory, request)
+    soi_support.run_to_gold(factory, "county_total:2023")
+    soi_support.run_to_gold(factory, "state:2023")
+    harvest_publisher(factory, Publisher("gold_irs_soi"))
+    return _one_published_code(factory, "IRS_SOI")
+
+
+@pytest.fixture
+def published_ndcp_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NDCP fixture workbook's county childcare prices."""
+    factory = ndcp_support.reviewed_warehouse(postgres_connection_factory, request)
+    ndcp_support.run_to_gold(factory)
+    harvest_publisher(factory, Publisher("gold_dol_childcare"))
+    return _one_published_code(factory, "DOL_CHILDCARE")
 
 
 @pytest.fixture
@@ -1017,6 +1128,56 @@ def published_normals_metric(
 
 
 @pytest.fixture
+def published_mts_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the Monthly Treasury Statement fiscal-year lines."""
+    factory = mts_support.reviewed_warehouse(postgres_connection_factory, request)
+    mts_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_treasury_mts"))
+    return _one_published_code(factory, "TREASURY_MTS")
+
+
+@pytest.fixture
+def published_usaspending_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish USAspending federal award obligations by place of performance."""
+    factory = usaspending_support.reviewed_warehouse(
+        postgres_connection_factory, request
+    )
+    usaspending_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_usaspending"))
+    return _one_published_code(factory, "USASPENDING")
+
+
+@pytest.fixture
+def published_climdiv_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NOAA nClimDiv county months."""
+    factory = climdiv_support.reviewed_warehouse(postgres_connection_factory, request)
+    climdiv_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_noaa_climdiv"))
+    return _one_published_code(factory, "NOAA_CLIMDIV")
+
+
+@pytest.fixture
+def published_storm_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the NOAA Storm Events counts."""
+    factory = storm_support.reviewed_warehouse(postgres_connection_factory, request)
+    storm_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_noaa_storm_events"))
+    return _one_published_code(factory, "NOAA_STORM_EVENTS")
+
+
+@pytest.fixture
 def published_bdc_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1038,6 +1199,34 @@ def published_fema_metric(
     fema_support.run_all(factory)
     harvest_publisher(factory, Publisher("gold_fema_nri"))
     return _one_published_code(factory, "FEMA_NRI")
+
+
+@pytest.fixture
+def published_elections_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the MEDSL state and county presidential measures."""
+    factory = elections_support.reviewed_warehouse(postgres_connection_factory, request)
+    elections_support.run_all(factory)
+    harvest_publisher(factory, Publisher("gold_elections"))
+    return _one_published_code(factory, "ELECTIONS")
+
+
+@pytest.fixture
+def published_govfin_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish the 2022 unit-file roll-ups and the 2022 annual finances."""
+    factory = govfin_support.reviewed_warehouse(postgres_connection_factory, request)
+    client = govfin_support.FixtureClient(
+        {**govfin_support.unit_archives(), **govfin_support.api_responses()}
+    )
+    govfin_support.run_to_gold(factory, "cog_units", govfin_support.UNIT_YEAR, client)
+    govfin_support.run_to_gold(factory, "asslgf", 2022, client)
+    harvest_publisher(factory, Publisher("gold_census_govfin"))
+    return _one_published_code(factory, "CENSUS_GOVFIN")
 
 
 @pytest.fixture
@@ -1148,17 +1337,31 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_hpi_metric: str,
     published_hud_metric: str,
     published_fema_metric: str,
+    published_elections_metric: str,
+    published_govfin_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
+    published_climdiv_metric: str,
+    published_mts_metric: str,
+    published_usaspending_metric: str,
+    published_storm_metric: str,
     published_lodes_metric: str,
     published_cbp_metric: str,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_sae_metric: str,
+    published_decennial_metric: str,
+    published_cms_metric: str,
+    published_ipeds_metric: str,
+    published_hhs_metric: str,
+    published_covid_metric: str,
+    published_ilinet_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,
+    published_ndcp_metric: str,
 ) -> None:
     """Covers: DB-025 — no registered source advertises a code it cannot serve.
 
@@ -1217,8 +1420,15 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("CDC", published_cdc_metric),
         ("FRED", published_fred_metric),
         ("IRS_MIGRATION", published_irs_migration_metric),
+        ("IRS_SOI", published_irs_soi_metric),
         ("CENSUS_PEP", published_pep_metric),
         ("CENSUS_SAIPE_SAHIE", published_sae_metric),
+        ("CENSUS_DECENNIAL", published_decennial_metric),
+        ("CMS_LTC", published_cms_metric),
+        ("NCES_IPEDS", published_ipeds_metric),
+        ("HHS_HOSPITAL_CAPACITY", published_hhs_metric),
+        ("CDC_COVID_CASES", published_covid_metric),
+        ("CDC_ILINET", published_ilinet_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1229,13 +1439,20 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("FHFA_HPI", published_hpi_metric),
         ("HUD_FMR_IL", published_hud_metric),
         ("FEMA_NRI", published_fema_metric),
+        ("ELECTIONS", published_elections_metric),
+        ("CENSUS_GOVFIN", published_govfin_metric),
         ("FCC_BDC", published_bdc_metric),
         ("EPA_AQS", published_aqs_metric),
         ("BEA", published_bea_metric),
         ("EIA", published_eia_metric),
+        ("DOL_CHILDCARE", published_ndcp_metric),
         ("CENSUS_CBP", published_cbp_metric),
         ("CENSUS_LODES", published_lodes_metric),
         ("NOAA_NORMALS", published_normals_metric),
+        ("NOAA_CLIMDIV", published_climdiv_metric),
+        ("TREASURY_MTS", published_mts_metric),
+        ("USASPENDING", published_usaspending_metric),
+        ("NOAA_STORM_EVENTS", published_storm_metric),
     ):
         assert _answers(api_client, metric_code) >= 1, (
             f"{source_code}'s fixture published '{metric_code}', which "
@@ -1370,10 +1587,18 @@ def _published_grains(client: TestClient, source_code: str) -> dict[str, list[st
 def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     api_client: TestClient,
     published_irs_migration_metric: str,
+    published_irs_soi_metric: str,
     published_acs_grain_metric: str,
     published_cdc_metric: str,
     published_sae_metric: str,
+    published_decennial_metric: str,
+    published_cms_metric: str,
+    published_ipeds_metric: str,
+    published_hhs_metric: str,
+    published_covid_metric: str,
+    published_ilinet_metric: str,
     published_cdc_county_metric: str,
+    published_cdc_tract_metric: str,
     published_fred_metric: str,
     published_bps_metric: str,
     published_pep_metrics: list[str],
@@ -1382,9 +1607,15 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_fbi_metric: str,
     published_nass_metric: str,
     published_fema_metric: str,
+    published_elections_metric: str,
+    published_govfin_metric: str,
     published_bdc_metric: str,
     published_aqs_metric: str,
     published_normals_metric: str,
+    published_climdiv_metric: str,
+    published_mts_metric: str,
+    published_usaspending_metric: str,
+    published_storm_metric: str,
     published_bea_metric: str,
     published_eia_metric: str,
     published_cbp_metric: str,
@@ -1393,6 +1624,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_hpi_metric: str,
     published_ccd_metric: str,
     published_ers_metric: str,
+    published_ndcp_metric: str,
 ) -> None:
     """Covers: DB-044 — every grain a source can publish has a fixture row.
 
@@ -2029,6 +2261,24 @@ CDC_PLACES_GRAIN_ROWS: tuple[dict[str, object], ...] = (
     },
 )
 
+#: The PLACES tract asset (``("tract",)``) and its own watermark.
+CDC_TRACT_ASSET = "places_tract"
+CDC_TRACT_WATERMARK = "3975004802"
+CDC_TRACT_GRAIN_ROWS: tuple[dict[str, object], ...] = (
+    {
+        "geo_id": "state:94|county:002|tract:000100",
+        "geo_type": "tract",
+        "geography": {
+            "geo_type": "tract",
+            "state_fips": "94",
+            "county_fips": "002",
+            "tract_code": "000100",
+            "name": "Sweep tract",
+        },
+        "value": 15.5,
+    },
+)
+
 
 def _digest_token() -> str:
     """A 64-character lowercase hex token.
@@ -2284,6 +2534,20 @@ def published_cdc_county_metric(
     )
 
 
+@pytest.fixture
+def published_cdc_tract_metric(
+    postgres_connection_factory: Callable[[], connection],
+) -> Iterator[str]:
+    """Publish one PLACES tract metric, the only CDC asset with that grain."""
+    yield from _publish_cdc_measure(
+        postgres_connection_factory,
+        asset_id=CDC_TRACT_ASSET,
+        release_watermark=CDC_TRACT_WATERMARK,
+        socrata_id="cwsq-ngmh",
+        grain_rows=CDC_TRACT_GRAIN_ROWS,
+    )
+
+
 def test_a_source_identified_by_its_lineage_columns_answers_its_catalog_code(
     api_client: TestClient, published_cdc_metric: str
 ) -> None:
@@ -2485,6 +2749,10 @@ def _grain_requests(
     return {
         "/api/v1/observations": {"metric_code": pep_metric, "limit": 5},
         "/api/v1/observations/latest": {"metric_code": fred_metric, "limit": 5},
+        # A provider-rate pairing over the published PEP metric, registered
+        # by the test itself: every shipped pairing names a code this
+        # fixture corpus does not publish.
+        "/api/v1/observations/derived": {"ratio_id": "grain_probe", "limit": 5},
         "/api/v1/comparison": {
             "metric_code_a": pep_metric,
             "metric_code_b": pep_metric,
@@ -2492,6 +2760,8 @@ def _grain_requests(
         },
         "/api/v1/distribution/bins": {"metric_code": pep_metric, "bin_count": 3},
         "/api/v1/catalog/geographies": {"limit": 5},
+        # The age summary's one-indicator map; NATIONAL is a stateless grain.
+        "/api/v1/age-structure/map": {"indicator": "old_age_dependency_ratio"},
         "/api/v1/pep/observations/latest": {"metric_code": pep_metric, "limit": 5},
         "/api/v1/fred/observations/latest": {"metric_code": fred_metric, "limit": 5},
         "/api/v1/census/observations/latest": {"metric_code": acs_metric, "limit": 5},
@@ -2525,6 +2795,7 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     published_pep_metrics: list[str],
     published_fred_metric: str,
     published_acs_metric: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Covers: API-094 — an alias answers what its vocabulary word answers.
 
@@ -2544,6 +2815,31 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     """
     from apps.api.main import app
     from apps.api.registry import GEO_GRAIN_ALIASES
+    from apps.api.services import derived_ratio_service
+    from data_ingestion_toolbox.semantics.derived_ratios import parse_registry
+
+    probe = parse_registry(
+        {
+            "entries": [
+                {
+                    "ratio_id": "grain_probe",
+                    "kind": "provider_rate",
+                    "scale": 1000,
+                    "unit": "per 1,000 residents",
+                    "label": "Grain probe",
+                    "numerator": "CENSUS_PEP:PROBE_COUNT",
+                    "provider_rate": published_pep_metrics[0],
+                    "denominator_label": "residents",
+                    "universe": "residents",
+                    "status": "approved",
+                    "reviewer": "test",
+                    "version": 1,
+                    "citations": ["https://www.census.gov/"],
+                }
+            ]
+        }
+    )
+    monkeypatch.setattr(derived_ratio_service, "pairing_for", probe.get)
 
     declared = {
         path
@@ -2596,6 +2892,7 @@ def test_every_route_that_takes_a_grain_takes_the_same_grain_words(
     assert "/api/v1/distribution/bins@NATIONAL" in exercised, exercised
     assert "/api/v1/pep/observations/latest@NATIONAL" in exercised, exercised
     assert "/api/v1/observations/latest@NATIONAL" in exercised, exercised
+    assert "/api/v1/observations/derived@NATIONAL" in exercised, exercised
 
 
 def test_the_distribution_reports_the_grain_it_binned(

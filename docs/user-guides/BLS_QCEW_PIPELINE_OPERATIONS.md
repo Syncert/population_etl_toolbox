@@ -42,7 +42,10 @@ the first run after a release finds it without a release calendar. The
 same bytes captured again add a capture and no observation, and the payload
 store keeps one copy per checksum.
 
-A fresh warehouse is loaded with a history run:
+A scheduled run also asks for every registered period from 2014 whose 22
+industry slices have not all been published or answered empty, so the first
+run on a fresh warehouse loads the history by itself (ETL-110). A history
+run re-asks for every period, answered or not:
 
 ```text
 airflow dags trigger bls_qcew_ingest --conf '{"history": true}'

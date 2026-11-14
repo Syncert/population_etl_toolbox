@@ -21,7 +21,9 @@ from data_ingestion_toolbox.silver_ref.provider_areas import (
 )
 from data_ingestion_toolbox.silver_ref.geography_pipeline import (
     sync_geography_history,
-    MIN_SUB_COUNTY_HISTORY_YEAR,
+    MIN_TRACT_HISTORY_YEAR,
+    SUB_COUNTY_1990_VINTAGE,
+    TRACT_2000_VINTAGE,
     sync_sub_county_geography,
     sync_sub_county_history,
 )
@@ -86,8 +88,22 @@ def silver_ref():
         # skipped; the newest is replayed to retire codes that no longer exist.
         latest = int(sub_county["latest_vintage"])
         return sync_sub_county_history(
-            list(range(MIN_SUB_COUNTY_HISTORY_YEAR, latest)), latest_year=latest
+            # The 1990 and 2000 censuses' own vintages, then every ACS year.
+            [SUB_COUNTY_1990_VINTAGE, TRACT_2000_VINTAGE]
+            + list(range(MIN_TRACT_HISTORY_YEAR, latest)),
+            latest_year=latest,
         )
+
+    @task
+    def load_tract_crosswalk(_history: dict[str, int]) -> dict[str, dict[str, int]]:
+        # The Bureau's 2000-2010 and 2010-2020 tract relationship files, after
+        # every decade's tracts are in the reference: a part is written only
+        # when both its tracts are held for their decades.
+        from data_ingestion_toolbox.silver_ref.tract_crosswalk import (
+            sync_tract_crosswalk,
+        )
+
+        return sync_tract_crosswalk()
 
     @task
     def load_area_geo() -> dict[str, int]:
@@ -113,7 +129,7 @@ def silver_ref():
 
     ddl = ensure_schema()
     geo = load_dim_geo()
-    load_sub_county_history(load_sub_county_geo(geo))
+    load_tract_crosswalk(load_sub_county_history(load_sub_county_geo(geo)))
     areas = load_area_geo()
     provider_areas = load_provider_areas()
     time = load_dim_time()

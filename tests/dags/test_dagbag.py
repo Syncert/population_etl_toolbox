@@ -45,14 +45,29 @@ EXPECTED_DAG_IDS = {
     "bls_qcew_ingest",
     "census_building_permits_ingest",
     "census_saipe_sahie_ingest",
+    "census_decennial_ingest",
+    "cms_ltc_ingest",
+    "nces_ipeds_ingest",
+    "hhs_hospital_capacity_ingest",
+    "cdc_covid_cases_ingest",
+    "cdc_ilinet_ingest",
+    "census_govfin_ingest",
     "irs_migration_ingest",
+    "irs_soi_ingest",
+    "dol_childcare_ingest",
     "eia_retail_gasoline_ingest",
     "census_cbp_ingest",
     "census_lodes_ingest",
     "epa_aqs_ingest",
     "noaa_normals_ingest",
+    "noaa_climdiv_ingest",
+    "treasury_mts_ingest",
+    "usaspending_ingest",
+    "noaa_storm_events_ingest",
     "fcc_bdc_ingest",
     "fema_nri_ingest",
+    "elections_ingest",
+    "elections_lean_groups",
     "fhfa_hpi_ingest",
     "hud_fmr_il_ingest",
     "nces_ccd_ingest",
@@ -89,8 +104,32 @@ EXPECTED_SCHEDULES = {
     "census_building_permits_ingest": "0 13 25 * *",
     # Monthly: SAIPE publishes each December and SAHIE each spring.
     "census_saipe_sahie_ingest": "0 6 15 * *",
+    # Operator-triggered: the 2020 count is published once.
+    "census_decennial_ingest": None,
+    # Monthly: CMS posts quarters and cost-report years on no fixed calendar,
+    # and a release already published is not read again.
+    "cms_ltc_ingest": "0 18 20 * *",
+    # Monthly: NCES posts IPEDS files on no fixed calendar; a run asks only for
+    # years not yet answered and the year after the newest published.
+    "nces_ipeds_ingest": "0 17 25 * *",
+    # Operator-triggered: HHS froze the weekly hospital file on 2024-05-03.
+    "hhs_hospital_capacity_ingest": None,
+    # Operator-triggered: CDC froze the case surveillance file (case months to 2024-07).
+    "cdc_covid_cases_ingest": None,
+    # Fridays after CDC's weekly FluView update.
+    "cdc_ilinet_ingest": "0 20 * * 5",
+    # Monthly: annual finances publish each autumn, QTAX a quarter after the
+    # quarter, the unit files every five years; a run captures its revision
+    # window and every registered period never answered.
+    "census_govfin_ingest": "0 7 18 * *",
     # Monthly: SOI publishes a new pair of filing years about once a year.
     "irs_migration_ingest": "0 15 5 * *",
+    # Monthly: SOI posts a tax year about once a year; a run past the
+    # history reads the two newest years again.
+    "irs_soi_ingest": "0 15 7 * *",
+    # Monthly: the Women's Bureau publishes a childcare release every year or
+    # two; an unchanged workbook replays nothing.
+    "dol_childcare_ingest": "0 16 9 * *",
     # Weekly: county income lands in November and county GDP in December.
     # Tuesdays: EIA publishes Monday's prices on Monday afternoon.
     "eia_retail_gasoline_ingest": "0 15 * * 2",
@@ -106,12 +145,30 @@ EXPECTED_SCHEDULES = {
     # Quarterly: the 1991-2020 normals change only by a new archive version,
     # and an unchanged archive replays nothing.
     "noaa_normals_ingest": "0 19 2 1,4,7,10 *",
+    # Monthly on the 12th: NCEI replaces the county files early each month,
+    # and a file name already published is not downloaded again.
+    "noaa_climdiv_ingest": "0 15 12 * *",
+    # Monthly on the 16th: Treasury publishes the statement on the eighth
+    # business day of the following month.
+    "treasury_mts_ingest": "0 16 16 * *",
+    # Weekly on Sunday: the current and prior fiscal years are read again.
+    "usaspending_ingest": "0 9 20 * *",
+    # Monthly on the 20th: NCEI restamps the current year's file each month,
+    # and a file name already published is not downloaded again.
+    "noaa_storm_events_ingest": "0 16 20 * *",
     # Monthly: the FCC republishes vintages under new revision dates as
     # challenges and corrections land, and an unchanged read replays nothing.
     "fcc_bdc_ingest": "0 21 12 * *",
     # Daily: OpenFEMA refreshes declarations every twenty minutes, and an
     # unchanged NRI read replays nothing.
     "fema_nri_ingest": "0 6 * * *",
+    # Monthly: members change between elections and MEDSL republishes after
+    # certification; every stream is re-read whole, and an unchanged read
+    # replays nothing.
+    "elections_ingest": "0 7 3 * *",
+    # Daily: the lean groups derive from four sources that publish on their
+    # own schedules; a day with no new input publication rebuilds nothing.
+    "elections_lean_groups": "0 13 * * *",
     # Monthly: FHFA revises the annual workbook without a published
     # calendar, and an unchanged file replays nothing.
     "fhfa_hpi_ingest": "0 15 25 * *",
@@ -151,14 +208,29 @@ EXPECTED_DEFAULT_RETRIES = {
     "bls_qcew_ingest": 2,
     "census_building_permits_ingest": 2,
     "census_saipe_sahie_ingest": 2,
+    "census_decennial_ingest": 2,
+    "cms_ltc_ingest": 2,
+    "nces_ipeds_ingest": 2,
+    "hhs_hospital_capacity_ingest": 2,
+    "cdc_covid_cases_ingest": 2,
+    "cdc_ilinet_ingest": 2,
+    "census_govfin_ingest": 2,
     "irs_migration_ingest": 2,
+    "irs_soi_ingest": 2,
+    "dol_childcare_ingest": 2,
     "eia_retail_gasoline_ingest": 2,
     "census_cbp_ingest": 2,
     "census_lodes_ingest": 2,
     "epa_aqs_ingest": 2,
     "noaa_normals_ingest": 2,
+    "noaa_climdiv_ingest": 2,
+    "treasury_mts_ingest": 2,
+    "usaspending_ingest": 2,
+    "noaa_storm_events_ingest": 2,
     "fcc_bdc_ingest": 2,
     "fema_nri_ingest": 2,
+    "elections_ingest": 2,
+    "elections_lean_groups": 1,
     "fhfa_hpi_ingest": 2,
     "hud_fmr_il_ingest": 2,
     "nces_ccd_ingest": 2,
@@ -178,14 +250,23 @@ EXPECTED_INGEST_POOLS = {
     "census_building_permits_ingest": "census_bps_files",
     # One host and one key with the ACS, so one rate limit.
     "census_saipe_sahie_ingest": "census_api",
+    "census_decennial_ingest": "census_api",
+    "census_govfin_ingest": "census_api",
     "irs_migration_ingest": "irs_soi_files",
+    "irs_soi_ingest": "irs_soi_files",
+    "dol_childcare_ingest": "dol_childcare_files",
     "eia_retail_gasoline_ingest": "eia_api",
     "census_cbp_ingest": "census_cbp_files",
     "census_lodes_ingest": "census_lodes_files",
     "epa_aqs_ingest": "epa_aqs_files",
     "noaa_normals_ingest": "noaa_normals_files",
+    "noaa_climdiv_ingest": "noaa_climdiv_files",
+    "treasury_mts_ingest": "treasury_mts_pages",
+    "usaspending_ingest": "usaspending_api",
+    "noaa_storm_events_ingest": "noaa_storm_events_files",
     "fcc_bdc_ingest": "fcc_bdc_api",
     "fema_nri_ingest": "fema_files",
+    "elections_ingest": "elections_files",
     "fhfa_hpi_ingest": "fhfa_hpi_files",
     "hud_fmr_il_ingest": "hud_fmr_il_files",
     "nces_ccd_ingest": "nces_ccd_files",
@@ -348,6 +429,13 @@ def test_bls_ingest_batch_has_high_retry_override(dagbag) -> None:
         assert task.retries == 10, (
             f"bls_ingest ingest_batch expected retries=10, got {task.retries}"
         )
+
+
+@pytest.mark.dag
+def test_acs_transform_retries_once_because_each_attempt_resumes(dagbag) -> None:
+    """Covers: DAG-008 — the hours-long ACS transform retries once, not three times."""
+    task = dagbag.dags["acs_ingest"].get_task("transform_to_silver")
+    assert task.retries == 1
 
 
 # --------------------------------------------------------------------------
@@ -621,3 +709,16 @@ def test_silver_ref_publishes_place_and_tract_history_after_the_newest_tracts(
     dag = dagbag.dags["silver_ref"]
     history = dag.get_task("load_sub_county_history")
     assert "load_sub_county_geo" in {t.task_id for t in history.upstream_list}
+
+
+@pytest.mark.dag
+def test_acs_slices_are_marked_planned_before_any_batch_ingests(dagbag) -> None:
+    """Covers: DAG-009 — marking a slice planned resets its start, so it runs first.
+
+    Run side by side, marking reset `started_at` on a slice a batch had
+    already started, and the batch's finish then broke the ledger's
+    started-before-finished CHECK (the 2024 metro backfill, 2026-10-31).
+    """
+    dag = dagbag.dags["acs_ingest"]
+    ingest = dag.get_task("ingest_batch")
+    assert "mark_slices_planned" in {t.task_id for t in ingest.upstream_list}

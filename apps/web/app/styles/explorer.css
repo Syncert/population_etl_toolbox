@@ -67,7 +67,7 @@ main.dashboard.dashboard-wide {
 
 /* A map this wide at the shared 360px height is a letterbox; follow the
    viewport instead, within bounds. */
-.dashboard-wide .map-shell {
+.dashboard-wide .map-canvas {
   height: clamp(360px, 62vh, 860px);
 }
 

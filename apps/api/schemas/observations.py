@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.schemas.labels import PlainLabelled
+
 
 @dataclass(frozen=True)
 class FilterBound:
@@ -127,7 +129,7 @@ _READ_INSTEAD = (
 )
 
 
-class ObservationDashboard(BaseModel):
+class ObservationDashboard(PlainLabelled):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     source_code: Optional[str] = None
@@ -243,7 +245,7 @@ class ObservationDerivation(BaseModel):
     component_releases: list[str] = []
 
 
-class NeutralObservation(BaseModel):
+class NeutralObservation(PlainLabelled):
     """One observation from any completed source, semantics preserved.
 
     The core fields every source can fill honestly are typed; the source's
@@ -353,3 +355,52 @@ class MetricPeriodListResponse(BaseModel):
     limit: int
     offset: int
     items: list[MetricPeriod]
+
+
+class NewestValuesBatchItem(BaseModel):
+    """One metric for one geography, answered as the single read answers it.
+
+    ``observations`` is exactly what ``/observations?metric_code=&scope=latest
+    &newest_per_geography=true&geo_id=&limit=1`` returns for the pair; a
+    metric that read would refuse carries the single read's ``status`` and
+    ``detail`` instead, and no page.
+    """
+
+    metric_code: str
+    geo_id: str
+    status: int
+    detail: Optional[str] = None
+    observations: Optional[NeutralObservationListResponse] = None
+
+
+class NewestValuesBatchResponse(BaseModel):
+    """Every named metric's newest value for every named geography."""
+
+    metric_codes: list[str]
+    geo_ids: list[str]
+    items: list[NewestValuesBatchItem]
+
+
+class HistoryBatchItem(BaseModel):
+    """One metric's settled history for one geography, as the single read
+    answers it.
+
+    ``observations`` is exactly what ``/observations?metric_code=
+    &scope=as_released&newest_release_per_period=true&geo_id=&limit=1000``
+    returns for the pair; a metric that read would refuse carries the single
+    read's ``status`` and ``detail`` instead, and no page.
+    """
+
+    metric_code: str
+    geo_id: str
+    status: int
+    detail: Optional[str] = None
+    observations: Optional[NeutralObservationListResponse] = None
+
+
+class HistoryBatchResponse(BaseModel):
+    """Every named metric's settled history for every named geography."""
+
+    metric_codes: list[str]
+    geo_ids: list[str]
+    items: list[HistoryBatchItem]

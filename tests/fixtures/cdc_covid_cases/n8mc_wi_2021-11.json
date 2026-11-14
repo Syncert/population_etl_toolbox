@@ -1,0 +1,1506 @@
+[{"county_fips_code":"55001","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55001","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55001","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55001","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"18"}
+,{"county_fips_code":"55001","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55001","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"27"}
+,{"county_fips_code":"55001","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"65"}
+,{"county_fips_code":"55001","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55001","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55001","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55001","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55001","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"42"}
+,{"county_fips_code":"55001","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55001","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55001","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55001","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55001","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55001","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55001","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55001","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55001","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55001","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55001","age_group":"NA","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55005","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55005","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"78"}
+,{"county_fips_code":"55005","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"16"}
+,{"county_fips_code":"55005","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55005","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"88"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"31"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"137"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"61"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"199"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55005","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"40"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"65"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55005","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"26"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55005","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"80"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"383"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"512"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"242"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55009","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"70"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"355"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"648"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"480"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55009","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"16"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"46"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"155"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"131"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55009","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"106"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"4"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"89"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"7"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"15"}
+,{"county_fips_code":"55009","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"21"}
+,{"county_fips_code":"55009","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55009","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55009","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"84"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"37"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"65"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55015","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"31"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"116"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"63"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"171"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55015","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"43"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"27"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"59"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55015","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"30"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"28"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"1"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"3"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55015","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"8"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"118"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"27"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55017","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"88"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"238"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"54"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"147"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55017","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"77"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"27"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"60"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55017","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"52"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"15"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"22"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55017","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55017","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55017","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55017","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55019","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"129"}
+,{"county_fips_code":"55019","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55019","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55019","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55019","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"200"}
+,{"county_fips_code":"55019","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55019","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55019","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55019","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"107"}
+,{"county_fips_code":"55019","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55019","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55019","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55019","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55019","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"29"}
+,{"county_fips_code":"55019","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55019","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55019","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"16"}
+,{"county_fips_code":"55021","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"28"}
+,{"county_fips_code":"55021","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"29"}
+,{"county_fips_code":"55021","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55021","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55021","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"88"}
+,{"county_fips_code":"55021","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55021","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"95"}
+,{"county_fips_code":"55021","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"47"}
+,{"county_fips_code":"55021","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"159"}
+,{"county_fips_code":"55021","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"45"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"60"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55021","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"21"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"22"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55021","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55021","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55021","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55021","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55021","age_group":"NA","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"34"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"890"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"51"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"51"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"204"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55025","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"854"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"103"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"6"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"716"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"10"}
+,{"county_fips_code":"55025","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"123"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"52"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"205"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"8"}
+,{"county_fips_code":"55025","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"49"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"28"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"94"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"8"}
+,{"county_fips_code":"55025","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55025","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55025","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55027","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55027","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"236"}
+,{"county_fips_code":"55027","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55027","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55027","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"480"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"40"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55027","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"171"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55027","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"102"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"16"}
+,{"county_fips_code":"55027","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55027","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"19"}
+,{"county_fips_code":"55027","age_group":"NA","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55029","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55029","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55029","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"55"}
+,{"county_fips_code":"55029","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"15"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"102"}
+,{"county_fips_code":"55029","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"44"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55029","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"34"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55029","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"143"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55031","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"101"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"217"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"49"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"224"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55031","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"44"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"24"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"61"}
+,{"county_fips_code":"55031","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"35"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55031","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55031","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55031","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55033","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55033","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"69"}
+,{"county_fips_code":"55033","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"29"}
+,{"county_fips_code":"55033","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55033","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"146"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"140"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"56"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"273"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55033","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"41"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"69"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55033","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"9"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"40"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55033","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55033","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55033","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55035","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55035","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"411"}
+,{"county_fips_code":"55035","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55035","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55035","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"1029"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"32"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"8"}
+,{"county_fips_code":"55035","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55035","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55035","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"313"}
+,{"county_fips_code":"55035","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55035","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55035","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55035","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55035","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"147"}
+,{"county_fips_code":"55035","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55035","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55035","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"39"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"215"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"43"}
+,{"county_fips_code":"55039","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"37"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"536"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"39"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"143"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"9"}
+,{"county_fips_code":"55039","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"178"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"42"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55039","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"134"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"38"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"16"}
+,{"county_fips_code":"55039","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55043","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55043","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"51"}
+,{"county_fips_code":"55043","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55043","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55043","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"41"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"59"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"52"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"23"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"163"}
+,{"county_fips_code":"55043","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"25"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"54"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55043","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55043","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55043","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55043","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"54"}
+,{"county_fips_code":"55043","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55043","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55045","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55045","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"203"}
+,{"county_fips_code":"55045","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"240"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55045","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55045","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55045","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"79"}
+,{"county_fips_code":"55045","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55045","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55045","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55045","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55045","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"33"}
+,{"county_fips_code":"55045","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55045","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55045","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55045","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55045","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"14"}
+,{"county_fips_code":"55045","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55045","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55045","age_group":"NA","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55049","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55049","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"35"}
+,{"county_fips_code":"55049","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"37"}
+,{"county_fips_code":"55049","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"18"}
+,{"county_fips_code":"55049","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55049","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55049","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55049","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"61"}
+,{"county_fips_code":"55049","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55049","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55049","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55049","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55049","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55049","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55049","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55049","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55049","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55053","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55053","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"11"}
+,{"county_fips_code":"55053","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55053","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"69"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"37"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"103"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55053","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55053","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55053","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55053","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"28"}
+,{"county_fips_code":"55053","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55053","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"176"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"37"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"114"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55055","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"Missing","death_yn":"Missing","n":"1"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"29"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"120"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"51"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"281"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55055","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Missing","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"30"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"54"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"80"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55055","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"60"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"8"}
+,{"county_fips_code":"55055","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55055","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55055","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55055","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"26"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"30"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"42"}
+,{"county_fips_code":"55057","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"80"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"28"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"83"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55057","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"29"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"26"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55057","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55057","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55057","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55057","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55059","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"34"}
+,{"county_fips_code":"55059","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"133"}
+,{"county_fips_code":"55059","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"143"}
+,{"county_fips_code":"55059","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"417"}
+,{"county_fips_code":"55059","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"55"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"89"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"120"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"658"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55059","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"47"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"201"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55059","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"34"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"1"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"100"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"6"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55059","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"5"}
+,{"county_fips_code":"55059","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55059","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55059","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55061","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55061","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"85"}
+,{"county_fips_code":"55061","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55061","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"98"}
+,{"county_fips_code":"55061","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"44"}
+,{"county_fips_code":"55061","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55061","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"43"}
+,{"county_fips_code":"55061","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55061","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"18"}
+,{"county_fips_code":"55061","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55061","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55061","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"25"}
+,{"county_fips_code":"55061","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55061","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55061","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"339"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"28"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"109"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55063","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"386"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"16"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"447"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55063","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"134"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"121"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55063","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"84"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"32"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"14"}
+,{"county_fips_code":"55063","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55069","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55069","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"65"}
+,{"county_fips_code":"55069","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"178"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55069","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55069","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55069","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"39"}
+,{"county_fips_code":"55069","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55069","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55069","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55069","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55069","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"41"}
+,{"county_fips_code":"55069","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55069","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55069","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55069","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55069","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"11"}
+,{"county_fips_code":"55069","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55069","age_group":"NA","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55071","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55071","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"276"}
+,{"county_fips_code":"55071","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55071","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55071","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"538"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"53"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"50"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55071","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"263"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"29"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"10"}
+,{"county_fips_code":"55071","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"147"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"20"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"27"}
+,{"county_fips_code":"55071","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55071","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55071","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"15"}
+,{"county_fips_code":"55071","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55073","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55073","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"693"}
+,{"county_fips_code":"55073","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55073","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55073","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"1388"}
+,{"county_fips_code":"55073","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55073","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55073","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"18"}
+,{"county_fips_code":"55073","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55073","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"524"}
+,{"county_fips_code":"55073","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55073","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55073","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"37"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"283"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"2"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"62"}
+,{"county_fips_code":"55073","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"9"}
+,{"county_fips_code":"55075","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55075","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"66"}
+,{"county_fips_code":"55075","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"147"}
+,{"county_fips_code":"55075","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55075","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"193"}
+,{"county_fips_code":"55075","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"221"}
+,{"county_fips_code":"55075","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55075","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55075","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55075","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"95"}
+,{"county_fips_code":"55075","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"74"}
+,{"county_fips_code":"55075","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"62"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"59"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55075","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"51"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"834"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"42"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"42"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"354"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55079","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"69"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"1134"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"287"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"7"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"2560"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"28"}
+,{"county_fips_code":"55079","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"58"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"41"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"360"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"106"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"7"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"563"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"23"}
+,{"county_fips_code":"55079","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"34"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"231"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"83"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"7"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"209"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"2"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"54"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"43"}
+,{"county_fips_code":"55079","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"44"}
+,{"county_fips_code":"55079","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55079","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55079","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"87"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"72"}
+,{"county_fips_code":"55081","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"59"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"116"}
+,{"county_fips_code":"55081","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"18"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"31"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55081","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"25"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55081","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55081","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55081","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"88"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"34"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55083","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55083","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55083","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"158"}
+,{"county_fips_code":"55083","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"76"}
+,{"county_fips_code":"55083","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55083","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"68"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55083","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"35"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55083","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"7"}
+,{"county_fips_code":"55085","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55085","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"21"}
+,{"county_fips_code":"55085","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"55"}
+,{"county_fips_code":"55085","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"23"}
+,{"county_fips_code":"55085","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"30"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"29"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"31"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"103"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55085","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"26"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"13"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"46"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55085","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"26"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"20"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Missing","n":"1"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55085","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"47"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"83"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"318"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"367"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55087","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"45"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"60"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"435"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"846"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55087","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"17"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"171"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"275"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55087","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"69"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"79"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55087","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55089","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55089","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"40"}
+,{"county_fips_code":"55089","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55089","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55089","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"225"}
+,{"county_fips_code":"55089","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55089","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55089","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"43"}
+,{"county_fips_code":"55089","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"374"}
+,{"county_fips_code":"55089","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"12"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"135"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55089","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"84"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55089","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55089","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55089","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55089","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55089","age_group":"NA","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"116"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"62"}
+,{"county_fips_code":"55093","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"32"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"231"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"26"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"154"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55093","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"26"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"89"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55093","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"70"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55093","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55093","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55093","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55093","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55095","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55095","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"112"}
+,{"county_fips_code":"55095","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"105"}
+,{"county_fips_code":"55095","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"49"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"192"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"225"}
+,{"county_fips_code":"55095","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"83"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"102"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55095","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"54"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"52"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55095","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55097","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55097","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"54"}
+,{"county_fips_code":"55097","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"62"}
+,{"county_fips_code":"55097","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"115"}
+,{"county_fips_code":"55097","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"37"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"117"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"136"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"268"}
+,{"county_fips_code":"55097","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"59"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"104"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55097","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"25"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"26"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"44"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55097","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55097","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55097","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55097","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"15"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"560"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"18"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55101","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"1120"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"41"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"101"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"11"}
+,{"county_fips_code":"55101","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"481"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"32"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"16"}
+,{"county_fips_code":"55101","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"219"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"8"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"1"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"28"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55101","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"17"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"26"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"135"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"34"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"53"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55105","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"47"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"208"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"55"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"139"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55105","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"76"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"46"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"55105","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"34"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"29"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55105","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55105","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55105","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55105","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55109","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"309"}
+,{"county_fips_code":"55109","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"111"}
+,{"county_fips_code":"55109","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55109","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"147"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"31"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"296"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"39"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"58"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"7"}
+,{"county_fips_code":"55109","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"117"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"17"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"25"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"9"}
+,{"county_fips_code":"55109","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"68"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"24"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"17"}
+,{"county_fips_code":"55109","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55109","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55109","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"16"}
+,{"county_fips_code":"55109","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55109","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55109","age_group":"NA","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55111","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55111","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"48"}
+,{"county_fips_code":"55111","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"39"}
+,{"county_fips_code":"55111","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55111","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"120"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"62"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"95"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"287"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55111","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"29"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"39"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"103"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55111","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"23"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"24"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"69"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55111","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55115","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55115","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"87"}
+,{"county_fips_code":"55115","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55115","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"61"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"27"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"161"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"95"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55115","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"20"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"87"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"50"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55115","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"49"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"24"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55115","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55115","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55115","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"120"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"341"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55117","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"41"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"68"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"284"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"552"}
+,{"county_fips_code":"55117","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"12"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"107"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"212"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55117","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"20"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"52"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"113"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"17"}
+,{"county_fips_code":"55117","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"31"}
+,{"county_fips_code":"55119","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55119","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"36"}
+,{"county_fips_code":"55119","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55119","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"59"}
+,{"county_fips_code":"55119","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"72"}
+,{"county_fips_code":"55119","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55119","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55119","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"36"}
+,{"county_fips_code":"55119","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"36"}
+,{"county_fips_code":"55119","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55119","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55119","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55119","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55119","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55121","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55121","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"11"}
+,{"county_fips_code":"55121","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55121","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"78"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"38"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"164"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55121","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55121","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55121","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"27"}
+,{"county_fips_code":"55121","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"74"}
+,{"county_fips_code":"55121","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55121","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55121","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55121","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55121","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55121","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55121","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55121","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55121","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55121","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55123","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55123","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"27"}
+,{"county_fips_code":"55123","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"35"}
+,{"county_fips_code":"55123","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"38"}
+,{"county_fips_code":"55123","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"55"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"84"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"75"}
+,{"county_fips_code":"55123","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55123","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55123","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55123","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55123","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55123","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55123","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55123","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55123","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55123","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55123","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55123","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55125","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55125","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"37"}
+,{"county_fips_code":"55125","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55125","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"23"}
+,{"county_fips_code":"55125","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"21"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55125","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55125","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55125","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"11"}
+,{"county_fips_code":"55125","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55125","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55125","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"26"}
+,{"county_fips_code":"55125","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"25"}
+,{"county_fips_code":"55125","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55125","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"38"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"49"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55127","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"286"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"47"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"708"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55127","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55127","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"15"}
+,{"county_fips_code":"55127","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"26"}
+,{"county_fips_code":"55127","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"250"}
+,{"county_fips_code":"55127","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55127","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"56"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"13"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"87"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55127","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55127","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55127","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55127","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"61"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"142"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"328"}
+,{"county_fips_code":"55131","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"35"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"68"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"251"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"663"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55131","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"32"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"149"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"331"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"3"}
+,{"county_fips_code":"55131","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"14"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"83"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"153"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55131","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55131","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55131","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"19"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"1360"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"40"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"71"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"40"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"265"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55133","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"54"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"207"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"321"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"1404"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55133","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"27"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"57"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"187"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"637"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"14"}
+,{"county_fips_code":"55133","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"51"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"6"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"211"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"58"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"7"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"3"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"255"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Yes","n":"2"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"57"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"60"}
+,{"county_fips_code":"55133","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"35"}
+,{"county_fips_code":"55135","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55135","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"31"}
+,{"county_fips_code":"55135","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"40"}
+,{"county_fips_code":"55135","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"12"}
+,{"county_fips_code":"55135","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"82"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"21"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"60"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"137"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"208"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55135","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"13"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"34"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"56"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"22"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"55"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55135","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"11"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"57"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"50"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55135","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55135","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55135","age_group":"NA","hosp_yn":"Unknown","death_yn":"NA","n":"5"}
+,{"county_fips_code":"55135","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55137","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55137","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"11"}
+,{"county_fips_code":"55137","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"8"}
+,{"county_fips_code":"55137","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"21"}
+,{"county_fips_code":"55137","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55137","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"34"}
+,{"county_fips_code":"55137","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"55137","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"39"}
+,{"county_fips_code":"55137","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"27"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"12"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55137","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"2"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"10"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"6"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"1"}
+,{"county_fips_code":"55137","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"2"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"103"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"243"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"293"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"119"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55139","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"42"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"393"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"281"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"491"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"7"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"6"}
+,{"county_fips_code":"55139","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"10"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"39"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"127"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"95"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"14"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"130"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"55139","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"30"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"116"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"69"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"23"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"10"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"9"}
+,{"county_fips_code":"55139","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"8"}
+,{"county_fips_code":"55141","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"24"}
+,{"county_fips_code":"55141","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"16"}
+,{"county_fips_code":"55141","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"299"}
+,{"county_fips_code":"55141","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"172"}
+,{"county_fips_code":"55141","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"32"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"18"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"455"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"294"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"2"}
+,{"county_fips_code":"55141","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"9"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"18"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"150"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"1"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"103"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55141","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"3"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"9"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"84"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"4"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"65"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"11"}
+,{"county_fips_code":"55141","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"16"}
+,{"county_fips_code":"55141","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"15"}
+,{"county_fips_code":"55141","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"5"}
+,{"county_fips_code":"55141","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"3"}
+,{"county_fips_code":"55141","age_group":"NA","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Missing","death_yn":"Missing","n":"1"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"NA","n":"40"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"No","n":"689"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"No","death_yn":"Unknown","n":"203"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"NA","n":"24"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"No","n":"1"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"513"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"No","n":"4"}
+,{"county_fips_code":"NA","age_group":"0 - 17 years","hosp_yn":"Yes","death_yn":"Unknown","n":"1"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Missing","death_yn":"Missing","n":"2"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Missing","death_yn":"No","n":"1"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"NA","n":"51"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"No","n":"1012"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"No","death_yn":"Unknown","n":"475"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"NA","n":"41"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"890"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"NA","n":"6"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"No","n":"21"}
+,{"county_fips_code":"NA","age_group":"18 to 49 years","hosp_yn":"Yes","death_yn":"Unknown","n":"19"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"NA","n":"2"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"No","n":"503"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"No","death_yn":"Unknown","n":"214"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"NA","n":"2"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"Unknown","death_yn":"Unknown","n":"378"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"NA","n":"20"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"No","n":"32"}
+,{"county_fips_code":"NA","age_group":"50 to 64 years","hosp_yn":"Yes","death_yn":"Unknown","n":"18"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"No","death_yn":"Missing","n":"1"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"No","death_yn":"NA","n":"16"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"No","death_yn":"No","n":"269"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"No","death_yn":"Unknown","n":"141"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"No","death_yn":"Yes","n":"8"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"NA","n":"15"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"No","n":"3"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Unknown","death_yn":"Unknown","n":"235"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Yes","death_yn":"NA","n":"11"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Yes","death_yn":"No","n":"51"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Unknown","n":"43"}
+,{"county_fips_code":"NA","age_group":"65+ years","hosp_yn":"Yes","death_yn":"Yes","n":"41"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"No","death_yn":"NA","n":"1"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"No","death_yn":"No","n":"50"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"No","death_yn":"Unknown","n":"24"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"Unknown","death_yn":"No","n":"2"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"Unknown","death_yn":"Unknown","n":"77"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"Yes","death_yn":"NA","n":"1"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"Yes","death_yn":"No","n":"5"}
+,{"county_fips_code":"NA","age_group":"NA","hosp_yn":"Yes","death_yn":"Unknown","n":"4"}]

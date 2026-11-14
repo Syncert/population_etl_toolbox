@@ -147,6 +147,8 @@ def reviewed_warehouse(
                     (SOURCE_CODE,),
                 )
                 for table in (
+                    "gold_census_lodes.coverage_gap",
+                    "gold_census_lodes.observation_fact",
                     "silver_census_lodes.fact_area",
                     "silver_census_lodes.fact_flow",
                     "silver_census_lodes.quarantine",

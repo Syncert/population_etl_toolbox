@@ -371,9 +371,18 @@ const alignedMetrics = {
   ],
 };
 
+// The plain labels the analysis routes serve beside each code (A-2).
+const PAIR_LABELS = {
+  metric_label_a: "Total population (survey estimate)",
+  metric_label_status_a: "draft",
+  metric_label_b: "Resident population estimate",
+  metric_label_status_b: "draft",
+};
+
 const comparableVerdict = {
   metric_code_a: METRIC_ACS,
   metric_code_b: METRIC_PEP_STATE,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   comparable: true,
@@ -402,6 +411,7 @@ const comparableVerdict = {
 const alignedComparison = {
   metric_code_a: METRIC_ACS,
   metric_code_b: METRIC_PEP_STATE,
+  ...PAIR_LABELS,
   source_code_a: "CENSUS_ACS",
   source_code_b: "CENSUS_PEP",
   units_a: "People",
@@ -599,8 +609,9 @@ test("a comparable pair draws a scatter at the shared grain", async ({ page }) =
     .locator("option");
   await expect(grainOptions).toHaveCount(1);
   await expect(grainOptions.first()).toHaveText("State");
+  // Named by its plain label, not its code (WEB-144).
   await expect(page.getByTestId("workbench-grain-note")).toContainText(
-    METRIC_PEP_STATE,
+    "Resident population estimate",
   );
 
   await expect(page.getByTestId("workbench-preflight-status")).toContainText(

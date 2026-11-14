@@ -38,6 +38,9 @@ def parse_bls_geography(series_id: str, program: str) -> Dict[str, Optional[str]
     if program in {"cu", "ap"}:
         return parse_bls_price_area(series_id, program)
 
+    if program == "cx":
+        return parse_bls_expenditure_area(series_id)
+
     # Default national geography for non-LAUS programs.
     if program in {"ln", "ce", "jt"}:
         return {
@@ -120,3 +123,46 @@ def parse_bls_price_area(series_id: str, program: str) -> Dict[str, Optional[str
         code,
     )
     return unresolved
+
+
+#: A Consumer Expenditure series: item, then a demographic table `LBnn` and
+#: its characteristic (``CXUFOODHOMELB1103M``: food at home, region table,
+#: Midwest, means).
+_CX_SERIES = re.compile(
+    r"^CXU(?P<item>[A-Z0-9]+?)(?P<table>LB\d{2})(?P<characteristic>[0-9A-Z]{2})M$"
+)
+
+#: The region table's characteristics in BLS's order (`cx.characteristics`):
+#: 02 Northeast, 03 Midwest, 04 South, 05 West -- Census regions 1 to 4.
+_CX_REGIONS = {"02": "1", "03": "2", "04": "3", "05": "4"}
+
+
+def parse_bls_expenditure_area(series_id: str) -> Dict[str, Optional[str]]:
+    """The area a Consumer Expenditure (`cx`) mean describes.
+
+    The region table (`LB11`) names a Census region by its characteristic,
+    or all consumer units (`01`), the nation. Every other demographic table
+    -- household size, income, age -- describes national consumer units of
+    one kind, so it is the nation. A series of another shape is refused.
+    """
+    unresolved: Dict[str, Optional[str]] = {
+        "geo_level": None,
+        "geo_id": None,
+        "state_fips": None,
+        "county_fips": None,
+    }
+    match = _CX_SERIES.fullmatch((series_id or "").strip().upper())
+    if not match:
+        logger.warning("BLS cx series %s is not a demographic-table mean", series_id)
+        return unresolved
+    if match["table"] == "LB11" and match["characteristic"] != "01":
+        region = _CX_REGIONS.get(match["characteristic"])
+        if region is None:
+            logger.warning("BLS cx series %s names no Census region", series_id)
+            return unresolved
+        return {
+            **unresolved,
+            "geo_level": "census_region",
+            "geo_id": f"region:{region}",
+        }
+    return {**unresolved, "geo_level": "us", "geo_id": "us:1"}

@@ -82,7 +82,7 @@ def test_invalid_laus_ids_are_not_parsed(series_id: str) -> None:
     "series_id",
     [
         "LAU00000000000000003",  # LAUS has no national series
-        "LAUMT123450000000003",  # metro is unsupported by dim_geo
+        "LAUMT481242000000103",  # a metro code must end in six zeros
         "LAUCI123450000000003",  # city is unsupported by dim_geo
         "LAUCN010010000100003",  # invalid county padding
     ],

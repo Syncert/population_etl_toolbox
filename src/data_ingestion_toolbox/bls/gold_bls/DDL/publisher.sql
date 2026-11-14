@@ -55,7 +55,9 @@ SELECT
     -- is served yet: such a measure publishes no grain either, so nothing
     -- claims the API can answer it, and the harvest's content fingerprint
     -- re-harvests once the projection carries it.
-    COALESCE(served.publication_time, MAX(fact.updated_at)) AS publication_time
+    COALESCE(served.publication_time, MAX(fact.updated_at)) AS publication_time,
+    -- Appended: `CREATE OR REPLACE VIEW` only adds columns at the end.
+    served.last_value_date
 FROM gold_bls.dim_bls_measure AS measure
 JOIN gold_bls.fact_bls_observation AS fact
   ON fact.program_code = measure.program_code
@@ -71,12 +73,17 @@ LEFT JOIN (
                ARRAY[]::TEXT[]
            )::TEXT[]
                AS valid_geo_grains,
-           MAX(latest.updated_at) AS publication_time
+           MAX(latest.updated_at) AS publication_time,
+           -- The newest month served with a value, for the harvest's
+           -- `ended` rule (migration 042).
+           MAX(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL)
+               AS last_value_date
     FROM gold_bls.mv_bls_latest AS latest
     GROUP BY latest.metric_code
 ) AS served
   ON served.metric_code = 'BLS:' || measure.metric_key
-GROUP BY measure.bls_measure_sk, served.valid_geo_grains, served.publication_time;
+GROUP BY measure.bls_measure_sk, served.valid_geo_grains, served.publication_time,
+         served.last_value_date;
 
 CREATE OR REPLACE VIEW gold_bls.metric_publisher AS
 SELECT
@@ -98,7 +105,13 @@ SELECT
     COALESCE(served.publication_time, series.updated_at) AS publication_time,
     'U.S. Bureau of Labor Statistics'::TEXT AS source_name,
     'official-statistics'::TEXT AS source_type,
-    survey.reference_url::TEXT AS reference_url
+    survey.reference_url::TEXT AS reference_url,
+    -- The newest month this series is served with a value. BLS keeps
+    -- listing a series it stopped pricing -- the Midwest whole-milk Average
+    -- Price (APU0200709112) last priced April 2020 -- and the harvest reads
+    -- this to publish such a key `ended` rather than `current` (migration
+    -- 042). Optional in the publisher contract; appended at the end.
+    served.last_value_date::DATE AS last_value_date
 FROM gold_bls.dim_bls_series AS series
 JOIN gold_bls.dim_bls_survey AS survey USING (bls_survey_sk)
 LEFT JOIN (
@@ -112,7 +125,9 @@ LEFT JOIN (
                ARRAY[]::TEXT[]
            )::TEXT[]
                AS valid_geo_grains,
-           MAX(latest.updated_at) AS publication_time
+           MAX(latest.updated_at) AS publication_time,
+           MAX(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL)
+               AS last_value_date
     FROM gold_bls.mv_bls_latest AS latest
     WHERE latest.metric_code = 'BLS:' || latest.series_id
     GROUP BY latest.series_id
@@ -142,7 +157,7 @@ WHERE NOT EXISTS (
         )
       )
 GROUP BY series.bls_series_sk, survey.bls_survey_sk, served.valid_geo_grains,
-         served.publication_time
+         served.publication_time, served.last_value_date
 
 UNION ALL
 
@@ -163,6 +178,7 @@ SELECT
     export.publication_time,
     'U.S. Bureau of Labor Statistics'::TEXT,
     'official-statistics'::TEXT,
-    survey.reference_url::TEXT
+    survey.reference_url::TEXT,
+    export.last_value_date::DATE
 FROM gold_bls.measure_export AS export
 JOIN gold_bls.dim_bls_survey AS survey ON survey.program_code = export.program_code;

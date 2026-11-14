@@ -26,6 +26,12 @@ the important part:
 docker compose --env-file infra/docker/stack.env -f infra/docker/docker-compose.yml up -d
 ```
 
+The web app on port 3001 is the production Next build (`node server.js`), not
+`next dev`. `up -d` does not rebuild an image that already exists, so after
+pulling web changes rebuild it as
+[infra/docker/README.md](../../infra/docker/README.md#the-web-container-is-a-production-build)
+describes.
+
 ## Do not start it with a bare `docker compose up`
 
 **This is the failure mode, and it is silent.**
@@ -143,6 +149,14 @@ source with `failed` rows carries its reason in `error_summary`, which names
 the cause directly -- `missing_api_key` is a configuration fault, `HTTP 403`
 after a working key usually means throttling, and a check-constraint violation
 is a defect worth a ticket.
+
+## Provider keys stay out of the logs
+
+Airflow runs with `data_ingestion_toolbox.airflow_logging.LOGGING_CONFIG`, which
+keeps `httpx` request lines out of task logs and masks `key=`/`api_key=` values
+and credential environment values on every handler. Logs written before that
+change can be scrubbed, and the keys rotated, with
+[AIRFLOW_LOG_SECRET_SCRUB.md](AIRFLOW_LOG_SECRET_SCRUB.md).
 
 ## Reviewing county crime in the web
 

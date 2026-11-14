@@ -26,7 +26,8 @@ from __future__ import annotations
 #:   average-price series carry a Census region or division or a BLS metro
 #:   (``silver_bls/geography_parser.py``, grocery-and-gasoline-prices).
 #: * ``CDC`` -- ``cdc/registry.py`` declares ``geography_levels`` per asset:
-#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES.
+#:   ``("us", "state")`` for CDI, ``("us", "county")`` for PLACES county and
+#:   ``("tract",)`` for PLACES tract (places-tract-release).
 #: * ``CENSUS_ACS`` -- ``census_acs/config.py`` declares
 #:   ``geo_levels = ["us", "state", "county", "place", "tract"]``; tracts
 #:   from the 5-year estimates only (sub-county-geography).
@@ -34,6 +35,9 @@ from __future__ import annotations
 #:   file totals are served for the county each file describes.
 #: * ``CENSUS_BPS`` -- ``census_bps/registry.py`` registers the state file
 #:   (states and the US total), the county files and the place files.
+#: * ``CENSUS_DECENNIAL`` -- ``census_decennial/registry.py`` requests ``us``,
+#:   ``state``, ``county`` and ``tract``; a ``block`` is ``unsupported`` until
+#:   a block geography is registered, and the gold views never serve it.
 #: * ``CENSUS_SAIPE_SAHIE`` -- ``census_saipe_sahie/registry.py`` requests
 #:   ``us``, ``state`` and ``county`` only, and ``silver_census_sae`` closes
 #:   ``geo_type`` to ``nation``, ``state`` and ``county``.
@@ -47,6 +51,9 @@ from __future__ import annotations
 #: * ``BLS_QCEW`` -- ``bls_qcew/registry.py`` registers aggregation levels
 #:   10-14, 50-54 and 70-74 (national, state, county) and counts every other
 #:   level -- MSAs and the "unknown county" areas -- out of scope.
+#: * ``DOL_CHILDCARE`` -- the National Database of Childcare Prices is one row
+#:   per county and study year; ``dol_childcare/silver_dol_childcare/parse.py``
+#:   reads every row as a county.
 #: * ``EIA`` -- ``eia/registry.py`` classifies ``NUS`` as the nation, ``S`` codes
 #:   as states by USPS code, and PADDs and cities as EIA's own provider areas.
 #: * ``CENSUS_CBP`` -- ``census_cbp/registry.py`` reads the nation, state
@@ -59,10 +66,21 @@ from __future__ import annotations
 #: * ``NOAA_NORMALS`` -- a county figure derived from the stations placed
 #:   inside the county; counties without a standard or representative
 #:   station have no row.
+#: * ``NOAA_CLIMDIV`` -- NCEI's own county series; NCEI publishes no state
+#:   or national figure in the county files, so none is served.
+#: * ``NOAA_STORM_EVENTS`` -- counts and impacts for counties (county and
+#:   matched zone events), states and the nation (the 50 states and DC).
 #: * ``FCC_BDC`` -- the FCC's own nation, state, county and place
 #:   availability summaries; CBSA, district and tribal rows are not kept.
 #: * ``FEMA_NRI`` -- the NRI county layer and county declaration counts;
 #:   statewide and tribal-area declarations are not counted toward a county.
+#: * ``ELECTIONS`` -- MEDSL's state and county presidential vote; House
+#:   districts are not yet a shared geography, so they are not published as
+#:   observations.
+#: * ``CENSUS_GOVFIN`` -- the nation and states from the annual finance and
+#:   QTAX answers, and county areas rolled up from the Census of Governments
+#:   unit files; single governments, cities and special districts are kept
+#:   in silver and not published as places.
 #: * ``FHFA_HPI`` -- the annual county workbook only; the ZIP and tract
 #:   files wait on sub-county identities.
 #: * ``HUD_FMR_IL`` -- HUD area values repeated per county; New England town
@@ -75,6 +93,12 @@ from __future__ import annotations
 #:   ``national``, ``state`` and ``agency``.
 #: * ``FRED`` -- ``gold_fred.fact_fred_observation`` writes ``'us:1'`` and
 #:   ``'NATIONAL'`` as literals. FRED is national by construction.
+#: * ``TREASURY_MTS`` -- the Monthly Treasury Statement is the federal
+#:   government's own account; ``gold_treasury_mts`` writes ``'us:1'`` and
+#:   ``nation`` as literals.
+#: * ``USASPENDING`` -- USAspending's state and county layers by place of
+#:   performance; the unplaced row and territories without a shared
+#:   geography are not served.
 #: * ``USDA_NASS`` -- migration 012 closes ``geo_type`` to ``nation``,
 #:   ``state``, ``county`` and ``unsupported``.
 ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
@@ -90,24 +114,38 @@ ADVERTISED_GEO_GRAINS: dict[str, frozenset[str]] = {
         }
     ),
     "BLS_QCEW": frozenset({"NATIONAL", "STATE", "COUNTY"}),
-    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC": frozenset({"NATIONAL", "STATE", "COUNTY", "TRACT"}),
     "CENSUS_ACS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE", "TRACT"}),
     "CENSUS_BPS": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_PEP": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "CENSUS_SAIPE_SAHIE": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CENSUS_DECENNIAL": frozenset({"NATIONAL", "STATE", "COUNTY", "TRACT"}),
+    "CMS_LTC": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "NCES_IPEDS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "HHS_HOSPITAL_CAPACITY": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC_COVID_CASES": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "CDC_ILINET": frozenset({"NATIONAL", "STATE"}),
+    "DOL_CHILDCARE": frozenset({"COUNTY"}),
     "EIA": frozenset({"NATIONAL", "STATE", "PROVIDER_AREA"}),
     "FBI_UCR": frozenset({"NATIONAL", "STATE", "AGENCY"}),
     "FRED": frozenset({"NATIONAL"}),
+    "TREASURY_MTS": frozenset({"NATIONAL"}),
+    "USASPENDING": frozenset({"STATE", "COUNTY"}),
     "USDA_ERS": frozenset({"COUNTY"}),
     "NCES_CCD": frozenset({"STATE", "COUNTY"}),
     "HUD_FMR_IL": frozenset({"COUNTY"}),
     "FHFA_HPI": frozenset({"COUNTY"}),
     "FEMA_NRI": frozenset({"COUNTY"}),
+    "CENSUS_GOVFIN": frozenset({"NATIONAL", "STATE", "COUNTY"}),
+    "ELECTIONS": frozenset({"STATE", "COUNTY"}),
     "FCC_BDC": frozenset({"NATIONAL", "STATE", "COUNTY", "PLACE"}),
     "NOAA_NORMALS": frozenset({"COUNTY"}),
+    "NOAA_CLIMDIV": frozenset({"COUNTY"}),
+    "NOAA_STORM_EVENTS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "EPA_AQS": frozenset({"COUNTY"}),
     "CENSUS_LODES": frozenset({"STATE", "COUNTY"}),
     "CENSUS_CBP": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "IRS_MIGRATION": frozenset({"COUNTY"}),
+    "IRS_SOI": frozenset({"NATIONAL", "STATE", "COUNTY"}),
     "USDA_NASS": frozenset({"NATIONAL", "STATE", "COUNTY"}),
 }

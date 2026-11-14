@@ -1,0 +1,155 @@
+import React from "react";
+
+// Covers: WEB-160 — every trend chart on a place page says what it draws: a
+// title naming the measure in plain words, its unit, how often it is published
+// and the span drawn, its source, a y-axis label and a legend above the plot,
+// linked to the headline card it draws (UAT on /metro/madison-wi, where the
+// monthly unemployment chart showed only "14" and "1.3").
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import PlaceTrend from "../../../apps/web/components/PlaceTrend";
+import { buildTrend } from "../../../apps/web/lib/placeChapters";
+import { trendFrequency, trendSourceName } from "../../../apps/web/lib/trendLabels";
+
+const levels = [
+  { level: "METRO", geoId: "m", name: "Madison, WI", role: "this place" },
+  { level: "STATE", geoId: "s", name: "Wisconsin", role: "parent" },
+];
+
+const monthly = (values, year = 1990) =>
+  values.map((value, index) => {
+    const month = String(index + 1).padStart(2, "0");
+    const last = new Date(Date.UTC(year, index + 1, 0)).getUTCDate();
+    return { period_start: `${year}-${month}-01`, period_end: `${year}-${month}-${last}`, value };
+  });
+
+const yearly = (values, start = 2019) =>
+  values.map((value, index) => ({ period_start: `${start + index}-01-01`, period_end: `${start + index}-12-31`, value }));
+
+describe("how often a trend is published", () => {
+  const one = (rows) => buildTrend([levels[0]], new Map([["m", rows]]), "level");
+
+  it("is read from the drawn points' own periods", () => {
+    expect(trendFrequency(one(monthly(["1", "2", "3"])))).toBe("monthly");
+    expect(trendFrequency(one(yearly(["1", "2"])))).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2020-01-01", period_end: "2024-12-31", value: "1" }]))).toBe("five-year estimates");
+    expect(trendFrequency(one([{ period_start: "2024-01-01", period_end: "2024-03-31", value: "1" }]))).toBe("quarterly");
+  });
+
+  it("falls back to the gap between dated points, and says nothing when it cannot tell", () => {
+    expect(trendFrequency(one([{ period_start: "2024-01-01", value: "1" }, { period_start: "2024-02-01", value: "2" }, { period_start: "2024-03-01", value: "3" }]))).toBe("monthly");
+    expect(trendFrequency(one([{ period_start: "2024-01-01", value: "1" }]))).toBe("");
+  });
+
+  it("is the page's own line's, before a parent's", () => {
+    const trend = buildTrend(levels, new Map([["m", monthly(["3.1", "3.0"])], ["s", yearly(["3.4", "3.3"])]]), "level");
+    expect(trendFrequency(trend)).toBe("monthly");
+  });
+});
+
+// Covers: WEB-161 — a trend whose rows carry only a date (a start equal to its
+// end, as an annual series stamped with its year often is) reads its cadence
+// from the gap between points, and a single such point from its year or its
+// program, never as "monthly"; a rate unit code reads in words (UAT on /us,
+// where obesity read "monthly, Jan 2023" and net migration
+// "per_1000_population").
+describe("a dated series' cadence", () => {
+  const one = (rows) => buildTrend([levels[0]], new Map([["m", rows]]), "level");
+  const stamped = (values, start = 2019) =>
+    values.map((value, index) => ({ period_start: `${start + index}-07-01`, period_end: `${start + index}-07-01`, value }));
+
+  it("reads a start equal to its end as a date, not a one-day period", () => {
+    expect(trendFrequency(one(stamped(["1", "2", "3"])))).toBe("yearly");
+    const months = ["2024-01-01", "2024-02-01", "2024-03-01"].map((day, index) => ({ period_start: day, period_end: day, value: String(index) }));
+    expect(trendFrequency(one(months))).toBe("monthly");
+  });
+
+  it("says yearly for one year's point, by its label, its code or its program", () => {
+    expect(trendFrequency(one([{ period_start: "2023", period_end: "2023", value: "33" }]))).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2023-01-01", period_end: "2023-01-01", value: "33" }]), "CDC:places_county:OBESITY:AgeAdjPrv")).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2025-01-01", value: "9" }]), "CENSUS_BPS:units:annual")).toBe("yearly");
+    expect(trendFrequency(one([{ period_start: "2023-01-01", period_end: "2023-01-01", value: "33" }]))).toBe("");
+  });
+
+  it("labels a single CDC year as yearly on the chart, never by its month", () => {
+    render(
+      <PlaceTrend
+        model={one([{ period_start: "2023", period_end: "2023", value: "33.1" }])}
+        title="Obesity among adults (age-adjusted) over time"
+        unit="%"
+        metricCode="CDC:places_county:OBESITY:AgeAdjPrv"
+        testId="obesity"
+      />,
+    );
+    expect(screen.getByTestId("obesity-meta").textContent).toBe("% · yearly, 2023");
+    expect(screen.getByTestId("obesity").getAttribute("data-frequency")).toBe("yearly");
+  });
+
+  it("keeps a monthly series monthly", () => {
+    expect(trendFrequency(one(monthly(["1", "2", "3"])), "FBI_UCR:summarized_violent_crime:V:offense:rate")).toBe("monthly");
+  });
+});
+
+describe("a trend's source line", () => {
+  it("names the program in words", () => {
+    expect(trendSourceName("BLS:LAU:UNEMP_RATE", "BLS")).toBe("Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)");
+    expect(trendSourceName("CENSUS_ACS:acs5:B19013_001", "CENSUS_ACS")).toBe("U.S. Census Bureau, American Community Survey 5-year estimates");
+    expect(trendSourceName("CENSUS_PEP:POPESTIMATE")).toBe("U.S. Census Bureau, Population Estimates Program");
+  });
+
+  it("falls back to the published source code, never to nothing when one exists", () => {
+    expect(trendSourceName("NEW_SOURCE:x", "NEW_SOURCE")).toBe("NEW_SOURCE");
+  });
+});
+
+describe("a trend chart says what it draws", () => {
+  const model = buildTrend(
+    levels,
+    new Map([["m", monthly(["3.1", "14", "1.3", "2.9"])], ["s", monthly(["3.4", "13", "2.0", "3.1"])]]),
+    "level",
+  );
+
+  it("has a title, unit, frequency, span, source, y-axis label and legend before the plot", () => {
+    render(
+      <PlaceTrend
+        model={model}
+        measure={{
+          measure: { id: "unemployment-rate", label: "Unemployment rate", candidates: ["BLS:LAU:UNEMP_RATE"] },
+          metric: { metric_code: "BLS:LAU:UNEMP_RATE", metric_label: "Unemployment rate", source_code: "BLS" },
+          metricCode: "BLS:LAU:UNEMP_RATE",
+          publishedAtGrain: true,
+        }}
+        chapterId="work-money"
+        unit="percent"
+        testId="trend"
+      />,
+    );
+    const figure = screen.getByTestId("trend");
+    expect(screen.getByRole("heading", { name: "Unemployment rate over time" })).toBeTruthy();
+    expect(figure.getAttribute("aria-labelledby")).toBe("trend-title");
+    // The metric name repeats the title, so it is not said twice.
+    expect(screen.getByTestId("trend-meta").textContent).toBe("percent · monthly, Jan 1990 to Apr 1990");
+    expect(screen.getByTestId("trend-source").textContent).toBe(
+      "Source: Bureau of Labor Statistics, Local Area Unemployment Statistics (LAUS)",
+    );
+    expect(screen.getByTestId("trend-y-label").textContent).toBe("Percent");
+    const link = within(screen.getByTestId("trend-for")).getByRole("link", { name: "Unemployment rate" });
+    expect(link.getAttribute("href")).toBe("#chapter-work-money-card-unemployment-rate");
+    const legend = figure.querySelector(".place-trend-legend");
+    expect(legend.textContent).toContain("Madison, WI (this page)");
+    expect(legend.textContent).toContain("Wisconsin (reference)");
+    // The legend comes before the plot, so it cannot fall below the card.
+    const plot = figure.querySelector('svg[role="img"]');
+    expect(legend.compareDocumentPosition(plot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plot.getAttribute("aria-label")).toContain("Unemployment rate over time, percent, Jan 1990 to Apr 1990");
+  });
+
+  it("states an index's base period as its axis and unit", () => {
+    const index = buildTrend(levels, new Map([["m", yearly(["100", "110"])], ["s", yearly(["1000", "1050"])]]), "index");
+    render(<PlaceTrend model={index} title="Resident population estimate over time" metricName="Population estimate" unit="people" testId="pop" />);
+    expect(screen.getByTestId("pop-y-label").textContent).toBe("Index (2019 = 100)");
+    expect(screen.getByTestId("pop-meta").textContent).toBe("Population estimate · index, 2019 = 100 · yearly, 2019 to 2020");
+    expect(screen.queryByTestId("pop-source")).toBeNull();
+  });
+});
