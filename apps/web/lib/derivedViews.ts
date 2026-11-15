@@ -7,7 +7,7 @@
 
 import { apiFetch } from "./api/client";
 import type { QueryParams, RequestOptions } from "./api/client";
-import { formatObservationValue } from "./explorerViewModel";
+import { formatObservationValue, valueWithUnit } from "./explorerViewModel";
 import { formatNumber } from "./format";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
@@ -253,7 +253,7 @@ const MARGIN_METHOD_TEXT: Record<MarginMethod, string> = {
 /** The value with its unit, or the API's reason there is none. Never zero for missing. */
 export function derivedValueText(row: DerivedRatioObservation): string {
   if (row.value === null || row.value === undefined || row.unavailable_reason) return unavailableText(row.unavailable_reason);
-  return `${formatObservationValue(row.value, 2)} ${row.unit}`.trim();
+  return valueWithUnit(formatObservationValue(row.value, 2), row.unit);
 }
 
 export function derivedMarginText(row: DerivedRatioObservation): string {

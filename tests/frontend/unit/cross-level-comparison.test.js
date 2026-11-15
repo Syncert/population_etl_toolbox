@@ -83,7 +83,7 @@ describe("the cross-level answer in a reader's words", () => {
   it("shows a missing value as not published, never zero", () => {
     expect(sideValueText(side({ published: false, value: null }), "dollars")).toBe("Not published for this place");
     expect(sideValueText(side({ value: null, value_status: "withheld" }), "dollars")).toBe("Withheld by the publisher");
-    expect(sideValueText(side({ value: "71234.5" }), "dollars")).toBe("71,234.5 dollars");
+    expect(sideValueText(side({ value: "71234.5" }), "dollars")).toBe("$71,234.5");
     const bars = answer({ side_b: side({ published: false, value: null }) });
     expect(sideBar(100, bars)).toBe(100);
   });

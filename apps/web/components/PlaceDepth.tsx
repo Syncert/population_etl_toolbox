@@ -7,7 +7,7 @@
 
 import { plainPeriods } from "../lib/plainPeriod";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue } from "../lib/explorerViewModel";
+import { formatObservationValue, valueWithUnit } from "../lib/explorerViewModel";
 import { observationPeriodLabel } from "../lib/observationAccess";
 import { measureBasis, publishedUnit, publishesAt, trendPeriodLabel } from "../lib/placeChapters";
 import type { LevelAnswer, LevelPlace, ResolvedPlaceMeasure } from "../lib/placeChapters";
@@ -112,7 +112,7 @@ export default function PlaceDepth({ chapterId, measures, place, levels, answers
                     ) : null}
                     {value ? (
                       <>
-                        <span className="place-depth-value">{`${formatObservationValue(row!.value)} ${publishedUnit(row!, measure.measure.unit)}`.trim()}</span>
+                        <span className="place-depth-value">{valueWithUnit(formatObservationValue(row!.value), publishedUnit(row!, measure.measure.unit))}</span>
                         {marginShare(row!) ? <span className="subtle"> {marginShare(row!)}</span> : null}
                         {period !== shared.period ? <span className="subtle" title={observationPeriodLabel(row)}> · {plainPeriods(period)}</span> : null}
                         {care ? <span className="subtle" data-testid={`depth-${measure.measure.id}-care`}> · use with care</span> : null}

@@ -84,5 +84,5 @@ test("a batch item the single read would refuse is stated on its card", async ({
   await expect(page.getByTestId("place-observation-status")).toContainText("reads failed");
   // The county's card states the refusal; its state and the nation still read.
   await expect(page.getByTestId("card-population-estimate")).toContainText("required serving relation is not present");
-  await expect(page.getByTestId("card-population-estimate")).toContainText("11,000 persons");
+  await expect(page.getByTestId("card-population-estimate")).toContainText("11,000 people");
 });

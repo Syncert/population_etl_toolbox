@@ -9,7 +9,7 @@
 
 import { apiFetch } from "./api/client";
 import type { RequestOptions } from "./api/client";
-import { formatObservationValue, publishedNumber } from "./explorerViewModel";
+import { formatObservationValue, publishedNumber, valueWithUnit } from "./explorerViewModel";
 import type { ObservationRow } from "./explorerViewModel";
 import { observationPeriodLabel } from "./observationAccess";
 import type { PlaceLevel } from "./placeChapters";
@@ -239,7 +239,7 @@ export function sideValueText(side: PlacesSide, unit: string, digits = 1): strin
       ? "Withheld by the publisher"
       : "Not published for this place";
   }
-  return `${formatObservationValue(value, digits)} ${unit}`.trim();
+  return valueWithUnit(formatObservationValue(value, digits), unit);
 }
 
 export function sideMarginText(side: PlacesSide, digits = 1): string {
