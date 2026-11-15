@@ -31,7 +31,7 @@ import type { CollectionResponse, GeographySummary, MetricSummary, Observation }
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue, marginOfErrorText, observationUnit, unitText, valueWithUnit } from "../lib/explorerViewModel";
+import { formatObservationValue, marginOfErrorText, observationUnit, publishedNumber, unitText, valueWithUnit } from "../lib/explorerViewModel";
 import { displayMetricName } from "../lib/format";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
@@ -40,7 +40,7 @@ import {
   describeStratification,
   normalizeObservationRows,
   observationPeriodLabel,
-  observationUncertaintyLabel,
+  observationUncertaintyValue,
   seriesDimensionNames,
 } from "../lib/observationAccess";
 import { buildUseCaseHistory, verifyUseCaseRows } from "../lib/useCaseAnalysis";
@@ -80,6 +80,7 @@ import type {
   PlaceLevel,
   ResolvedChapter,
   ResolvedPlaceMeasure,
+  TrendModel,
 } from "../lib/placeChapters";
 import { COMPARE_GEO_ID, compareHref } from "../lib/placeComparison";
 import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../lib/placeRelationships";
@@ -1232,6 +1233,17 @@ function Chapter({
         chapter.trend.scale,
       )
     : null;
+  // A note two charts in one chapter share (the five-year-estimate note under
+  // every survey trend) is said under the first chart drawn and linked from
+  // the rest. A note about the chart's own bars is each chart's to show.
+  const saidNotes = new Map<string, string>();
+  const notesOnce = (model: TrendModel, notes: string[], id: string): { notes: string[]; notesAbove: string } => {
+    if (!model.lines.some((line) => line.points.length > 0)) return { notes, notesAbove: "" };
+    const repeated = notes.find((note) => saidNotes.has(note));
+    const fresh = notes.filter((note) => note.startsWith("The bar") || !saidNotes.has(note));
+    for (const note of fresh) if (!note.startsWith("The bar")) saidNotes.set(note, id);
+    return { notes: fresh, notesAbove: repeated ? saidNotes.get(repeated)! : "" };
+  };
   const moreTrends = (chapter.moreTrends || []).flatMap((spec) => {
     const measure = resolved.headline.find((entry) => entry.measure.id === spec.measureId);
     if (!drawsAtOwn(measure)) return [];
@@ -1328,7 +1340,7 @@ function Chapter({
           measure={trendMeasure}
           chapterId={chapter.id}
           unit={primaryRow ? publishedUnit(primaryRow, trendMeasure.measure.unit) : unitText(trendMeasure.metric?.units) || trendMeasure.measure.unit || ""}
-          notes={trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || ""))}
+          {...notesOnce(trend, trendNotes(trendMeasure.metricCode, String(trendMeasure.metric?.units || "")), `chapter-${chapter.id}-trend`)}
           reading={reading}
           testId={`chapter-${chapter.id}-trend`}
         />
@@ -1340,7 +1352,7 @@ function Chapter({
           measure={measure}
           chapterId={chapter.id}
           unit={unitText(measure.metric?.units) || measure.measure.unit || ""}
-          notes={trendNotes(measure.metricCode, String(measure.metric?.units || ""))}
+          {...notesOnce(model, trendNotes(measure.metricCode, String(measure.metric?.units || "")), `chapter-${chapter.id}-trend-${measure.measure.id}`)}
           reading={reading}
           testId={`chapter-${chapter.id}-trend-${measure.measure.id}`}
         />
@@ -1667,8 +1679,15 @@ function ReportedLine({ measure, row }: { measure: ResolvedPlaceMeasure; row: Ob
 
 function uncertaintyText(row: ObservationRow): string {
   const margin = marginOfErrorText(row);
-  const beyond = observationUncertaintyLabel(row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN);
-  return [margin !== "Not provided" ? `margin of error ${margin}` : "", beyond].filter(Boolean).join(" · ");
+  // Each field under the source's own name, as `observationUncertaintyLabel`
+  // writes it, with a number formatted as every other number on the page is
+  // ("confidence lower 88,532", not "88532").
+  const beyond = OBSERVATION_UNCERTAINTY_BEYOND_MARGIN.map((field) => {
+    const value = observationUncertaintyValue(row, field);
+    if (value === "") return "";
+    return `${field.replaceAll("_", " ")} ${publishedNumber(value) === null ? value : formatObservationValue(value, 2)}`;
+  });
+  return [margin !== "Not provided" ? `margin of error ${margin}` : "", ...beyond].filter(Boolean).join(" · ");
 }
 
 /**

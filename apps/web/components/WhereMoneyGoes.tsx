@@ -56,7 +56,7 @@ function LineTable({ layer }: { layer: SpendingLayer }) {
   );
 }
 
-function Layer({ layer }: { layer: SpendingLayer }) {
+function Layer({ layer, shared }: { layer: SpendingLayer; shared: string[] }) {
   const testId = `where-money-${layer.layer}`;
   const bars = shareBars(layer);
   const total = totalSentence(layer);
@@ -116,7 +116,7 @@ function Layer({ layer }: { layer: SpendingLayer }) {
         )
       ) : null}
       <p className="place-basis">{layer.source}</p>
-      {layer.notes.map((note) => (
+      {layer.notes.filter((note) => !shared.includes(note)).map((note) => (
         <p key={note} className="subtle">{note}</p>
       ))}
     </div>
@@ -146,6 +146,10 @@ export default function WhereMoneyGoes({ geoId }: { geoId: string }) {
   }, [geoId, served]);
 
   if (!served) return null;
+  // A note two or more levels carry (the fiscal-year note, the place-of-
+  // performance note) is said once, under them all.
+  const everyNote = load.state === "ready" && load.answer ? load.answer.layers.flatMap((layer) => [...new Set(layer.notes)]) : [];
+  const shared = [...new Set(everyNote.filter((note, index) => everyNote.indexOf(note) !== index))];
   if (load.state === "loading") return <p className="subtle" data-testid="where-money-loading">Reading where the money goes…</p>;
   if (load.state === "error") return <p className="subtle" data-testid="where-money-error">Where the money goes could not be read: {load.message}</p>;
   const answer = load.answer;
@@ -155,7 +159,10 @@ export default function WhereMoneyGoes({ geoId }: { geoId: string }) {
       <p className="subtle">Spending by each level of government, as each source publishes it. Each share is of its own level&apos;s total, for one year.</p>
       {answer && answer.layers.length ? (
         <>
-          {answer.layers.map((layer) => <Layer key={layer.layer} layer={layer} />)}
+          {answer.layers.map((layer) => <Layer key={layer.layer} layer={layer} shared={shared} />)}
+          {shared.map((note) => (
+            <p key={note} className="subtle" data-testid="where-money-shared-note">{note}</p>
+          ))}
           <p className="public-money-sentence where-money-separate" data-testid="where-money-separate">{answer.caveats[0]}</p>
         </>
       ) : (
