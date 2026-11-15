@@ -295,9 +295,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-182 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-183 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **767 of 767** | **0 of 767** |
+| **Total** | **768 of 768** | **0 of 768** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 767-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 768-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -1084,6 +1084,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-180 | P1 | Frontend / `frontend unit` | A trend chart's reference values are round, and a share that rounds to nothing says so | `roundTicks` returns two to four round values inside the drawn range (99.66 to 200.53 gives 100, 150, 200), and the single value when nothing varies; the chart draws a gridline and a short label at each while the lines keep their published values. `shareText` writes a positive share below 0.05% as "under 0.1%", zero as "0.0%", and a missing share as "not published" | A reference value outside the drawn range, fewer than two or more than four of them over a varying range, a line moved to meet a reference value, or "0.0%" beside a positive amount |
 | WEB-181 | P2 | Browser / `web-browser` | A place page says a shared note once | In a chapter with two survey trends the five-year-estimate note appears once, under the first chart drawn, and the later chart links to that chart ("apply here too"); the note about a chart's own margin bars stays under each chart that draws them. In "Where the money goes" a note two or more levels carry appears once under the levels. A basis line is not drawn in the link colour | A shared note printed under every chart or every level, a later chart with neither the note nor the link, a link to a chart that shows no note, or a basis line in the link colour |
 | WEB-182 | P2 | Browser / `web-browser` | A place page on a phone has no text under 12 px and no control under 24 px | At 390 px a county page, with the site header, has no element outside a chart whose own text is drawn under 12 px (the wordmark's badge excepted), no visible link, button, toggle, input or select under 24 px in either dimension, and no sideways scroll | Text under 12 px in the header or on a place page, a link or toggle a finger cannot hit at 24 px, or padding that makes the page scroll sideways |
+| WEB-183 | P2 | Browser / `web-browser` | The compare workspace fits a phone, and the sources page writes dates in words | At 390 px the compare workspace with a loaded pair does not scroll sideways and its rule table scrolls inside its own frame. The sources page's refresh list writes each date as month, day and year in words and never as digits and slashes | A compare page wider than the phone screen, a rule table that pushes the page sideways, or a date such as "11/6/2026" on the sources page |
 
 ### Deployment Tests
 

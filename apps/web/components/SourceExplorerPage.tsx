@@ -2288,7 +2288,7 @@ export default function SourceExplorerPage({ sourceKey = "census" }: { sourceKey
         <div>
           <div className="section-kicker">Analytical workbench</div>
           <h1>{activeSource ? activeSource.title : "Source"} Explorer</h1>
-          <p>Build a source-visible geography view, inspect observations, and validate data availability for this MVP.</p>
+          <p>Choose a source and a measure, then read it on a map, a chart and a table, with the source named beside every value.</p>
         </div>
         <div className="command-row"><button className="button secondary" type="button" onClick={exportCsv} disabled={!viewModes.export.supported} title={viewModes.export.reason} data-testid="export-csv"><Download size={15} /> Export CSV</button><button className="button primary" type="button" onClick={handleSaveChart} disabled={!selectedMetric || saving} data-testid="save-view" data-destination={saveDestination(accountToken)} title={saveDestination(accountToken) === "account" ? "Saves to your account" : "Saves in this browser only; sign in on Saved analyses to keep it"}><Save size={15} /> {saveDestination(accountToken) === "account" ? "Save to account" : "Save in browser"}</button></div>
       </header>

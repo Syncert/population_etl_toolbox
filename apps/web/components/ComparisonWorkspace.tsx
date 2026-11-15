@@ -915,6 +915,7 @@ export default function ComparisonWorkspace() {
                 semantics. A rule it could not verify is stated as a caveat, not treated as a
                 pass; only a failed rule blocks the pair.
               </p>
+              <div className="table-wrap">
               <table data-testid="rule-table">
                 <thead>
                   <tr>
@@ -940,6 +941,7 @@ export default function ComparisonWorkspace() {
                   ) : null}
                 </tbody>
               </table>
+              </div>
 
               {model.caveats.length > 0 ? (
                 <ul className="coverage-note partial" data-testid="verdict-caveats">
