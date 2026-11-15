@@ -84,7 +84,11 @@ export function moneyText(value: number | null): string {
 
 export function shareText(share: string | null): string {
   if (share === null || share === undefined) return "not published";
-  return `${Number(share).toFixed(1)}%`;
+  const value = Number(share);
+  // A positive share that rounds to "0.0%" beside a dollar amount reads as
+  // nothing; say what the rounding hides.
+  if (value > 0 && value < 0.05) return "under 0.1%";
+  return `${value.toFixed(1)}%`;
 }
 
 export interface ShareBar {

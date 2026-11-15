@@ -23,20 +23,49 @@ import type { TrendFrequency } from "../lib/trendLabels";
 import { formatNumber } from "../lib/format";
 
 const WIDTH = 640;
-const HEIGHT = 220;
+const HEIGHT = 300;
 const PAD_LEFT = 52;
-/** About one 11px digit's width: the value labels set the left margin. */
-const TICK_CHAR_WIDTH = 6.6;
+/**
+ * About one digit's width at the largest size the axis text is drawn: on a
+ * phone the stylesheet enlarges it, so the drawing scaled to a 340 px screen
+ * still reads at about 10 px. The value labels set the left margin.
+ */
+const TICK_CHAR_WIDTH = 13;
 const PAD_RIGHT = 16;
 /** Room above the plot for the y-axis label. */
-const PAD_TOP = 30;
-const PAD_BOTTOM = 34;
+const PAD_TOP = 44;
+const PAD_BOTTOM = 38;
 
 const STROKES = ["#0b6b57", "#8c3b17", "#2b4c8c"] as const;
 const DASHES = ["", "6 4", "2 3"] as const;
 
 function format(value: number): string {
   return formatNumber(value, { maximumFractionDigits: 2 });
+}
+
+/**
+ * Round reference values inside the drawn range (website UX review D1): a
+ * reader holds "100, 150, 200", not the data's own "99.66, 150.1, 200.53".
+ * The lines are still drawn to the published values; only the gridlines move.
+ */
+export function roundTicks(min: number, max: number): number[] {
+  const span = max - min;
+  if (!(span > 0)) return [min];
+  const magnitude = 10 ** Math.floor(Math.log10(span / 2));
+  for (const factor of [5, 2, 1, 0.5, 0.2]) {
+    const step = factor * magnitude;
+    const first = Math.ceil(min / step - 1e-9) * step;
+    const ticks: number[] = [];
+    for (let value = first; value <= max + step * 1e-9; value += step) ticks.push(Number(value.toPrecision(12)));
+    if (ticks.length >= 2 && ticks.length <= 4) return ticks;
+    if (ticks.length > 4) return ticks.filter((_, index) => index % 2 === 0);
+  }
+  return [min, max];
+}
+
+/** An axis value, short: "340M", "150", "4.5". The table below has every digit. */
+function axisText(value: number): string {
+  return formatNumber(value, { notation: "compact", maximumFractionDigits: 2 });
 }
 
 /** An axis label: a year, or a five-year span's first and last year. */
@@ -140,7 +169,8 @@ export default function PlaceTrend({
   const maxValue = Math.max(...values);
   // A label like "341,784,857" is wider than the default margin: widen the
   // margin to fit it, so no value is cut off at the chart's edge.
-  const padLeft = Math.max(PAD_LEFT, Math.ceil(Math.max(format(maxValue).length, format(minValue).length) * TICK_CHAR_WIDTH) + 10);
+  const ticks = roundTicks(minValue, maxValue);
+  const padLeft = Math.max(PAD_LEFT, Math.ceil(Math.max(...ticks.map((value) => axisText(value).length)) * TICK_CHAR_WIDTH) + 10);
   const x = (time: number) =>
     padLeft + ((time - minTime) / timeSpan) * (WIDTH - padLeft - PAD_RIGHT);
   const y = (value: number) =>
@@ -173,8 +203,6 @@ export default function PlaceTrend({
     model.scale === "index" ? `index, ${basePeriod} = 100` : unit,
     frequency ? `${frequency}, ${span}` : span,
   ].filter(Boolean);
-  // A middle gridline, so a reader can place a line between the extremes.
-  const midValue = (minValue + maxValue) / 2;
   const midPeriod = periods.length > 2 ? periods[Math.floor(periods.length / 2)] : undefined;
   const titleId = `${testId}-title`;
 
@@ -214,13 +242,14 @@ export default function PlaceTrend({
         role="img"
         aria-label={`${title}, ${yAxisLabel.toLowerCase()}, ${span}: ${drawn.length} line${drawn.length === 1 ? "" : "s"}, ${drawn.map((line) => line.place.name).join(", ")}`}
       >
-        <text x={4} y={12} className="place-trend-axis-label" data-testid={`${testId}-y-label`}>{yAxisLabel}</text>
-        <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={y(maxValue)} y2={y(maxValue)} className="place-trend-grid" />
-        <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={y(midValue)} y2={y(midValue)} className="place-trend-grid" />
+        <text x={4} y={18} className="place-trend-axis-label" data-testid={`${testId}-y-label`}>{yAxisLabel}</text>
+        {ticks.map((value) => (
+          <line key={value} x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={y(value)} y2={y(value)} className="place-trend-grid" />
+        ))}
         <line x1={padLeft} x2={WIDTH - PAD_RIGHT} y1={HEIGHT - PAD_BOTTOM} y2={HEIGHT - PAD_BOTTOM} className="place-trend-axis" />
-        <text x={padLeft - 6} y={y(maxValue) + 4} textAnchor="end" className="place-trend-tick">{format(maxValue)}</text>
-        <text x={padLeft - 6} y={y(midValue) + 4} textAnchor="end" className="place-trend-tick">{format(midValue)}</text>
-        <text x={padLeft - 6} y={y(minValue) + 4} textAnchor="end" className="place-trend-tick">{format(minValue)}</text>
+        {ticks.map((value) => (
+          <text key={value} x={padLeft - 6} y={y(value)} dominantBaseline="middle" textAnchor="end" className="place-trend-tick" data-y-tick={value}>{axisText(value)}</text>
+        ))}
         <text x={padLeft} y={HEIGHT - 10} className="place-trend-tick">{tick(periods[0])}</text>
         {midPeriod && tick(midPeriod) !== tick(periods[0]) && tick(midPeriod) !== tick(periods.at(-1)) ? (
           <text x={x(periodTimes.get(midPeriod)!)} y={HEIGHT - 10} textAnchor="middle" className="place-trend-tick">{tick(midPeriod)}</text>
@@ -247,6 +276,7 @@ export default function PlaceTrend({
             stroke={STROKES[index % STROKES.length]}
             strokeDasharray={DASHES[index % DASHES.length] || undefined}
             strokeWidth={index === 0 ? 2.5 : 1.5}
+            vectorEffect="non-scaling-stroke"
             points={line.points.map((point) => `${x(point.time)},${y(point.value)}`).join(" ")}
           />
         ))}
