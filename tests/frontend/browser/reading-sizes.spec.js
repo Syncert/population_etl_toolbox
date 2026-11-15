@@ -66,3 +66,31 @@ test("text inside a county page's charts is drawn at 10 px or more on a phone", 
   expect(small).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+// Covers: WEB-184 — the same floor on a wide screen, where a card draws the
+// trend drawing at about three quarters size.
+test("text inside a county page's charts is drawn at 10 px or more on a wide screen", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installPlaceFixtures(page);
+  await installAgeFixtures(page, { seen: [] });
+  await page.goto("/us/wisconsin/dane-county");
+  await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
+  await expect(page.getByTestId("public-money-tax-rate-lines-this-place").locator("text")).toHaveText("Dane County 13.4%");
+
+  const small = await page.evaluate(() => {
+    const found = [];
+    for (const svg of document.querySelectorAll(".place-page svg[viewBox]")) {
+      const box = svg.getBoundingClientRect();
+      const width = svg.viewBox.baseVal.width;
+      if (!box.width || !width) continue;
+      for (const text of svg.querySelectorAll("text")) {
+        if (!text.textContent.trim()) continue;
+        const drawn = parseFloat(getComputedStyle(text).fontSize) * (box.width / width);
+        if (drawn < 9.8) found.push(`${String(svg.closest("[data-testid]")?.dataset.testid)} "${text.textContent.trim().slice(0, 20)}" ${drawn.toFixed(1)}`);
+      }
+    }
+    return found;
+  });
+  expect(small).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
