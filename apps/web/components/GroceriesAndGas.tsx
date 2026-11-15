@@ -348,7 +348,7 @@ export default function GroceriesAndGas({
   const wage = view === "minutes" && firstWage ? wageText(firstWage, String(place.geo_name || "This place")) : "";
 
   return (
-    <section className="analysis-panel place-cost" aria-labelledby="place-cost-heading" data-testid="place-groceries-gas">
+    <section className="analysis-panel place-cost" id="cost-of-living" aria-labelledby="place-cost-heading" data-testid="place-groceries-gas">
       <h2 id="place-cost-heading">Cost of living</h2>
       {level !== "NATIONAL" ? <p className="subtle" data-testid="place-cost-no-local">{level === "METRO" ? NO_METRO_PRICES : NO_LOCAL_PRICES}</p> : null}
 

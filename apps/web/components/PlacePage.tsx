@@ -115,6 +115,7 @@ function levelNames(levels: LevelPlace[]): Record<string, string> {
   return Object.fromEntries(levels.map((level) => [level.geoId, level.name]));
 }
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
+const PlaceFinder = dynamic(() => import("./PlaceFinder"));
 const PlaceDepth = dynamic(() => import("./PlaceDepth"));
 const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
@@ -888,6 +889,7 @@ export default function PlacePage({
           {level === "NATIONAL" ? " its own history" : level === "STATE" ? " the nation's" : level === "PLACE" ? " its county's, its state's and the nation's" : level === "METRO" ? " its principal state's and the nation's" : " its state's and the nation's"},
           {" "}with its period and source. Nothing here is a score or a ranking.
         </p>
+        {level === "NATIONAL" ? <PlaceFinder /> : null}
       </header>
 
       <p className={`place-load${loadLine.bad ? " bad" : ""}`} role="status" data-testid="place-load">{loadLine.text}</p>
@@ -906,6 +908,7 @@ export default function PlacePage({
           <ol>
             {visible.map((resolved) => <li key={resolved.chapter.id}><a href={`#${resolved.chapter.id}`}>{resolved.chapter.title}</a></li>)}
             {settled.current ? <li><a href="#record">What the record shows</a></li> : null}
+            {place && related?.geo_id === place.geo_id ? <li><a href="#cost-of-living">Cost of living</a></li> : null}
             <li><a href="#family">Starting a family</a></li>
             <li><a href="#climate">Climate averages</a></li>
           </ol>

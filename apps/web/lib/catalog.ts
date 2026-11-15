@@ -65,7 +65,8 @@ export function connectedSourcesBand(
     return { names: [], message: "No source has published a catalog entry yet." };
   }
   return {
-    names: items.map((item) => item.source_name || item.source_code),
+    // Three NOAA programs publish under one agency name; a name is listed once.
+    names: [...new Set(items.map((item) => item.source_name || item.source_code))],
     message: "",
   };
 }
