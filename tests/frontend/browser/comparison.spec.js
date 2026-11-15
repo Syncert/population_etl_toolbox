@@ -840,3 +840,16 @@ test("a comparison that paired everything says nothing extra", async ({ page }) 
   await expect(page.getByTestId("comparison-table-panel")).toBeVisible();
   await expect(page.getByTestId("comparison-coverage-note")).toHaveCount(0);
 });
+
+// Covers: WEB-183 — the compare workspace fits a phone: long measure names
+// in its selects and its rule table no longer push the page sideways
+// (website UX review 2026-11, F4).
+test("the compare workspace does not scroll sideways on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installRoutes(page);
+  await page.goto(PAIR);
+  await expect(page.getByTestId("rule-table")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // The rule table scrolls inside its own frame.
+  expect(await page.getByTestId("rule-table").evaluate((table) => getComputedStyle(table.parentElement).overflowX)).toBe("auto");
+});

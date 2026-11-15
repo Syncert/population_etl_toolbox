@@ -101,7 +101,7 @@ main.dashboard {
 .grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .card {
@@ -521,7 +521,7 @@ th {
   }
 
   .selector-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .span-controls {

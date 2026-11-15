@@ -46,12 +46,13 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**17 plans.**
+**18 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
 | [`acs-family-tables`](to_do/ACS_FAMILY_TABLES_PLAN.md) | medium | `browser` | `starting-a-family-collection` |
 | [`childcare-national-trend`](to_do/CHILDCARE_NATIONAL_PRICE_TREND_PLAN.md) | low | `browser` | `county-childcare-prices` |
+| [`compare-and-sources-pages-for-a-reader`](to_do/COMPARE_AND_SOURCES_PAGES_FOR_A_READER_PLAN.md) | low | `browser` | `place-page-reading-and-touch-sizes` |
 | [`everyday-prices-people-recognise`](to_do/EVERYDAY_PRICES_PEOPLE_RECOGNISE_PLAN.md) | medium | `browser` | `groceries-and-gas-cards` |
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`outbreak-model-inputs`](to_do/OUTBREAK_MODEL_INPUTS_PLAN.md) | low | none | `group-quarters-by-type`, `nursing-home-locations`, `lodes-block-grain-for-dane`, `block-population-and-age-for-dane`, `college-housing-capacity`, `hospital-capacity-and-locations`, `places-tract-release`, `outbreak-calibration-sets`, `air-travel-and-mobility` |

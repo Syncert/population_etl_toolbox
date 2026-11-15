@@ -162,6 +162,9 @@ test("the public data page reports every source, and a missing one as not report
   const bls = page.getByTestId("source-card-BLS");
   await expect(bls).toHaveAttribute("data-reported", "true");
   await expect(bls).toContainText("counties, states");
+  // Covers: WEB-183 — dates in words, never "11/6/2026".
+  await expect(page.getByTestId("refresh-timeline")).not.toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
+  await expect(page.getByTestId("refresh-timeline").locator("li strong").first()).toHaveText(/^[A-Z][a-z]+ \d{1,2}, \d{4}$/);
   const nass = page.getByTestId("source-card-USDA_NASS");
   await expect(nass).toHaveAttribute("data-reported", "false");
   await expect(nass.locator("dd").first()).toHaveText("not reported");
