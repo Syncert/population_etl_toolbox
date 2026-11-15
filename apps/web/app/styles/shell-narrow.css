@@ -154,3 +154,8 @@
   min-height: 24px;
   padding-block: 2px;
 }
+
+/* A bare select takes its height from the system font: 21 px on some. */
+.place-page select {
+  min-height: 32px;
+}
