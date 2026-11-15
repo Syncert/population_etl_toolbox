@@ -14,7 +14,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
-import StatusPill from "./StatusPill";
+import StatusPill, { pillClass } from "./StatusPill";
 import {
   ApiError,
   apiErrorMessage,
@@ -84,8 +84,8 @@ import type {
 import { COMPARE_GEO_ID, compareHref } from "../lib/placeComparison";
 import { crossCountyNote, groupNearby, isEmpty, partOfShareText, relatedPath, shareText } from "../lib/placeRelationships";
 import type { NearbyEntry, NearbyGroups, RelatedResponse } from "../lib/placeRelationships";
-import { rankSentence, standoutName, standouts } from "../lib/distinctive";
-import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
+import { plainPeriods } from "../lib/plainPeriod";
+import type { DistinctiveResponse } from "../lib/distinctive";
 import { explorerHref } from "../lib/urlState";
 import { agencyRateFor, getDerivedObservations, getDerivedRatios, pairingFor, providerRateFor, viewChoices } from "../lib/derivedViews";
 import type { DerivedRatioObservation, DerivedRatioPairing, ViewChoice } from "../lib/derivedViews";
@@ -107,6 +107,8 @@ import { FAMILY_CODES } from "../lib/familyCodes";
 import { NORMALS_CODES } from "../lib/climateCodes";
 
 const PlaceTrend = dynamic(() => import("./PlaceTrend"));
+// What stands out (UX review): its own chunk, so the page carries only the import.
+const WhatStandsOut = dynamic(() => import("./PlaceStandout"));
 /** The grains `/public-money` answers (taxes-and-public-money T-6). */
 const PUBLIC_MONEY_LEVELS: ReadonlySet<PlaceLevel> = new Set<PlaceLevel>(["NATIONAL", "STATE", "COUNTY"]);
 function levelNames(levels: LevelPlace[]): Record<string, string> {
@@ -171,6 +173,18 @@ async function inPool(tasks: (() => Promise<void>)[], limit: number): Promise<vo
 
 
 const answerKey = (metricCode: string, geoId: string) => `${metricCode}|${geoId}`;
+
+/**
+ * What a reader is told about the page's reads (UX review A1): that figures
+ * are still arriving, or that some could not be read; nothing once every
+ * read has answered. The catalog and series counts stay in the page for
+ * diagnosis, hidden.
+ */
+function placeLoadLine(catalog: { state: string; message: string }, observations: { state: string; message: string }): { text: string; bad: boolean } {
+  const failed = [catalog, observations].find((status) => pillClass(status.state) === "pill bad");
+  if (failed) return { text: `Some figures could not be read (${failed.message}). The rest are shown.`, bad: true };
+  return { text: catalog.state === "loading" || /^(idle|loading)$/.test(observations.state) ? "Loading the published figures…" : "", bad: false };
+}
 
 /** One place's value under one pairing, as `/observations/derived` answered it. */
 interface DerivedAnswer {
@@ -844,6 +858,8 @@ export default function PlacePage({
     ...emptied.map((resolved) => `${resolved.chapter.title}: no published values for this place`),
   ].sort((left, right) => chapterOrder(left) - chapterOrder(right));
 
+  const loadLine = placeLoadLine(catalogStatus, observationStatus);
+
   return (
     <main
       className="page-shell place-page"
@@ -868,13 +884,14 @@ export default function PlacePage({
           </ol>
         </nav>
         <p>
-          The same chapters in the same order on every place page. Each headline number is shown beside
+          Published figures, each beside
           {level === "NATIONAL" ? " its own history" : level === "STATE" ? " the nation's" : level === "PLACE" ? " its county's, its state's and the nation's" : level === "METRO" ? " its principal state's and the nation's" : " its state's and the nation's"},
-          {" "}with its period, source, and caveats. Nothing here is a score or a ranking.
+          {" "}with its period and source. Nothing here is a score or a ranking.
         </p>
       </header>
 
-      <section className="status-row" role="status">
+      <p className={`place-load${loadLine.bad ? " bad" : ""}`} role="status" data-testid="place-load">{loadLine.text}</p>
+      <section className="place-diagnostics" hidden data-testid="place-diagnostics">
         <StatusPill state={resolution.state === "found" ? "ok" : "loading"} label="Place" message={resolution.state === "found" ? place?.geo_id || "" : "resolving the address"} testId="place-status" />
         <StatusPill state={catalogStatus.state} label="Measures" message={catalogStatus.message} testId="place-catalog-status" />
         <StatusPill state={observationStatus.state} label="Observations" message={observationStatus.message} testId="place-observation-status" />
@@ -1223,6 +1240,13 @@ function Chapter({
     return model ? [{ measure, model }] : [];
   });
   const sourcesShown = [...new Set([...resolved.headline, ...resolved.depth].map((measure) => measure.metric?.source_code).filter(Boolean))];
+  // Each source by the name its capability publishes; the code only when it publishes none.
+  const sourceNames = new Map(
+    [...resolved.headline, ...resolved.depth].flatMap((measure): [string, string][] => {
+      const title = sourceFor(measure.metric)?.title;
+      return measure.metric?.source_code && title ? [[String(measure.metric.source_code), title]] : [];
+    }),
+  );
   const periods = [...new Set(
     [...resolved.headline, ...resolved.depth]
       .map((measure) => (own ? answers.get(answerKey(measure.metricCode, own.geoId))?.row : null))
@@ -1366,8 +1390,13 @@ function Chapter({
       ) : null}
       <footer className="place-chapter-footer" data-testid={`chapter-${chapter.id}-footer`}>
         <p>
-          <strong>Period:</strong> {periods.length ? periods.join("; ") : "none published for this place"} ·{" "}
-          <strong>Source:</strong> {sourcesShown.join(", ") || "not published"}
+          <strong>{periods.length > 1 ? "Periods" : "Period"}:</strong> {periods.length ? periods.map(plainPeriods).join("; ") : "none published for this place"} ·{" "}
+          <strong>{sourcesShown.length > 1 ? "Sources" : "Source"}:</strong>{" "}
+          {sourcesShown.length
+            ? sourcesShown.map((code, index) => (
+                <span key={code} data-source-code={code}>{index ? "; " : ""}{sourceNames.get(String(code)) || code}</span>
+              ))
+            : "not published"}
         </p>
         <p>{chapter.caveat}</p>
         {primary?.metric && publishesAt(primary, "COUNTY") ? (
@@ -1523,19 +1552,22 @@ function HeadlineCard({
       )
     : null;
   const unit = card.rows.find((entry) => entry.row)?.row || memberRows?.rows.find((entry) => entry.row)?.row;
+  // The catalog's name under a heading that already says it is the same words twice.
+  const sameName = displayMetricName(measure.metric).trim().toLowerCase() === measure.measure.label.trim().toLowerCase();
+  const details = [plainPeriods(card.period), unit ? publishedUnit(unit, measure.measure.unit) || "unit not published" : ""].filter(Boolean);
   return (
     <div className="place-card" id={anchor} data-testid={`card-${measure.measure.id}`} data-available="true" data-period={card.period}>
       <h3>{measure.measure.label}</h3>
       <p className="subtle">
-        <span title={measure.metricCode} data-metric-code={measure.metricCode}>
+        <span title={measure.metricCode} data-metric-code={measure.metricCode} className={sameName ? "sr-only" : undefined}>
           {displayMetricName(measure.metric)}
         </span>
-        {card.period ? ` · ${card.period}` : ""}
-        {unit ? ` · ${publishedUnit(unit, measure.measure.unit) || "unit not published"}` : ""}
+        {!sameName && details.length ? " · " : ""}
+        {details.join(" · ")}
       </p>
       {pairing ? null : <PlaceLevelStrip measureId={measure.measure.id} rows={card.rows} />}
       <table className="place-card-table">
-        <caption className="sr-only">{measure.measure.label}{card.period ? `, ${card.period}` : ""}</caption>
+        <caption className="sr-only">{measure.measure.label}{card.period ? `, ${plainPeriods(card.period)}` : ""}</caption>
         <tbody>
           {stateContext && pageLevel === "COUNTY" ? (
             <tr data-testid={`card-${measure.measure.id}-county`}>
@@ -1572,7 +1604,7 @@ function HeadlineCard({
                         ? memberGapText(memberRows, unit, measure.measure.unit)
                         : !publishesAt(measure, entry.place.level) && measure.measure.gaps?.[entry.place.level]
                           ? measure.measure.gaps[entry.place.level]
-                          : entry.message}
+                          : plainPeriods(entry.message)}
                   </td>
                   <td className="subtle">
                     {entry.row && !entry.message ? uncertaintyText(entry.row) : ""}
@@ -1634,54 +1666,6 @@ function uncertaintyText(row: ObservationRow): string {
   const margin = marginOfErrorText(row);
   const beyond = observationUncertaintyLabel(row, OBSERVATION_UNCERTAINTY_BEYOND_MARGIN);
   return [margin !== "Not provided" ? `margin of error ${margin}` : "", beyond].filter(Boolean).join(" · ");
-}
-
-function StandoutRow({ measure, siblingsName }: { measure: DistinctiveMeasure; siblingsName: string }) {
-  // The unit sits under the number and wraps there: "per 1,000 people" ran
-  // past the panel edge when it shared the number's unbroken line.
-  const unit = measure.units && measure.units !== "value" ? unitText(measure.units) : "";
-  const value = formatObservationValue(measure.value);
-  return (
-    <li data-testid={`standout-${measure.metric_code}`}>
-      <Link className="text-link" href={`/map/${encodeURIComponent(measure.metric_code)}`} title={`See every county on a map · ${measure.metric_code}`}>{standoutName(measure)}</Link>
-      <span className="standout-track" aria-hidden="true"><i style={{ left: `${Math.min(100, Math.max(0, measure.percentile_rank * 100))}%` }} /></span>
-      <span className="standout-value" title={unit ? `${value} ${unit}` : value}><b>{value}</b>{unit ? <small> {unit}</small> : null}</span>
-      <p className="subtle">{rankSentence(measure, siblingsName)}{measure.period_start ? `, period beginning ${measure.period_start}` : ""}.</p>
-    </li>
-  );
-}
-
-function WhatStandsOut({ response, siblingsName }: { response: DistinctiveResponse; siblingsName: string }) {
-  const { highest, lowest, rankedCount } = standouts(response);
-  const caveats = [...new Set([...highest, ...lowest].flatMap((measure) => measure.caveats))];
-  return (
-    <section className="analysis-panel place-standout" aria-labelledby="standout-heading" data-testid="place-standout">
-      <h2 id="standout-heading">What stands out</h2>
-      <p className="subtle" data-testid="place-standout-count">
-        {rankedCount} measure{rankedCount === 1 ? "" : "s"} could be ranked among {siblingsName}, each on its own. The dot
-        shows where this place falls from lowest to highest, not how far apart the values are; nothing here adds
-        measures together, and places whose margins of error overlap may not truly differ. Each name opens its map.
-      </p>
-      <div className="place-standout-groups">
-        <div>
-          <h3>Among the highest</h3>
-          <ul data-testid="place-standout-highest">{highest.map((measure) => <StandoutRow key={measure.metric_code} measure={measure} siblingsName={siblingsName} />)}</ul>
-        </div>
-        {lowest.length ? (
-          <div>
-            <h3>Among the lowest</h3>
-            <ul data-testid="place-standout-lowest">{lowest.map((measure) => <StandoutRow key={measure.metric_code} measure={measure} siblingsName={siblingsName} />)}</ul>
-          </div>
-        ) : null}
-      </div>
-      {caveats.length ? (
-        <details className="subtle" data-testid="place-standout-caveats">
-          <summary>Notes from the sources</summary>
-          {caveats.map((caveat) => <p key={caveat}>{caveat}</p>)}
-        </details>
-      ) : null}
-    </section>
-  );
 }
 
 /**

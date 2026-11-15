@@ -55,8 +55,13 @@ export function standouts(response: DistinctiveResponse | null): {
  * "Higher than 4 of 10 Wisconsin counties with a published value", with the
  * siblings that withheld or published nothing named after it, never folded in.
  */
-export function rankSentence(measure: DistinctiveMeasure, siblingsName: string): string {
-  const base = `Higher than ${measure.siblings_below} of ${measure.siblings_with_value} ${siblingsName} with a published value`;
+export function rankSentence(measure: DistinctiveMeasure, siblingsName: string, low = false): string {
+  // Among the lowest, the count that says so is the places above this one:
+  // every sibling with a value that is neither below it nor equal to it.
+  const above = measure.siblings_with_value - measure.siblings_below - (measure.siblings_tied || 0);
+  const base = low && above >= 0
+    ? `Lower than ${above} of ${measure.siblings_with_value} ${siblingsName} with a published value`
+    : `Higher than ${measure.siblings_below} of ${measure.siblings_with_value} ${siblingsName} with a published value`;
   const tied = measure.siblings_tied ? `, equal to ${measure.siblings_tied}` : "";
   const gaps = [
     measure.siblings_withheld ? `${measure.siblings_withheld} withheld a value` : "",

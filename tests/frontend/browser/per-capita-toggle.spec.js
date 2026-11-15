@@ -95,7 +95,7 @@ test("a share names its denominator for the county, its state and the nation", a
     await expect(line).toContainText(`${name}:`);
     await expect(line).toContainText(value);
     await expect(line).toContainText("of total population (survey)");
-    await expect(line).toContainText("2019-01-01 – 2023-12-31");
+    await expect(line).toContainText("2019–2023");
     await expect(line).toContainText("margin of error ±0.8 (Census Bureau formula for a derived proportion)");
     await expect(line.locator("[data-pairing-status='draft']")).toHaveCount(0);
   }

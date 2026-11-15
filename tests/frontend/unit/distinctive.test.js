@@ -23,6 +23,10 @@ describe("what stands out", () => {
     expect(rankSentence(measure("a", 0.4, { siblings_below: 4, siblings_withheld: 1, siblings_missing: 2, siblings_tied: 1 }), "Wisconsin counties"))
       .toBe("Higher than 4 of 10 Wisconsin counties with a published value, equal to 1 (1 withheld a value; 2 published none)");
     expect(rankSentence(measure("a", 0.4, { siblings_below: 4 }), "states")).toBe("Higher than 4 of 10 states with a published value");
+    // Covers: WEB-177 — among the lowest, the sentence counts the places above.
+    expect(rankSentence(measure("a", 0.1, { siblings_below: 1 }), "states", true)).toBe("Lower than 9 of 10 states with a published value");
+    expect(rankSentence(measure("a", 0.1, { siblings_below: 1, siblings_tied: 2 }), "states", true))
+      .toBe("Lower than 7 of 10 states with a published value, equal to 2");
   });
 
   it("never shows a bare variable code as a measure's name", () => {

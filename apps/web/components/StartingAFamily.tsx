@@ -10,6 +10,7 @@
 // chapter already read (median home value, a parent's child poverty rate) is
 // reused rather than asked for twice, and its reads queue behind the page's.
 
+import { plainPeriods } from "../lib/plainPeriod";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import type { MetricSummary } from "../lib/api/types";
@@ -408,7 +409,7 @@ function FamilyLine({
           <>
             <strong data-testid={`${testId}-value`}>{value}</strong>
             {notOwn ? <span className="subtle"> · {lead!.name} figure</span> : null}
-            {card.period ? <span className="subtle"> · {card.period}</span> : null}
+            {card.period ? <span className="subtle"> · {plainPeriods(card.period)}</span> : null}
           </>
         ) : !lead ? (
           <span className="subtle" data-testid={`${testId}-gap`}>{row.gap || `Not published at ${GRAIN[pageLevel]} grain`}</span>
