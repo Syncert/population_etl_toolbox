@@ -11,6 +11,8 @@ import { useEffect, useState } from "react";
 export function useNarrowScreen(): boolean {
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
+    // A browser without media queries keeps the wide layout.
+    if (typeof window.matchMedia !== "function") return undefined;
     const query = window.matchMedia("(max-width: 640px)");
     const update = () => setNarrow(query.matches);
     update();
