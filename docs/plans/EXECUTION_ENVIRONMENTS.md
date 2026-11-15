@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**16 plans.**
+**17 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -59,6 +59,7 @@ grep was looking for.
 | [`place-page-money-and-percent`](to_do/PLACE_PAGE_MONEY_AND_PERCENT_PLAN.md) | low | `browser` | `place-page-plain-words` |
 | [`place-page-notes-said-once`](to_do/PLACE_PAGE_NOTES_SAID_ONCE_PLAN.md) | low | `browser` | `trend-charts-a-phone-can-read` |
 | [`place-page-plain-words`](to_do/PLACE_PAGE_PLAIN_WORDS_PLAN.md) | low | `browser` | -- |
+| [`place-page-reading-and-touch-sizes`](to_do/PLACE_PAGE_READING_AND_TOUCH_SIZES_PLAN.md) | low | `browser` | `place-page-notes-said-once` |
 | [`site-shell-and-home-for-residents`](to_do/SITE_SHELL_AND_HOME_FOR_RESIDENTS_PLAN.md) | low | `browser` | `place-page-plain-words` |
 | [`starting-a-family-collection`](to_do/STARTING_A_FAMILY_COLLECTION_PLAN.md) | medium | `browser` | `county-childcare-prices` |
 | [`trend-charts-a-phone-can-read`](to_do/TREND_CHARTS_A_PHONE_CAN_READ_PLAN.md) | low | `browser` | `place-page-money-and-percent` |
