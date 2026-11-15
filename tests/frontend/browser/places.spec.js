@@ -53,6 +53,7 @@ test("a state page says which headline measures publish no state grain", async (
 });
 
 test("a county page draws three levels, labels state context, and states its gaps", async ({ page }) => {
+  // Covers: WEB-177 — periods and sources in words, one status line while loading.
   await page.setViewportSize({ width: 1440, height: 1100 });
   await ready(page, "/us/wisconsin/dane-county");
   await expect(page.locator("main")).toHaveCount(1);
@@ -61,8 +62,11 @@ test("a county page draws three levels, labels state context, and states its gap
   const card = page.getByTestId("card-population-estimate");
   await expect(card.locator("tbody tr")).toHaveCount(3);
   await expect(card).toHaveAttribute("data-period", "2024-01-01 – 2024-12-31");
+  // The reader sees the year; the attribute keeps the published dates.
+  await expect(card.locator("p.subtle").first()).toContainText("2024");
+  await expect(card.locator("p.subtle").first()).not.toContainText("2024-01-01");
   // The nation's newest median age is a different year: said, not shown.
-  await expect(page.getByTestId("card-median-age-national")).toContainText("Not published for 2024-01-01 – 2024-12-31 (newest published: 2023-01-01 – 2023-12-31)");
+  await expect(page.getByTestId("card-median-age-national")).toContainText("Not published for 2024 (newest published: 2023)");
   await expect(page.getByTestId("card-median-age-county")).toContainText("margin of error");
 
   const safety = page.getByTestId("chapter-safety");
@@ -80,7 +84,13 @@ test("a county page draws three levels, labels state context, and states its gap
   await expect(page.getByTestId("depth-living-alone")).toContainText("Universe: households");
   await expect(page.getByTestId("chapter-people-map")).toHaveAttribute("href", "/map/CENSUS_PEP%3APOPESTIMATE");
   await expect(page.getByTestId("chapter-safety-map")).toHaveCount(0);
-  await expect(page.getByTestId("chapter-people-footer")).toContainText("Source: CENSUS_PEP, CENSUS_ACS");
+  // Sources by the name the capability publishes (the fixture's is its code), periods in words (WEB-177).
+  await expect(page.getByTestId("chapter-people-footer")).toContainText("Sources: CENSUS_PEP; CENSUS_ACS");
+  await expect(page.getByTestId("chapter-people-footer")).not.toContainText(/\d{4}-\d{2}-\d{2}/);
+  // A settled page shows no status line; the read counts stay in the page, hidden.
+  await expect(page.getByTestId("place-load")).toBeHidden();
+  await expect(page.getByTestId("place-diagnostics")).toBeHidden();
+  await expect(page.getByTestId("place-observation-status")).toContainText("published series read");
   const explore = page.getByTestId("chapter-people-explore");
   const href = new URL(await explore.getAttribute("href"), "http://localhost");
   expect(href.pathname).toBe("/explore");

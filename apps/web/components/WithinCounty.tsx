@@ -19,6 +19,7 @@
  * boundaries, says so. Nothing here joins a value across the redraw.
  */
 
+import { plainPeriods } from "../lib/plainPeriod";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -90,7 +91,7 @@ export function releaseOptions(releases: readonly MetricRelease[], periods: read
     .map((release) => {
       const period = byEndYear.get(release);
       const label = period
-        ? `${observationPeriodLabel({ period_start: period.period_start, period_end: period.period_end })} (${release} release)`
+        ? `${plainPeriods(observationPeriodLabel({ period_start: period.period_start, period_end: period.period_end }))} (${release} release)`
         : `${release} release`;
       return { release, label };
     });
@@ -322,7 +323,7 @@ export default function WithinCounty({ county }: { county: GeographySummary }) {
   const redrawn = retired.length > 0;
   const absent = redrawn ? current.filter((tract) => !byTract.has(String(tract.geo_id))).length : 0;
   const coloured = current.filter((tract) => hasValue(byTract.get(String(tract.geo_id)))).length;
-  const periodLabel = load.state === "ready" ? observationPeriodLabel(load.rows[0]) : "";
+  const periodLabel = load.state === "ready" ? plainPeriods(observationPeriodLabel(load.rows[0])) : "";
   // The uncoloured count is over the tracts that existed for the release: a
   // tract that did not exist then is absent, not unpublished, and the
   // boundary sentence counts it.

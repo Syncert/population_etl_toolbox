@@ -145,9 +145,11 @@ export default function PlaceTrend({
     padLeft + ((time - minTime) / timeSpan) * (WIDTH - padLeft - PAD_RIGHT);
   const y = (value: number) =>
     HEIGHT - PAD_BOTTOM - ((value - minValue) / valueSpan) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
+  // The base period as the axis writes it ("1971"), not the day it is stored under.
+  const basePeriod = /^\d{4}-\d{2}-\d{2}$/.test(model.basePeriod) ? tick(model.basePeriod) : model.basePeriod;
   const scaleText =
     model.scale === "index"
-      ? `Each line is its own value divided by its value in ${model.basePeriod}, times 100.`
+      ? `Each line is its own value divided by its value in ${basePeriod}, times 100.`
       : `Published values, in ${unit || "the unit each row states"}.`;
   // Every period any line published, in time order (a label like "2020–2024"
   // sorts as text the same way, but time is the rule).
@@ -159,7 +161,7 @@ export default function PlaceTrend({
   const frequency = trendFrequency(model, metricCode);
   const sourceLine = source || trendSourceName(metricCode, sourceCode);
   const yAxisLabel =
-    model.scale === "index" ? `Index (${model.basePeriod} = 100)` : capitalise(unit) || "Value as published";
+    model.scale === "index" ? `Index (${basePeriod} = 100)` : capitalise(unit) || "Value as published";
   const firstPeriod = periods[0] || "";
   const lastPeriod = periods.at(-1) || "";
   const span = firstPeriod === lastPeriod
@@ -168,7 +170,7 @@ export default function PlaceTrend({
   const shownName = metricName && metricName.toLowerCase() !== title.replace(/ over time$/, "").toLowerCase() ? metricName : "";
   const meta = [
     shownName,
-    model.scale === "index" ? `index, ${model.basePeriod} = 100` : unit,
+    model.scale === "index" ? `index, ${basePeriod} = 100` : unit,
     frequency ? `${frequency}, ${span}` : span,
   ].filter(Boolean);
   // A middle gridline, so a reader can place a line between the extremes.

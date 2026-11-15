@@ -23,6 +23,7 @@
 // histories and newest values). The one read of its own is a county's crime
 // rate history, computed from agency reports (ADR-0012), on county pages.
 
+import { plainPeriods } from "./plainPeriod";
 import { formatNumber } from "./format";
 import type { DerivedRatioObservation } from "./derivedViews";
 import { coverageText, unavailableText } from "./derivedViews";
@@ -163,7 +164,7 @@ export function recordPeriodLabel(row: Dated): string {
   if (month && end.slice(0, 7) === start.slice(0, 7)) {
     return `${MONTHS[Number(month[2]) - 1] || month[2]} ${month[1]}`;
   }
-  return label;
+  return plainPeriods(label);
 }
 
 /** Any row with a published period start: an observation or a derived row. */

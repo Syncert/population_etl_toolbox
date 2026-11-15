@@ -5,6 +5,7 @@
 // them; each row keeps its universe, its value and its margin as a share. A
 // row whose source or period differs from the rest says so on the row.
 
+import { plainPeriods } from "../lib/plainPeriod";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue } from "../lib/explorerViewModel";
 import { observationPeriodLabel } from "../lib/observationAccess";
@@ -58,7 +59,7 @@ export default function PlaceDepth({ chapterId, measures, place, levels, answers
     pairing: measure.metric ? pairingFor(pairings, measure.metricCode, view) : null,
   }));
   const shared = depthShared(rows.filter((entry) => !entry.pairing).map((entry) => ({ metricCode: entry.metricCode, row: entry.answer?.row ?? null })));
-  const header = sharedLine(shared);
+  const header = plainPeriods(sharedLine(shared));
   const earnings = measures.filter((measure) => measure.measure.group === "bea-earnings" && measure.metric);
   const mix = measures.filter((measure) => measure.measure.group === "industry-mix" && measure.metric);
   return (
@@ -113,7 +114,7 @@ export default function PlaceDepth({ chapterId, measures, place, levels, answers
                       <>
                         <span className="place-depth-value">{`${formatObservationValue(row!.value)} ${publishedUnit(row!, measure.measure.unit)}`.trim()}</span>
                         {marginShare(row!) ? <span className="subtle"> {marginShare(row!)}</span> : null}
-                        {period !== shared.period ? <span className="subtle" title={observationPeriodLabel(row)}> · {period}</span> : null}
+                        {period !== shared.period ? <span className="subtle" title={observationPeriodLabel(row)}> · {plainPeriods(period)}</span> : null}
                         {care ? <span className="subtle" data-testid={`depth-${measure.measure.id}-care`}> · use with care</span> : null}
                       </>
                     ) : (
@@ -174,7 +175,7 @@ function IndustryBars({
     <div className="place-industry" data-testid={testId}>
       <table className="place-industry-bars">
         <caption>
-          {heading}{period ? `, ${period}` : ""}{unit ? ` (${unit})` : ""}
+          {heading}{period ? `, ${plainPeriods(period)}` : ""}{unit ? ` (${unit})` : ""}
           <span className="place-basis" data-testid={`${testId}-basis`}> · {rows[0]!.measure.basis}</span>
         </caption>
         <tbody>

@@ -1568,3 +1568,20 @@
     display: none;
   }
 }
+
+/* What a reader is told while a place page's figures arrive (UX review A1). */
+.place-load {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.place-load:empty,
+.place-diagnostics {
+  display: none;
+}
+
+.place-load.bad {
+  color: var(--danger);
+  font-weight: 600;
+}

@@ -10,6 +10,7 @@
 // spending is the BLS Consumer Expenditure Survey's (grocery-spending);
 // childcare is the Women's Bureau's, for counties only (county-childcare-prices).
 
+import { plainPeriods } from "../lib/plainPeriod";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import ChildcarePrices from "./ChildcarePrices";
@@ -406,7 +407,7 @@ export default function GroceriesAndGas({
                     <span data-testid={`place-cost-${spec.item}-minutes`}>
                       {!work ? "Reading…" : work === "failed" ? "Not computed for this place." : <strong>{minutesText(work)}</strong>}
                       <span className="subtle block">
-                        for {divided!.text}, {divided!.period}
+                        for {divided!.text}, {plainPeriods(divided!.period)}
                         {dividedOther ? ` · ${areaLabel(divided!.reading!.area, place.geo_id)}` : ""}
                       </span>
                     </span>
@@ -414,7 +415,7 @@ export default function GroceriesAndGas({
                     <>
                       <strong>{result.text}</strong>
                       <span className="subtle block">
-                        {result.period}
+                        {plainPeriods(result.period)}
                         {other ? ` · ${areaLabel(result.reading.area, place.geo_id)}${ownSource}` : ""}
                       </span>
                     </>
@@ -443,14 +444,14 @@ export default function GroceriesAndGas({
                   <>
                     <strong>{result.text}</strong>
                     <span className="subtle">
-                      {" "}· {areaLabel(result.reading.area, place.geo_id)}, {result.period}
+                      {" "}· {areaLabel(result.reading.area, place.geo_id)}, {plainPeriods(result.period)}
                       {result.change ? `, ${result.change}` : ""}. Source: {SOURCE_NAMES[result.reading.source]}.
                     </span>
                     {measure === "gas" && answers.diesel?.reading ? (
                       <span className="block" data-testid="place-cost-diesel" data-area={answers.diesel.reading.area.geoId}>
                         Diesel <strong>{answers.diesel.text}</strong>
                         <span className="subtle">
-                          {" "}· {areaLabel(answers.diesel.reading.area, place.geo_id)}, {answers.diesel.period}. Source: {SOURCE_NAMES.EIA}.
+                          {" "}· {areaLabel(answers.diesel.reading.area, place.geo_id)}, {plainPeriods(answers.diesel.period)}. Source: {SOURCE_NAMES.EIA}.
                         </span>
                       </span>
                     ) : null}

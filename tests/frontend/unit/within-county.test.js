@@ -21,9 +21,9 @@ describe("the releases a county's tracts can be read at", () => {
       ],
     );
     expect(options).toEqual([
-      { release: "2024", label: "2020-01-01 – 2024-12-31 (2024 release)" },
-      { release: "2022", label: "2018-01-01 – 2022-12-31 (2022 release)" },
-      { release: "2019", label: "2015-01-01 – 2019-12-31 (2019 release)" },
+      { release: "2024", label: "2020–2024 (2024 release)" },
+      { release: "2022", label: "2018–2022 (2022 release)" },
+      { release: "2019", label: "2015–2019 (2019 release)" },
     ]);
   });
 

@@ -3,6 +3,7 @@
 // denominator is named beside each one, and a pairing nobody has reviewed
 // yet says so, the way a draft plain label does (D-2).
 
+import { plainPeriods } from "../lib/plainPeriod";
 import {
   DRAFT_VIEW_TEXT,
   agenciesText,
@@ -107,7 +108,7 @@ export function DerivedValue({
     >
       <strong>{derivedValueText(row)}</strong>{" "}
       <span className="subtle">{denominatorText(pairing)}</span>
-      {period ? <span className="subtle"> · {period}</span> : null}
+      {period ? <span className="subtle"> · {plainPeriods(period)}</span> : null}
       {margin ? <span className="subtle"> · {margin}</span> : null}{" "}
       <DraftViewMark pairing={{ status: row.pairing_status, version: row.pairing_version }} />
     </span>
@@ -149,7 +150,7 @@ export function AgencyRateValue({
     >
       <strong>{derivedValueText(row)}</strong>{" "}
       <span className="subtle">computed from agency reports</span>
-      {period ? <span className="subtle"> · {period}</span> : null}
+      {period ? <span className="subtle"> · {plainPeriods(period)}</span> : null}
       <span className="subtle" data-testid={`${testId}-coverage`}> · {coverageText(row.coverage)}</span>
       {agencies ? <span className="sr-only"> ({agencies})</span> : null}{" "}
       <DraftViewMark pairing={{ status: row.pairing_status, version: row.pairing_version }} />
