@@ -46,7 +46,7 @@ document grepped the criteria instead and put two plans here wrongly: "`ok` on
 the integration stack" and "the round-trip test passes" name no keyword a
 grep was looking for.
 
-**13 plans.**
+**14 plans.**
 
 | Plan | Complexity | Verification beyond the base tiers | Depends on |
 | --- | --- | --- | --- |
@@ -56,6 +56,7 @@ grep was looking for.
 | [`monthly-briefings`](to_do/MONTHLY_BRIEFINGS_PLAN.md) | high | `browser` | `publishing-approval-path`, `place-pages` |
 | [`outbreak-model-inputs`](to_do/OUTBREAK_MODEL_INPUTS_PLAN.md) | low | none | `group-quarters-by-type`, `nursing-home-locations`, `lodes-block-grain-for-dane`, `block-population-and-age-for-dane`, `college-housing-capacity`, `hospital-capacity-and-locations`, `places-tract-release`, `outbreak-calibration-sets`, `air-travel-and-mobility` |
 | [`place-climate-normals`](to_do/PLACE_CLIMATE_NORMALS_CARD_PLAN.md) | low | `browser` | `weather-and-disaster-history` |
+| [`place-page-money-and-percent`](to_do/PLACE_PAGE_MONEY_AND_PERCENT_PLAN.md) | low | `browser` | `place-page-plain-words` |
 | [`place-page-plain-words`](to_do/PLACE_PAGE_PLAIN_WORDS_PLAN.md) | low | `browser` | -- |
 | [`site-shell-and-home-for-residents`](to_do/SITE_SHELL_AND_HOME_FOR_RESIDENTS_PLAN.md) | low | `browser` | `place-page-plain-words` |
 | [`starting-a-family-collection`](to_do/STARTING_A_FAMILY_COLLECTION_PLAN.md) | medium | `browser` | `county-childcare-prices` |

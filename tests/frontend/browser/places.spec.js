@@ -45,7 +45,7 @@ test("a state page says which headline measures publish no state grain", async (
   // the same chapter publish states, so the chapter stays and the card says so.
   await expect(page.getByTestId("card-obesity-state")).toContainText("Not published at state grain");
   await expect(page.getByTestId("card-obesity-national")).toContainText("%");
-  await expect(page.getByTestId("card-population-estimate-state")).toContainText("persons");
+  await expect(page.getByTestId("card-population-estimate-state")).toContainText("people");
   await expect(page.getByTestId("card-population-estimate-national")).toBeVisible();
   await expect(page.getByTestId("place-children").getByRole("link", { name: "Dane County" })).toHaveAttribute("href", "/us/wisconsin/dane-county");
   await noViolations(page);
@@ -899,7 +899,7 @@ test("a metro page reads its own figures beside its state and the nation and lis
   const income = page.getByTestId("card-median-household-income");
   await expect(income.locator("tbody tr")).toHaveCount(3);
   await expect(page.getByTestId("card-median-household-income-metro")).toContainText("margin of error");
-  await expect(page.getByTestId("card-unemployment-rate-metro")).toContainText("Percent");
+  await expect(page.getByTestId("card-unemployment-rate-metro")).toContainText("45.3%");
   // BEA's metro income is summed from the counties, and the card says so.
   await expect(page.getByTestId("card-bea-per-capita-income-metro-derivation")).toContainText("Derived: its member counties' summed income");
   await expect(page.getByTestId("card-bea-per-capita-income-state-derivation")).toHaveCount(0);
@@ -916,7 +916,7 @@ test("a metro page reads its own figures beside its state and the nation and lis
   await expect(page.getByTestId("card-qcew-jobs-members")).toContainText("Dane County");
   await expect(page.getByTestId("card-qcew-jobs-members-note")).toContainText("the sum of its 1 member county's published figures");
   await expect(page.getByTestId("card-saipe-median-household-income-metro")).toContainText("its member counties are listed below");
-  await expect(page.getByTestId("card-saipe-median-household-income-members").locator('tr[data-geo-id="state:55|county:025"]')).toContainText("dollars");
+  await expect(page.getByTestId("card-saipe-median-household-income-members").locator('tr[data-geo-id="state:55|county:025"]')).toContainText("$45.1");
   await expect(page.getByTestId("card-saipe-median-household-income-members-note")).toContainText("not added up from its counties");
   await expect(page.getByTestId("card-bea-real-gdp-metro")).toContainText("its member counties are listed below");
   await expect(page.getByTestId("card-bea-real-gdp-members")).toContainText("Dane County");

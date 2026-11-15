@@ -31,7 +31,7 @@ import type { CollectionResponse, GeographySummary, MetricSummary, Observation }
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue, marginOfErrorText, observationUnit, unitText } from "../lib/explorerViewModel";
+import { formatObservationValue, marginOfErrorText, observationUnit, unitText, valueWithUnit } from "../lib/explorerViewModel";
 import { displayMetricName } from "../lib/format";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
@@ -1445,7 +1445,7 @@ function CountyAgencyRate({ pairing, geoId, testId }: { pairing: DerivedRatioPai
 /** The metro row's cell when its member counties stand in for it. */
 function memberGapText(members: MemberCountyRows, unit: ObservationRow | null | undefined, fallback?: string): string {
   if (!members.sum) return "Not published for metro areas; its member counties are listed below";
-  return `${formatObservationValue(members.sum.value)} ${unit ? publishedUnit(unit, fallback) : fallback || ""}`.trim() + " (derived from member counties)";
+  return valueWithUnit(formatObservationValue(members.sum.value), unit ? publishedUnit(unit, fallback) : fallback) + " (derived from member counties)";
 }
 
 /** Member counties listed in full up to this many; beyond it, the rest fold away. */
@@ -1459,7 +1459,7 @@ function MemberCountyTable({ rows, testId, unit }: { rows: CardRow[]; testId: st
   const cells = (entry: CardRow) => (
     <tr key={entry.place.geoId} data-geo-id={entry.place.geoId}>
       <th scope="row">{entry.place.name}</th>
-      <td>{entry.row && !entry.message ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, unit)}`.trim() : entry.message}</td>
+      <td>{entry.row && !entry.message ? valueWithUnit(formatObservationValue(entry.row.value), publishedUnit(entry.row, unit)) : entry.message}</td>
       <td className="subtle">{entry.row && !entry.message ? uncertaintyText(entry.row) : ""}</td>
     </tr>
   );
@@ -1602,7 +1602,7 @@ function HeadlineCard({
                 <>
                   <td>
                     {entry.row && !entry.message
-                      ? `${formatObservationValue(entry.row.value)} ${publishedUnit(entry.row, measure.measure.unit)}`.trim()
+                      ? valueWithUnit(formatObservationValue(entry.row.value), publishedUnit(entry.row, measure.measure.unit))
                       : memberRows && entry.place.level === "METRO"
                         ? memberGapText(memberRows, unit, measure.measure.unit)
                         : !publishesAt(measure, entry.place.level) && measure.measure.gaps?.[entry.place.level]

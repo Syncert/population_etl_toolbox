@@ -6,19 +6,22 @@ import Link from "next/link";
 
 import { rankSentence, standoutName, standouts } from "../lib/distinctive";
 import type { DistinctiveMeasure, DistinctiveResponse } from "../lib/distinctive";
-import { formatObservationValue, unitText } from "../lib/explorerViewModel";
+import { formatObservationValue, unitText, valueWithUnit } from "../lib/explorerViewModel";
 import { plainPeriodStart } from "../lib/plainPeriod";
 
 function StandoutRow({ measure, siblingsName, low }: { measure: DistinctiveMeasure; siblingsName: string; low?: boolean }) {
   // The unit sits under the number and wraps there: "per 1,000 people" ran
   // past the panel edge when it shared the number's unbroken line.
   const unit = measure.units && measure.units !== "value" ? unitText(measure.units) : "";
-  const value = formatObservationValue(measure.value);
+  const shown = valueWithUnit(formatObservationValue(measure.value), unit);
+  // "$" and "%" join the number; a unit in words stays on its own line.
+  const [value, ...rest] = shown.split(" ");
+  const words = rest.join(" ");
   return (
     <li data-testid={`standout-${measure.metric_code}`}>
       <Link className="text-link" href={`/map/${encodeURIComponent(measure.metric_code)}`} title={`See every county on a map · ${measure.metric_code}`}>{standoutName(measure)}</Link>
       <span className="standout-track" aria-hidden="true"><i style={{ left: `${Math.min(100, Math.max(0, measure.percentile_rank * 100))}%` }} /></span>
-      <span className="standout-value" title={unit ? `${value} ${unit}` : value}><b>{value}</b>{unit ? <small> {unit}</small> : null}</span>
+      <span className="standout-value" title={shown}><b>{value}</b>{words ? <small> {words}</small> : null}</span>
       <p className="subtle">{rankSentence(measure, siblingsName, low)}{measure.period_start ? `, period beginning ${plainPeriodStart(measure.period_start)}` : ""}.</p>
     </li>
   );

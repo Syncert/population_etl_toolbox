@@ -777,6 +777,23 @@ export function unitText(unit: unknown): string {
 }
 
 /**
+ * A formatted value with its unit, written the way a reader writes it:
+ * "$89,975", "$1,631 per week", "9.9%", "4.1% of personal income",
+ * "590,375 people". Only the unit's wording changes; the number is the one
+ * the caller formatted. Any other unit follows the number unchanged, so
+ * "thousands of US dollars" and "percentage points" stay as published.
+ */
+export function valueWithUnit(value: string, unit: unknown): string {
+  const text = String(unit || "").trim();
+  if (!text || text === "value" || value === "-" || value === "") return value;
+  const money = /^(?:u\.?s\.? )?dollars?((?: (?:per|a) .+)?)$/i.exec(text);
+  if (money) return (value.startsWith("-") ? "-$" + value.slice(1) : "$" + value) + money[1];
+  const percent = /^percent((?: of .+)?)$/i.exec(text);
+  if (percent) return value + "%" + percent[1];
+  return value + " " + (/^persons$/i.test(text) ? "people" : text);
+}
+
+/**
  * A served margin decoded for a reader. parseFloat, not Number: the API serves
  * a field the source does not publish as null, and Number(null) is 0, which
  * printed SAIPE's unpublished percentage as "(0%)".

@@ -90,7 +90,7 @@ test("a share names its denominator for the county, its state and the nation", a
   const row = page.getByTestId("depth-under-18");
   await expect(row.locator("dt")).toContainText("Share of residents under 18");
   await expect(row.locator("dt")).toContainText("Universe: total population (survey)");
-  for (const [level, name, value] of [["county", "Dane County", "10.1 percent"], ["state", "Wisconsin", "11 percent"], ["national", "United States", "70 percent"]]) {
+  for (const [level, name, value] of [["county", "Dane County", "10.1%"], ["state", "Wisconsin", "11%"], ["national", "United States", "70%"]]) {
     const line = page.getByTestId(`depth-under-18-${level}`);
     await expect(line).toContainText(`${name}:`);
     await expect(line).toContainText(value);
@@ -121,14 +121,14 @@ test("each share shows as it arrives; a slow state read never holds up the count
   await page.goto("/us/wisconsin/dane-county");
   await expect(page.getByTestId("place-page")).toHaveAttribute("data-ready", "true");
   await page.getByTestId("chapter-people-view").getByRole("button", { name: "Share" }).click();
-  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1 percent");
+  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1%");
   await expect(page.getByTestId("depth-under-18-state")).toContainText("Reading…");
   release();
-  await expect(page.getByTestId("depth-under-18-state")).toContainText("11 percent");
+  await expect(page.getByTestId("depth-under-18-state")).toContainText("11%");
   // Switching back and forth keeps what was read rather than reading it again.
   await page.getByTestId("chapter-people-view").getByRole("button", { name: "Count" }).click();
   await page.getByTestId("chapter-people-view").getByRole("button", { name: "Share" }).click();
-  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1 percent");
+  await expect(page.getByTestId("depth-under-18-county")).toContainText("10.1%");
 });
 
 test("a share the API cannot compute reads as its reason, never as zero", async ({ page }) => {
@@ -151,19 +151,20 @@ test("births per 1,000 residents are the Census Bureau's own rate, named as such
   await expect(births.locator("[data-ratio-id]")).toHaveAttribute("data-derived", "false");
 });
 
-test("Work and Money on a metro: the switch sits over the counts it changes, and the cards say Dollars", async ({ page }) => {
+test("Work and Money on a metro: the switch sits over the counts it changes, and the cards write dollars", async ({ page }) => {
   // UAT 2026-11-03: on /metro/madison-wi the switch sat over cards that are
   // all medians, rates and dollars, so pressing it changed nothing in view;
   // it offered "Percent" for SAIPE's poverty count, which SAIPE publishes for
   // no metro; and the ACS median read "unit not published" beside BEA's
-  // "Dollars". The ACS serves no unit, so the page names it.
+  // "Dollars". The ACS serves no unit, so the page names it; the value itself
+  // now carries the sign (WEB-179).
   await page.setViewportSize({ width: 1440, height: 1100 });
   await ready(page, "/metro/madison-wi-metro-area");
   const chapter = page.getByTestId("chapter-work-money");
   const income = page.getByTestId("card-median-household-income");
   await expect(income.locator("p.subtle").first()).toContainText("Dollars");
   await expect(income).not.toContainText("unit not published");
-  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("Dollars");
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("$45.3");
 
   const below = page.getByTestId("chapter-work-money-view-below");
   const toggle = page.getByTestId("chapter-work-money-view");
@@ -176,10 +177,10 @@ test("Work and Money on a metro: the switch sits over the counts it changes, and
   await toggle.getByRole("button", { name: "Share" }).click();
   const metro = page.getByTestId("depth-unemployed-metro");
   await expect(metro).toContainText("Madison, WI Metro Area:");
-  await expect(metro).toContainText("percent");
+  await expect(metro).toContainText("%");
   await expect(page.getByTestId("depth-unemployed-state")).toContainText("Wisconsin:");
   // The cards are not counts, so they read the same either way.
-  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("Dollars");
+  await expect(page.getByTestId("card-median-household-income-metro")).toContainText("$");
   await chapter.screenshot({ path: "test-results/per-capita/metro-work-money-share.png" });
   await noViolations(page);
 });
@@ -191,10 +192,10 @@ test("Work and Money on a county: SAIPE's own poverty rate and the survey shares
   await expect(page.getByTestId("chapter-work-money-view-below").getByTestId("chapter-work-money-view")).toHaveCount(1);
   await expect(toggle.getByRole("button")).toHaveText(["Count", "Percent", "Share"]);
   await toggle.getByRole("button", { name: "Percent" }).click();
-  await expect(page.getByTestId("depth-saipe-poverty-count-county")).toContainText("percent");
+  await expect(page.getByTestId("depth-saipe-poverty-count-county")).toContainText("%");
   await toggle.getByRole("button", { name: "Share" }).click();
-  await expect(page.getByTestId("depth-unemployed-county")).toContainText("percent");
-  await expect(page.getByTestId("depth-below-poverty-county")).toContainText("percent");
+  await expect(page.getByTestId("depth-unemployed-county")).toContainText("%");
+  await expect(page.getByTestId("depth-below-poverty-county")).toContainText("%");
 });
 
 const POVERTY = "CENSUS_ACS:acs5:B17001_002";

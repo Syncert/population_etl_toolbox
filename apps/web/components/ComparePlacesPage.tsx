@@ -31,7 +31,7 @@ import type { CollectionResponse, ComparisonPreflight, GeographySummary, MetricS
 import { buildExplorerSources } from "../lib/explorerSources";
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
-import { formatObservationValue, marginOfErrorText, observationUnit } from "../lib/explorerViewModel";
+import { formatObservationValue, marginOfErrorText, observationUnit, valueWithUnit } from "../lib/explorerViewModel";
 import {
   ACTIVE_GEOGRAPHIES_ONLY,
   buildNewestValueRequest,
@@ -737,7 +737,7 @@ function PairedRow({ row, a, b }: { row: ComparedRow; a: string; b: string }) {
               ))}
             </span>
             <span className="paired-value">
-              {`${formatObservationValue(entry.row.value)} ${unit}`.trim()}
+              {valueWithUnit(formatObservationValue(entry.row.value), unit)}
               {margin && margin !== "Not provided" ? <span className="subtle paired-margin"> {margin}</span> : null}
             </span>
           </div>

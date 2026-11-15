@@ -66,7 +66,7 @@ describe("a derived value as it is read", () => {
   test("names its denominator and the margin's method", () => {
     expect(denominatorText(POVERTY)).toBe("of people whose poverty status is determined");
     expect(denominatorText(VIOLENT)).toBe("denominator: population covered by reporting agencies, as the publisher computed it");
-    expect(derivedValueText(row({}))).toBe("10.42 percent");
+    expect(derivedValueText(row({}))).toBe("10.42%");
     expect(derivedMarginText(row({}))).toBe("margin of error ±0.81 (Census Bureau formula for a derived proportion)");
   });
 
