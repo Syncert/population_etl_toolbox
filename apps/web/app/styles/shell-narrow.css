@@ -118,3 +118,44 @@
     padding: 6px 0;
   }
 }
+
+/* Reading and touch sizes (website UX review 2026-11: G1, G2). The header and
+   a place page drew about 200 pieces of text under 12 px and about 290 links
+   and toggles under 24 px tall on a phone. These rules sit last so they hold
+   over each component's own size. */
+.nav-link,
+.primary-nav .nav-link,
+.section-kicker,
+.segmented-control button,
+.place-spark-ends,
+.level-strip-track small,
+.level-strip-value small,
+.public-money-track small,
+.use-case-submenu a span,
+.use-case-submenu > summary span {
+  font-size: 0.75rem;
+}
+
+/* Vertical padding on an inline link enlarges what a finger can hit without
+   moving the line it sits in. */
+.place-page a,
+.place-breadcrumbs a {
+  /* 6 px, not 4: with a fallback font a 12 px link's line box is 15 px, and
+     4 px each side left it one pixel short of 24. */
+  padding-block: 6px;
+}
+
+.place-page table a {
+  display: inline-block;
+  min-height: 24px;
+}
+
+.place-page summary {
+  min-height: 24px;
+  padding-block: 2px;
+}
+
+/* A bare select takes its height from the system font: 21 px on some. */
+.place-page select {
+  min-height: 32px;
+}
