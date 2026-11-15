@@ -207,7 +207,9 @@
 
 .place-trend-axis-label {
   fill: var(--muted);
-  font-size: 11px;
+  /* 14 units: a card on a wide screen draws the 640-unit drawing at about
+     three quarters size, where 11 units read at 8.6 px. */
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -226,7 +228,7 @@
 
 .place-trend-tick {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
 }
 
 /* The drawing is 640 units wide and scales to its card. On a phone that made

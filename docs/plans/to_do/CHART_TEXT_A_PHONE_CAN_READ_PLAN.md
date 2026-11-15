@@ -38,6 +38,8 @@ labels collide with bars; the layout itself has to be a phone's width.
 - On a phone the public money lines end in the value alone, in the line's
   colour; the legend above names the colours and the table has every year.
 - Trend chart axis text is 26 units on a phone (was 22).
+- Trend chart axis text is 14 units on a wide screen (was 11): the live
+  check of 371324b6 at 1440 px measured it at 8.6 px in the record cards.
 - A margin that would round to "±0.0%" reads "± under 0.1%"; a published
   margin of zero reads "±0%".
 - The wordmark badge and the "draft" mark are 12 px; a tick box on a
