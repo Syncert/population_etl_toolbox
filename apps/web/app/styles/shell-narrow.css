@@ -140,7 +140,9 @@
    moving the line it sits in. */
 .place-page a,
 .place-breadcrumbs a {
-  padding-block: 4px;
+  /* 6 px, not 4: with a fallback font a 12 px link's line box is 15 px, and
+     4 px each side left it one pixel short of 24. */
+  padding-block: 6px;
 }
 
 .place-page table a {

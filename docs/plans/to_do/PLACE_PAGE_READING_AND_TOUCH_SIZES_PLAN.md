@@ -33,7 +33,7 @@ over each component's own size:
 - Header links, section kickers, segmented-control buttons, sparkline end
   labels, level-strip labels and the public-money track labels are
   0.75rem (12 px).
-- A link on a place page carries 4 px of vertical padding. On an inline
+- A link on a place page carries 6 px of vertical padding. On an inline
   link that enlarges what a finger can hit without moving the line of text
   it sits in. A link in a table is an inline block at least 24 px tall.
 - A disclosure toggle (`summary`) on a place page is at least 24 px tall.
