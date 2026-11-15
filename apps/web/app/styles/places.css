@@ -201,7 +201,7 @@
 .place-trend svg[role="img"] {
   display: block;
   width: 100%;
-  max-width: 900px;
+  max-width: 720px;
   height: auto;
 }
 
@@ -227,6 +227,15 @@
 .place-trend-tick {
   fill: var(--muted);
   font-size: 11px;
+}
+
+/* The drawing is 640 units wide and scales to its card. On a phone that made
+   11-unit text about 5 px tall; these sizes read at about 10 px there. */
+@media (max-width: 640px) {
+  .place-trend-tick,
+  .place-trend-axis-label {
+    font-size: 22px;
+  }
 }
 
 .place-trend-legend {
