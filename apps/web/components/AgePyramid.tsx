@@ -18,6 +18,8 @@
 
 import { useId, useState } from "react";
 
+import { NARROW_DRAWING_WIDTH, useNarrowScreen } from "../lib/useNarrowScreen";
+
 import { seriesStroke } from "./LineChart";
 import {
   SEXES,
@@ -36,7 +38,7 @@ import type { AgeBand, AgePlace, Sex } from "../lib/ageStructure";
 /** The site's first two categorical slots: men, then women. */
 export const SEX_COLOURS: Record<Sex, string> = { men: seriesStroke(0), women: seriesStroke(1) };
 
-const WIDTH = 680;
+const WIDE_WIDTH = 680;
 const ROW = 22;
 const TOP = 30;
 const BOTTOM = 34;
@@ -85,6 +87,7 @@ export interface AgePyramidProps {
 export default function AgePyramid({ place, reference = null, earlier = null, extent, testId = "age-pyramid" }: AgePyramidProps) {
   const patternId = `age-hatch-${useId().replace(/:/g, "")}`;
   const [focus, setFocus] = useState<{ index: number; sex: Sex } | null>(null);
+  const WIDTH = useNarrowScreen() ? NARROW_DRAWING_WIDTH : WIDE_WIDTH;
   const bands = place.bands;
   const n = bands.length;
   const height = TOP + ROW * n + BOTTOM;

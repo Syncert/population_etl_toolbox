@@ -234,7 +234,7 @@
 @media (max-width: 640px) {
   .place-trend-tick,
   .place-trend-axis-label {
-    font-size: 22px;
+    font-size: 26px;
   }
 }
 
@@ -668,9 +668,12 @@
   overflow: visible;
 }
 
-@media (max-width: 520px) {
+/* On a phone the age charts lay themselves out about as wide as the screen
+   (`useNarrowScreen`), so text is drawn near its written size; the smaller
+   labels are brought up to the same 11 units (website UX review D1). */
+@media (max-width: 640px) {
   .age-chart-frame svg text {
-    font-size: 15px;
+    font-size: 11px;
   }
 }
 
@@ -744,7 +747,7 @@
   padding: 0 5px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-style: normal;
   text-transform: uppercase;
   letter-spacing: 0.04em;

@@ -8,11 +8,13 @@
 
 import { useState } from "react";
 
+import { NARROW_DRAWING_WIDTH, useNarrowScreen } from "../lib/useNarrowScreen";
+
 import { SEX_COLOURS } from "./AgePyramid";
 import { SEXES, bandDifferences, sexWord, signedPoints } from "../lib/ageStructure";
 import type { AgePlace, BandDifference } from "../lib/ageStructure";
 
-const WIDTH = 680;
+const WIDE_WIDTH = 680;
 const ROW = 22;
 const TOP = 10;
 const BOTTOM = 30;
@@ -27,6 +29,7 @@ function sentence(row: BandDifference, place: AgePlace, reference: AgePlace): st
 
 export default function AgeDifferenceBars({ place, reference, testId = "age-difference" }: { place: AgePlace; reference: AgePlace; testId?: string }) {
   const [focus, setFocus] = useState<number | null>(null);
+  const WIDTH = useNarrowScreen() ? NARROW_DRAWING_WIDTH : WIDE_WIDTH;
   const rows = bandDifferences(place, reference);
   const n = rows.length;
   const height = TOP + ROW * n + BOTTOM;

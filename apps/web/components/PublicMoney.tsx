@@ -33,6 +33,7 @@ import {
   spreadLabels,
   stripMax,
 } from "../lib/publicMoney";
+import { useNarrowScreen } from "../lib/useNarrowScreen";
 import type { LineSeries, PublicMoneyAnswer, PublicMoneyLevel, StripRow } from "../lib/publicMoney";
 
 type Load =
@@ -110,10 +111,20 @@ const WIDTH = 560;
 const HEIGHT = 180;
 /** Room right of the plot for the end labels. */
 const LABEL_ROOM = 150;
+/**
+ * On a phone the drawing is laid out about as wide as the screen, so its
+ * 11-unit text is drawn near 10 px and not scaled down to 5 (website UX
+ * review D1). The end labels keep the value; the legend above names the colours.
+ */
+const NARROW_WIDTH = 296;
+const NARROW_LABEL_ROOM = 54;
 
 /** Lines for each level over the years, one axis from zero, labelled at their ends. */
 function LevelLines({ series, names, testId, label }: { series: LineSeries[]; names: Map<string, string>; testId: string; label: string }) {
-  const geometry = lineGeometry(series, WIDTH, HEIGHT);
+  const narrow = useNarrowScreen();
+  const width = narrow ? NARROW_WIDTH : WIDTH;
+  const labelRoom = narrow ? NARROW_LABEL_ROOM : LABEL_ROOM;
+  const geometry = lineGeometry(series, width, HEIGHT);
   const [hover, setHover] = useState<number | null>(null);
   if (!geometry) return null;
   const [firstYear, lastYear] = geometry.years;
@@ -122,7 +133,7 @@ function LevelLines({ series, names, testId, label }: { series: LineSeries[]; na
   const readout = hover === null ? null : series.map((entry) => ({ entry, point: entry.points.find((point) => point.year === hover) })).filter((item) => item.point);
   const move = (event: React.MouseEvent<SVGSVGElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - box.left) / box.width) * (WIDTH + LABEL_ROOM);
+    const x = ((event.clientX - box.left) / box.width) * (width + labelRoom);
     let nearest = years[0]!;
     for (const year of years) if (Math.abs(geometry.x(year) - x) < Math.abs(geometry.x(nearest) - x)) nearest = year;
     setHover(nearest);
@@ -134,7 +145,7 @@ function LevelLines({ series, names, testId, label }: { series: LineSeries[]; na
           ? `${hover}: ${readout.map(({ entry, point }) => `${names.get(entry.geoId) || entry.geoId} ${percentText(point!.value)}`).join(" · ")}`
           : " "}
       </p>
-      <svg viewBox={`0 0 ${WIDTH + LABEL_ROOM} ${HEIGHT}`} role="img" aria-label={label} onMouseMove={move} onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${width + labelRoom} ${HEIGHT}`} role="img" aria-label={label} data-narrow={narrow ? "true" : undefined} onMouseMove={move} onMouseLeave={() => setHover(null)}>
         {geometry.ticks.map((tick) => (
           <g key={tick}>
             <line x1={geometry.x(firstYear)} x2={geometry.x(lastYear)} y1={geometry.y(tick)} y2={geometry.y(tick)} className="public-money-grid" />
@@ -152,8 +163,8 @@ function LevelLines({ series, names, testId, label }: { series: LineSeries[]; na
               {entry.points.length === 1 || entry.points.some((point, index) => index > 0 && point.year - entry.points[index - 1]!.year > 1)
                 ? entry.points.map((point) => <circle key={point.year} cx={geometry.x(point.year)} cy={geometry.y(point.value)} r={4} fill={LEVEL_COLOURS[entry.role]} stroke="var(--card)" strokeWidth={2} />)
                 : null}
-              <text x={geometry.x(last.year) + 8} y={labelYs[index]} className="public-money-end-label">
-                {`${names.get(entry.geoId) || entry.geoId} ${percentText(last.value)}`}
+              <text x={geometry.x(last.year) + 8} y={labelYs[index]} className="public-money-end-label" style={narrow ? { fill: LEVEL_COLOURS[entry.role], fontWeight: 600 } : undefined}>
+                {narrow ? percentText(last.value) : `${names.get(entry.geoId) || entry.geoId} ${percentText(last.value)}`}
               </text>
             </g>
           );
