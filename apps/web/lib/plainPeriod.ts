@@ -11,7 +11,9 @@ const DAY = String.raw`(\d{4})-(\d{2})-(\d{2})`;
 const RANGE = new RegExp(`${DAY} – ${DAY}`, "g");
 const SINGLE = new RegExp(String.raw`(?<![\d-])${DAY}(?![\d-])`, "g");
 
-const monthName = (month: number) => new Date(Date.UTC(2000, month - 1, 1)).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
+
+const monthName = (month: number) => MONTHS[month - 1] || String(month).padStart(2, "0");
 const lastDay = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 const day = (year: number, month: number, date: number) => `${monthName(month)} ${date}, ${year}`;
 
