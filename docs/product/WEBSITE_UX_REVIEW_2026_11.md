@@ -142,7 +142,7 @@ changes.
 1. Place page in plain words: A1, A2, B1, B2, B4, B5. Plan:
    `PLACE_PAGE_PLAIN_WORDS_PLAN.md`.
 2. Shell and home for residents: A3, A4, C2 and the sticky chapter bar from
-   C1, E1, E2, E3, F1, F2, F4. Plan:
+   C1, E1, E2, E3, F1, F2. Plan:
    `SITE_SHELL_AND_HOME_FOR_RESIDENTS_PLAN.md`.
 
 **Fix next** (clear value, a few days each, no decision needed).

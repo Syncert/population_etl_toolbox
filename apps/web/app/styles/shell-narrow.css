@@ -1,0 +1,120 @@
+/* The site header and a place page's chapter links on narrow screens
+   (website UX review 2026-11: A3, A4, C1, C2). Loaded last, because the
+   header's earlier narrow-screen rules live in builder.css and
+   use-cases.css. */
+
+:root {
+  /* What a sticky bar under the header has to clear. */
+  --header-h: 58px;
+}
+
+/* "Sign in" is a button; it reads as the navigation link it sits beside. */
+.sign-in-control {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+
+.sign-in-control button.nav-link {
+  min-height: 42px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.nav-label-short {
+  display: none;
+}
+
+/* Below this width the header wraps to two rows. Stuck to the top it covered
+   a sixth of a phone screen on every page, so here it scrolls away. */
+@media (max-width: 1250px) {
+  :root {
+    --header-h: 0px;
+  }
+
+  .site-header {
+    position: relative;
+    z-index: 30;
+  }
+}
+
+@media (max-width: 900px) {
+  .site-header {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 12px;
+    padding: 4px 12px 0;
+  }
+
+  .site-header .sign-in-control {
+    margin-left: auto;
+  }
+
+  .primary-nav {
+    order: 3;
+    justify-content: flex-start;
+  }
+
+  /* A menu opens across the header, not from its own button, which sits
+     part-way along the row and pushed the panel off a phone screen. */
+  .use-case-menu {
+    position: static;
+  }
+
+  .use-case-dropdown,
+  .tools-dropdown {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* One row of navigation on a phone: the long label gives way to a short one. */
+@media (max-width: 520px) {
+  .nav-label-long {
+    display: none;
+  }
+
+  .nav-label-short {
+    display: inline;
+  }
+}
+
+/* A place page is tens of screens long; its chapter links stay in reach. */
+.chapter-rail {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 10;
+}
+
+.place-chapter,
+.place-page .analysis-panel[id] {
+  scroll-margin-top: calc(var(--header-h) + 64px);
+}
+
+@media (max-width: 640px) {
+  .chapter-rail {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .chapter-rail ol {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+
+  .chapter-rail a {
+    display: inline-block;
+    padding: 6px 0;
+  }
+}

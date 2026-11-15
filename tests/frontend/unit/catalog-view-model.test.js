@@ -289,12 +289,12 @@ describe("the connected-source band never names a source the API did not", () =>
     }
   });
 
-  test("the snapshot panel's explorer link names a source, not a metric alone", () => {
-    // Covers: WEB-072 — a link carrying only `metric` lands on whichever
-    // catalog `/explore` mounts, and a measure that catalog does not publish
-    // is silently replaced. The landing panel is read from its own source
-    // for the same reason the hard-coded-name guard above is: there is no
-    // browser node that visits `/`, so the page itself is the evidence.
+  test("the landing page builds no explorer link of its own", () => {
+    // Covers: WEB-072 — the landing page once featured a metric and linked
+    // it into the explorer, and a link carrying only `metric` lands on
+    // whichever catalog `/explore` mounts. The website UX review (2026-11,
+    // E2) removed that panel; the page now links to the explorer's own
+    // address and names no measure, which this reads from its source.
     let directory = process.cwd();
     let source = "";
     for (;;) {
@@ -309,10 +309,7 @@ describe("the connected-source band never names a source the API did not", () =>
         directory = parent;
       }
     }
-    const call = source.slice(source.indexOf("explorerHref({"));
-    const panel = call.slice(0, call.indexOf("})"));
-    expect(panel).toContain("metric:");
-    expect(panel).toContain("source:");
-    expect(panel).toContain("source_code");
+    expect(source).not.toContain("explorerHref");
+    expect(source).not.toContain("metric_code");
   });
 });

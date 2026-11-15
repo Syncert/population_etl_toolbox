@@ -27,7 +27,7 @@ test("the nation's page reads every chapter it publishes and lists the states", 
   await ready(page, "/us");
   await expect(page.locator("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("United States");
-  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Starting a family", "Climate averages"]);
+  await expect(page.getByTestId("chapter-rail").getByRole("link")).toHaveText(["People", "Work and Money", "Housing", "Health", "Safety", "Land and Farms", "Change", "What the record shows", "Cost of living", "Starting a family", "Climate averages"]);
   // LAUS publishes no national rate; the card says the nation's is another survey's.
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Not published nationally by LAUS");
   await expect(page.getByTestId("card-unemployment-rate-national")).toContainText("Current Population Survey");
