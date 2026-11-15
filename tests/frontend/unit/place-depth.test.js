@@ -40,6 +40,9 @@ describe("depth rows", () => {
     expect(marginShare(acs(3232, 355))).toBe("±11%");
     expect(marginShare(acs(3232, null))).toBe("");
     expect(marginShare(acs(0, 12))).toBe("±12");
+    // Covers: WEB-184. A margin that rounds to "±0.0%" is said as what it hides.
+    expect(marginShare(acs(112792, 29))).toBe("± under 0.1%");
+    expect(marginShare(acs(112792, 0))).toBe("±0%");
   });
 
   it("marks an estimate whose coefficient of variation is above 30 percent", () => {

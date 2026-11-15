@@ -66,6 +66,9 @@ export function marginShare(row: ObservationRow): string {
       ? (margin / Math.abs(value)) * 100
       : null;
   if (percent === null) return `±${formatNumber(margin, { maximumFractionDigits: 1 })}`;
+  // A margin that rounds to "±0.0%" reads as no margin at all.
+  if (percent === 0) return "±0%";
+  if (percent < 0.05) return "± under 0.1%";
   return `±${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
 

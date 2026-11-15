@@ -30,7 +30,7 @@ const PAD_LEFT = 52;
  * phone the stylesheet enlarges it, so the drawing scaled to a 340 px screen
  * still reads at about 10 px. The value labels set the left margin.
  */
-const TICK_CHAR_WIDTH = 13;
+const TICK_CHAR_WIDTH = 15;
 const PAD_RIGHT = 16;
 /** Room above the plot for the y-axis label. */
 const PAD_TOP = 44;

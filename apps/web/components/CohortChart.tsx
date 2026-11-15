@@ -10,15 +10,20 @@
 import { SEX_COLOURS } from "./AgePyramid";
 import { SEXES, bandIdText, cohortRefusalText, cohortSentence, countText, num, periodText, sexWord } from "../lib/ageStructure";
 import type { AgeCohortsResponse } from "../lib/ageStructure";
+import { NARROW_DRAWING_WIDTH, useNarrowScreen } from "../lib/useNarrowScreen";
 
-const WIDTH = 680;
+const WIDE_WIDTH = 680;
 const ROW = 26;
-const LEFT = 150;
+const WIDE_LEFT = 150;
+const NARROW_LEFT = 120;
 const RIGHT = 16;
 const TOP = 8;
 const BOTTOM = 8;
 
 export default function CohortChart({ cohorts, testId = "age-cohorts" }: { cohorts: AgeCohortsResponse; testId?: string }) {
+  const narrow = useNarrowScreen();
+  const WIDTH = narrow ? NARROW_DRAWING_WIDTH : WIDE_WIDTH;
+  const LEFT = narrow ? NARROW_LEFT : WIDE_LEFT;
   if (!cohorts.comparable || cohorts.refusal || !cohorts.from || !cohorts.to) {
     return (
       <p className="notice" data-testid={`${testId}-refusal`} data-reason={cohorts.refusal?.reason || ""}>

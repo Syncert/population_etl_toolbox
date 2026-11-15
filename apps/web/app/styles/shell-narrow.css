@@ -159,3 +159,15 @@
 .place-page select {
   min-height: 32px;
 }
+
+.wordmark-mark {
+  font-size: 0.75rem;
+}
+
+/* A tick box a finger can hit. */
+.place-page input[type="checkbox"],
+.place-page input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
