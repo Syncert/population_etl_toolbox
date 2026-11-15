@@ -369,15 +369,6 @@
 /* Studio (studio-video-frames) */
 .studio-preview { display: block; width: 100%; max-width: 960px; height: auto; border: 1px solid var(--line); }
 
-/* How a figure was counted, where two counts of one subject sit side by side. */
-.place-basis {
-  margin: 6px 0 0;
-  color: var(--accent-strong);
-  font-size: 0.78rem;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
 /* Industry tables as bars sorted largest first (web-compact-depth). */
 .place-industry {
   margin: 12px 0;
@@ -443,9 +434,11 @@
    same quantity sit side by side, and this line is what tells them apart. */
 .place-basis {
   margin: 6px 0 0;
-  color: var(--accent-strong);
+  /* Body ink, not the link colour: in bold green it read as something to
+     click (website UX review B8). */
+  color: inherit;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 

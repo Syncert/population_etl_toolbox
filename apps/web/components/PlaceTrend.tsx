@@ -106,6 +106,7 @@ export default function PlaceTrend({
   forCard = measure && chapterId ? { label: measure.measure.label, anchor: cardAnchor(chapterId, measure.measure.id) } : null,
   titleTag: Title = "h3",
   notes = [],
+  notesAbove = "",
   reading = false,
   testId,
 }: {
@@ -133,6 +134,11 @@ export default function PlaceTrend({
   titleTag?: "h3" | "h4";
   /** What the chart says about its own measure: margins, overlapping periods. */
   notes?: string[];
+  /**
+   * The id of an earlier chart in the same chapter that already carries
+   * notes this chart shares: they are said once, there, and linked from here.
+   */
+  notesAbove?: string;
   /** The page is still reading: an empty chart is not yet an absence. */
   reading?: boolean;
   testId: string;
@@ -286,6 +292,11 @@ export default function PlaceTrend({
         {notes.filter((note) => hasBars || !note.startsWith("The bar")).map((note) => (
           <p className="subtle" key={note} data-testid={`${testId}-note`}>{note}</p>
         ))}
+        {notesAbove ? (
+          <p className="subtle" data-testid={`${testId}-notes-above`}>
+            The <a className="text-link" href={`#${notesAbove}`}>notes under an earlier chart in this chapter</a> apply here too.
+          </p>
+        ) : null}
         {notPublishedThatYear.length ? (
           <p className="subtle" data-testid={`${testId}-not-published`}>
             A period with no point for {listNames(notPublishedThatYear.map((line) => line.place.name))} is one the source did not
