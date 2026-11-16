@@ -502,7 +502,20 @@ function locateAnswer(lat, lon) {
   return null;
 }
 
-export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null, onHistoryBatch = null } = {}) {
+export async function installPlaceFixtures(page, { nationLagsMedianAge = true, withoutSource = null, searchUnavailable = false, onLocate = null, onBatchItem = null, onHistoryBatch = null, folded = false } = {}) {
+  // A reader's first visit shows each chapter's headline cards with its
+  // detail folded (WEB-186). These fixtures stand for a reader who chose
+  // "Open every chapter's detail", so every other test reads the whole page;
+  // `folded: true` is the first visit.
+  if (!folded) {
+    await page.addInitScript(() => {
+      try {
+        if (window.localStorage.getItem("place-detail") === null) window.localStorage.setItem("place-detail", "open");
+      } catch {
+        // A page with no storage keeps its folds closed.
+      }
+    });
+  }
   // One `/observations` read, as the single route answers it; the batch
   // route answers each of its pairs from the same function (API-180).
   const answerObservations = (params) => {

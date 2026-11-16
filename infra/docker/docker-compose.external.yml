@@ -138,6 +138,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      # Next writes what its server-side reads cached (the place routes ask
+      # the geography catalog whether an address exists, cached for an
+      # hour) under `.next/cache`. On a read-only root that failed with
+      # `ENOENT mkdir '/app/.next/cache'` and nothing was cached. Owned by
+      # the image's runtime user (`nextjs`, uid 1001); held in memory, capped.
+      - /app/.next/cache:uid=1001,gid=1001,mode=0700,size=128m
     security_opt:
       - no-new-privileges:true
     healthcheck:

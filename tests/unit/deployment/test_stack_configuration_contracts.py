@@ -406,3 +406,24 @@ def test_the_exemption_list_names_only_settings_that_exist() -> None:
     read = _settings_read_from_environment()
     stale = sorted(name for name in NOT_DEPLOYMENT_CONFIGURED if name not in read)
     assert not stale, f"NOT_DEPLOYMENT_CONFIGURED names settings nothing reads: {stale}"
+
+
+def test_the_web_container_can_write_its_server_side_cache() -> None:
+    """A read-only web container needs a writable `.next/cache`.
+
+    The place routes ask the geography catalog from the web server and cache
+    the answer. With a read-only root and no mount there, Next logged
+    `Failed to update prerender cache ... ENOENT mkdir '/app/.next/cache'` on
+    the deployed stack and cached nothing. The mount is owned by the uid the
+    image runs as, or the runtime user could not write to it either.
+    """
+    dockerfile = (ROOT / "infra/docker/Dockerfile.web").read_text(encoding="utf-8")
+    assert "adduser --system --uid 1001 nextjs" in dockerfile
+    for name in ("docker-compose.yml", "docker-compose.external.yml"):
+        web = yaml.safe_load((COMPOSE_DIRECTORY / name).read_text(encoding="utf-8"))[
+            "services"
+        ]["web"]
+        assert web["read_only"] is True
+        cache = [entry for entry in web["tmpfs"] if entry.startswith("/app/.next/cache:")]
+        assert len(cache) == 1, f"{name}: the web service mounts no writable .next/cache"
+        assert "uid=1001" in cache[0] and "gid=1001" in cache[0]

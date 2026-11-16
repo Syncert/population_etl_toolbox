@@ -118,6 +118,8 @@ function levelNames(levels: LevelPlace[]): Record<string, string> {
 const PlaceSparkline = dynamic(() => import("./PlaceSparkline"));
 const PlaceFinder = dynamic(() => import("./PlaceFinder"));
 const PlaceDepth = dynamic(() => import("./PlaceDepth"));
+const PlaceFolds = dynamic(() => import("./PlaceFolds"), { ssr: false });
+const PlaceNotFound = dynamic(() => import("./PlaceNotFound"));
 const PlaceLevelStrip = dynamic(() => import("./PlaceLevelStrip"));
 const WithinCounty = dynamic(() => import("./WithinCounty"));
 const MigrationFlows = dynamic(() => import("./MigrationFlows"));
@@ -241,7 +243,6 @@ export default function PlacePage({
   const [answers, setAnswers] = useState<Map<string, LevelAnswer>>(new Map());
   const [histories, setHistories] = useState<Map<string, ObservationRow[]>>(new Map());
   const [observationStatus, setObservationStatus] = useState({ state: "idle", message: "waiting for the place" });
-  const [search, setSearch] = useState("");
   const [nearby, setNearby] = useState<NearbyGroups | null>(null);
   const [related, setRelated] = useState<RelatedResponse | null>(null);
   // The county childcare card's center infant price, shared with "Starting a family".
@@ -260,6 +261,16 @@ export default function PlacePage({
   // ones, and a provider's own rate names its denominator from its entry.
   const [pairings, setPairings] = useState<DerivedRatioPairing[]>([]);
   const settled = useRef(false);
+  // Every chapter's detail open, when the reader chose that in this browser
+  // (`PlaceFolds` owns the switch). Read here, before any chapter is drawn.
+  const [openAll, setOpenAll] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("place-detail") === "open") setOpenAll(true);
+    } catch {
+      // No storage: the folds start closed.
+    }
+  }, []);
   // Until the observations settle, a cell nothing has answered yet is being
   // read, not unpublished: the chapters draw from this view, which answers
   // every unknown key as pending, so a page still loading never reads as a
@@ -814,35 +825,19 @@ export default function PlacePage({
     const candidates = within
       ? counties.map((item) => ({ name: `${countyName(item)}, ${stateName(within)}`, href: placePath(stateSegment(within, states), countySegment(item, counties)) }))
       : states.map((item) => ({ name: stateName(item), href: placePath(stateSegment(item, states)) }));
-    const needle = search.trim().toLowerCase();
-    const matches = needle ? candidates.filter((entry) => entry.name.toLowerCase().includes(needle)).slice(0, 20) : [];
     return (
-      <main className="page-shell compact-page" data-testid="place-not-found">
-        <div className="page-heading">
-          <div className="section-kicker">Not found</div>
-          <h1>There is no place at this address</h1>
-          <p>
-            {resolution.state === "error"
-              ? `The geography catalog could not be read: ${resolution.message}`
-              : level === "METRO"
-                ? "No metro or micro area is published under that name or code."
-                : within
+      <PlaceNotFound
+        candidates={candidates}
+        message={
+          resolution.state === "error"
+            ? `The geography catalog could not be read: ${resolution.message}`
+            : level === "METRO"
+              ? "No metro or micro area is published under that name or code."
+              : within
                 ? `${stateName(within)} has no county published under that name or code.`
-                : "No state is published under that name or code."}
-          </p>
-        </div>
-        <label className="place-search">
-          Search places
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} data-testid="place-search" />
-        </label>
-        {needle ? (
-          <ul className="place-index" data-testid="place-search-results">
-            {matches.map((entry) => <li key={entry.href}><Link href={entry.href}>{entry.name}</Link></li>)}
-            {!matches.length ? <li>No published place matches “{search}”.</li> : null}
-          </ul>
-        ) : null}
-        <p><Link className="text-link" href="/us">All states <ArrowRight size={13} /></Link></p>
-      </main>
+                : "No state is published under that name or code."
+        }
+      />
     );
   }
 
@@ -916,6 +911,8 @@ export default function PlacePage({
         </nav>
       ) : null}
 
+      {visible.length ? <PlaceFolds open={openAll} onChange={setOpenAll} /> : null}
+
       {visible.map((resolved) => (
         <Chapter
           key={resolved.chapter.id}
@@ -930,6 +927,7 @@ export default function PlacePage({
           reading={reading}
           sourceFor={sourceFor}
           pairings={pairings}
+          openAll={openAll}
         />
       ))}
 
@@ -1129,6 +1127,7 @@ function Chapter({
   reading,
   sourceFor,
   pairings,
+  openAll,
 }: {
   resolved: ResolvedChapter;
   levels: LevelPlace[];
@@ -1143,6 +1142,8 @@ function Chapter({
   reading: boolean;
   sourceFor: (metric: MetricSummary | null) => ExplorerSource | null;
   pairings: DerivedRatioPairing[];
+  /** The reader asked for every chapter's detail to be open. */
+  openAll: boolean;
 }) {
   const { chapter } = resolved;
   const own = levels[0];
@@ -1280,6 +1281,9 @@ function Chapter({
       })
     : "";
 
+  // Whether anything sits under the headline cards.
+  const more = Boolean(trend || moreTrends.length || chapter.id === "change" || (own && (resolved.depth.length || chapter.id === "people" || chapter.id === "work-money")));
+
   return (
     <section className="analysis-panel place-chapter" id={chapter.id} aria-labelledby={`${chapter.id}-heading`} data-testid={`chapter-${chapter.id}`} data-read-grain={resolved.readGrain}>
       <div className="panel-heading">
@@ -1334,6 +1338,12 @@ function Chapter({
           />
         ))}
       </div>
+      {/* The headline cards stay open; the rest of the chapter is one fold
+          (website UX review C1, Nick 2026-11-16). Its content is rendered
+          while folded, so a link to something inside it and the browser's
+          find both open it. */}
+      <details className="place-chapter-more" open={openAll} hidden={!more} data-testid={`chapter-${chapter.id}-more`}>
+      <summary>More about {chapter.title.toLowerCase()}</summary>
       {trend && trendMeasure ? (
         <PlaceTrend
           model={trend}
@@ -1403,6 +1413,7 @@ function Chapter({
           {MIGRATION_POPULATION_NOTE}
         </p>
       ) : null}
+      </details>
       <footer className="place-chapter-footer" data-testid={`chapter-${chapter.id}-footer`}>
         <p>
           <strong>{periods.length > 1 ? "Periods" : "Period"}:</strong> {periods.length ? periods.map(plainPeriods).join("; ") : "none published for this place"} ·{" "}

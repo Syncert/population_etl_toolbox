@@ -273,6 +273,82 @@
   white-space: nowrap;
 }
 
+/* A chapter's fold (website UX review C1): the headline cards stay open and
+   the charts, further figures and special sections sit under one control. */
+.place-chapter-more {
+  margin-top: 12px;
+}
+
+.place-chapter-more[hidden] {
+  display: none;
+}
+
+.place-page .place-chapter-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.place-chapter-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.place-chapter-more > summary::before {
+  content: "+";
+  display: inline-grid;
+  width: 1.2em;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.place-chapter-more[open] > summary::before {
+  content: "\2212";
+}
+
+.place-chapter-more[open] > summary {
+  margin-bottom: 12px;
+}
+
+.place-chapter-more > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.place-folds {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.place-folds button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media print {
+  .place-folds,
+  .place-chapter-more > summary {
+    display: none;
+  }
+}
+
 .place-chapter-footer {
   border-top: 1px solid var(--line);
   margin-top: 12px;
