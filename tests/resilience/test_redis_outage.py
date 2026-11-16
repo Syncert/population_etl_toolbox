@@ -24,57 +24,70 @@ def test_redis_outage_under_sustained_load_preserves_and_recovers_availability(
     if config is None:
         pytest.skip("runtime outage test requires TEST_REDIS_URL")
     manager = config.connect()
-    manager.flushdb()
-    manager.close()
+    try:
+        manager.flushdb()
 
-    outage = threading.Event()
-    real_get = Redis.get
-    real_setex = Redis.setex
+        # One request target throughout: the API refuses an undeclared query
+        # parameter with a 422 (API-115), and a failure carries no `x-cache`
+        # label, so a cache-busting `?phase=` would grade the refusal rather
+        # than the cache. Each phase starts from an empty store instead.
+        target = "/api/v1/catalog/sources"
 
-    async def switched_get(client, key):  # noqa: ANN001
-        if outage.is_set():
-            raise RedisConnectionError("injected runtime outage")
-        return await real_get(client, key)
+        outage = threading.Event()
+        real_get = Redis.get
+        real_setex = Redis.setex
 
-    async def switched_setex(client, key, ttl, value):  # noqa: ANN001
-        if outage.is_set():
-            raise RedisConnectionError("injected runtime outage")
-        return await real_setex(client, key, ttl, value)
+        async def switched_get(client, key):  # noqa: ANN001
+            if outage.is_set():
+                raise RedisConnectionError("injected runtime outage")
+            return await real_get(client, key)
 
-    monkeypatch.setattr(Redis, "get", switched_get)
-    monkeypatch.setattr(Redis, "setex", switched_setex)
+        async def switched_setex(client, key, ttl, value):  # noqa: ANN001
+            if outage.is_set():
+                raise RedisConnectionError("injected runtime outage")
+            return await real_setex(client, key, ttl, value)
 
-    with configured_api_client(monkeypatch, redis_url=config.url) as client:
-        warm = client.get("/api/v1/catalog/sources?phase=warm")
-        warm_hit = client.get("/api/v1/catalog/sources?phase=warm")
-        assert warm.headers["x-cache"] == "MISS"
-        assert warm_hit.headers["x-cache"] == "HIT"
+        monkeypatch.setattr(Redis, "get", switched_get)
+        monkeypatch.setattr(Redis, "setex", switched_setex)
 
-        outage.set()
+        with configured_api_client(monkeypatch, redis_url=config.url) as client:
+            warm = client.get(target)
+            warm_hit = client.get(target)
+            assert warm.status_code == warm_hit.status_code == 200
+            assert warm.headers["x-cache"] == "MISS"
+            assert warm_hit.headers["x-cache"] == "HIT"
 
-        def request_once(index: int) -> tuple[int, float, str]:
-            started = time.perf_counter()
-            response = client.get(f"/api/v1/catalog/sources?phase=outage-{index}")
-            return (
-                response.status_code,
-                time.perf_counter() - started,
-                response.headers["x-cache"],
-            )
+            outage.set()
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            results = list(executor.map(request_once, range(40)))
+            def request_once(index: int) -> tuple[int, float, str]:
+                started = time.perf_counter()
+                del index
+                response = client.get(target)
+                return (
+                    response.status_code,
+                    time.perf_counter() - started,
+                    response.headers["x-cache"],
+                )
 
-        statuses = [status for status, _, _ in results]
-        durations = sorted(duration for _, duration, _ in results)
-        p95 = durations[max(0, int(len(durations) * 0.95) - 1)]
-        assert sum(status >= 500 for status in statuses) / len(statuses) < 0.01
-        assert all(cache == "MISS" for _, _, cache in results)
-        assert p95 < 1.5
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(executor.map(request_once, range(40)))
 
-        outage.clear()
-        recovered = client.get("/api/v1/catalog/sources?phase=recovered")
-        recovered_hit = client.get("/api/v1/catalog/sources?phase=recovered")
-        assert recovered.status_code == recovered_hit.status_code == 200
-        assert recovered.headers["x-cache"] == "MISS"
-        assert recovered_hit.headers["x-cache"] == "HIT"
-        assert recovered_hit.content == recovered.content
+            statuses = [status for status, _, _ in results]
+            durations = sorted(duration for _, duration, _ in results)
+            p95 = durations[max(0, int(len(durations) * 0.95) - 1)]
+            assert sum(status >= 500 for status in statuses) / len(statuses) < 0.01
+            assert all(cache == "MISS" for _, _, cache in results)
+            assert p95 < 1.5
+
+            outage.clear()
+            # The store still holds the warm phase's entry; empty it so the
+            # recovery is graded on a fresh write, not on a survivor.
+            manager.flushdb()
+            recovered = client.get(target)
+            recovered_hit = client.get(target)
+            assert recovered.status_code == recovered_hit.status_code == 200
+            assert recovered.headers["x-cache"] == "MISS"
+            assert recovered_hit.headers["x-cache"] == "HIT"
+            assert recovered_hit.content == recovered.content
+    finally:
+        manager.close()
