@@ -295,9 +295,9 @@ Last audited against the repository on 2026-09-12. **Implemented** means that ch
 | End-to-end | E2E-001–E2E-014 | None |
 | Performance | PERF-001–PERF-010 | None |
 | Resilience | RES-001–RES-008 | None |
-| Frontend | WEB-001–WEB-033, WEB-035–WEB-184 | None |
+| Frontend | WEB-001–WEB-033, WEB-035–WEB-185 | None |
 | Deployment | DEPLOY-001–DEPLOY-013 | None |
-| **Total** | **769 of 769** | **0 of 769** |
+| **Total** | **770 of 770** | **0 of 770** |
 
 Awaiting implementation IDs: None.
 
@@ -305,7 +305,7 @@ The frontend sequence skips one number on purpose. That identifier is already in
 
 Implementation evidence is primarily in the [unit tests](../../tests/unit/), [DAG tests](../../tests/dags/), [integration tests](../../tests/integration/), [end-to-end tests](../../tests/e2e/), [external contracts](../../tests/external/), [performance tests](../../tests/performance/), [resilience tests](../../tests/resilience/), frontend tests, and [CI workflows](../../.github/workflows/). The detailed catalog below remains the source of truth for each ID's complete pass metric.
 
-The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 769-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
+The behavioral audit is not inferred from a `Covers:` reference. Each catalog row was reviewed against its complete pass metric and named production path. `python -m tests.support.catalog_evidence` renders the reviewable 770-row register containing the catalog behavior, exact Python/JavaScript node or workflow/configuration evidence, local runner, CI owner, and `FULL`/`PARTIAL` verdict. The lint workflow publishes that register as an artifact, and the deterministic suite fails if a row, node, execution owner, or full-audit verdict is missing.
 
 Latest implementation validation on 2026-08-12:
 
@@ -1086,6 +1086,7 @@ Mocked API tests are P0. Rows explicitly marked `integration` use disposable ser
 | WEB-182 | P2 | Browser / `web-browser` | A place page on a phone has no text under 12 px and no control under 24 px | At 390 px a county page, with the site header, has no element outside a chart whose own text is drawn under 12 px (the wordmark's badge excepted), no visible link, button, toggle, input or select under 24 px in either dimension, and no sideways scroll | Text under 12 px in the header or on a place page, a link or toggle a finger cannot hit at 24 px, or padding that makes the page scroll sideways |
 | WEB-183 | P2 | Browser / `web-browser` | The compare workspace fits a phone, and the sources page writes dates in words | At 390 px the compare workspace with a loaded pair does not scroll sideways and its rule table scrolls inside its own frame. The sources page's refresh list writes each date as month, day and year in words and never as digits and slashes | A compare page wider than the phone screen, a rule table that pushes the page sideways, or a date such as "11/6/2026" on the sources page |
 | WEB-184 | P2 | Browser / `web-browser` | Text inside a place page's charts reads at 10 px on a phone | At 390 px every piece of text inside a county page's charts, including the age pyramid and the public money lines, is drawn at 9.8 px or more (its text size times the scale the drawing is shown at), the public money lines end in the value alone, and the page does not scroll sideways. A margin under 0.05 percent of its value reads "± under 0.1%" | Chart text drawn at 5 to 9 px on a phone, labels that collide after being enlarged, or a positive margin shown as "±0.0%" |
+| WEB-185 | P2 | Unit + browser / `web-unit`, `web-browser` | An address that names no place is a 404, and the bare compare address starts a comparison | Asked from the web server, a state, county, city or metro segment the geography catalog does not publish is reported unknown, by name or by code a published one is reported known, and any failed, partial or unexpected catalog read is reported as not unknown so the page resolves in the browser. `/compare/places` with no pair answers 200 with the place search, and a malformed pair answers 404 | A made-up place address answering HTTP 200, a published place answering 404 because the catalog read failed, or the bare compare address answering "not found" |
 
 ### Deployment Tests
 

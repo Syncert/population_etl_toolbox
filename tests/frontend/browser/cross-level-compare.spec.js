@@ -221,3 +221,17 @@ test("without the batch route each row still asks for itself", async ({ page }) 
   await expect(page.getByTestId("compare-row-median-household-income")).toHaveAttribute("data-state", "ok");
   await expect(page.getByTestId("compare-row-below-poverty")).toContainText("Shown instead: Share of people below the poverty level");
 });
+
+// Covers: WEB-185 — the bare compare address starts a comparison with the
+// place search, where it answered "not found"; a malformed pair is still a
+// 404 (website UX review F6).
+test("the bare compare address offers the place search, and a malformed pair is a 404", async ({ page }) => {
+  await installCrossLevelFixtures(page);
+  const bare = await page.goto("/compare/places");
+  expect(bare.status()).toBe(200);
+  await expect(page.getByTestId("compare-places-start").getByRole("heading", { level: 1 })).toHaveText("Compare two places");
+  await expect(page.getByTestId("compare-places-start").getByRole("combobox")).toBeVisible();
+  const malformed = await page.goto("/compare/places?a=nonsense&b=us%3A1");
+  expect(malformed.status()).toBe(404);
+  await expect(page.getByTestId("route-not-found")).toBeVisible();
+});

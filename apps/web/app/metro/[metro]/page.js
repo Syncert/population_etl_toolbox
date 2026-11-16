@@ -4,6 +4,7 @@ import PlacePage from "../../../components/PlacePage";
 import { PLACE_SEGMENT } from "../../../lib/placeChapters";
 import { metroRouteTitle } from "../../../lib/routeTitles";
 import { canonicalMetroPath } from "../../../lib/metroRedirect";
+import { metroAddressIsUnknown } from "../../../lib/placeExists";
 
 // A metro or micro area's page (web-metro-pages): `/metro/<segment>`, the
 // slug of its published name or its five-digit CBSA code. A code is answered
@@ -22,5 +23,6 @@ export default async function MetroPage({ params }) {
   if (!PLACE_SEGMENT.test(metro)) notFound();
   const canonical = await canonicalMetroPath(metro);
   if (canonical) redirect(canonical);
+  if (await metroAddressIsUnknown(metro)) notFound();
   return <PlacePage key={`metro/${metro}`} metroSegment={metro} />;
 }

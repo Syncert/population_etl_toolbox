@@ -8,6 +8,7 @@
 import { notFound } from "next/navigation";
 
 import ComparePlacesPage from "../components/ComparePlacesPage";
+import PlaceFinder from "../components/PlaceFinder";
 import { PLACE_SEGMENT } from "./placeChapters";
 import { COMPARE_GEO_ID } from "./placeComparison";
 import { placeRouteTitle } from "./routeTitles";
@@ -35,8 +36,28 @@ export async function ComparePlacesRoute({ params }) {
 function identities(searchParams) {
   const a = typeof searchParams.a === "string" ? searchParams.a : "";
   const b = typeof searchParams.b === "string" ? searchParams.b : "";
+  // The bare address names no pair: it starts a comparison instead of
+  // answering "not found" (website UX review F6).
+  if (searchParams.a === undefined && searchParams.b === undefined) return null;
   if (!COMPARE_GEO_ID.test(a) || !COMPARE_GEO_ID.test(b)) notFound();
   return { a: { geoId: a }, b: { geoId: b } };
+}
+
+function ComparePlacesStart() {
+  return (
+    <main className="page-shell compact-page" data-testid="compare-places-start">
+      <div className="page-heading">
+        <div className="section-kicker">Compare</div>
+        <h1>Compare two places</h1>
+        <p>
+          Find the first place below. Its page has a line that reads
+          &ldquo;Compare this place with&rdquo;, and each nearby place has a
+          Compare link.
+        </p>
+      </div>
+      <PlaceFinder />
+    </main>
+  );
 }
 
 export async function compareIdentitiesMetadata() {
@@ -44,6 +65,8 @@ export async function compareIdentitiesMetadata() {
 }
 
 export async function CompareIdentitiesRoute({ searchParams }) {
-  const { a, b } = identities(await searchParams);
+  const pair = identities(await searchParams);
+  if (!pair) return <ComparePlacesStart />;
+  const { a, b } = pair;
   return <ComparePlacesPage key={JSON.stringify([a, b])} a={a} b={b} />;
 }
