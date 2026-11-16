@@ -424,6 +424,10 @@ def test_the_web_container_can_write_its_server_side_cache() -> None:
             "services"
         ]["web"]
         assert web["read_only"] is True
-        cache = [entry for entry in web["tmpfs"] if entry.startswith("/app/.next/cache:")]
-        assert len(cache) == 1, f"{name}: the web service mounts no writable .next/cache"
+        cache = [
+            entry for entry in web["tmpfs"] if entry.startswith("/app/.next/cache:")
+        ]
+        assert len(cache) == 1, (
+            f"{name}: the web service mounts no writable .next/cache"
+        )
         assert "uid=1001" in cache[0] and "gid=1001" in cache[0]
