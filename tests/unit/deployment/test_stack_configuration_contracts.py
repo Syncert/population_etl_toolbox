@@ -409,7 +409,7 @@ def test_the_exemption_list_names_only_settings_that_exist() -> None:
 
 
 def test_the_web_container_can_write_its_server_side_cache() -> None:
-    """A read-only web container needs a writable `.next/cache`.
+    """Covers: DEPLOY-014 — a read-only web container needs a writable `.next/cache`.
 
     The place routes ask the geography catalog from the web server and cache
     the answer. With a read-only root and no mount there, Next logged
