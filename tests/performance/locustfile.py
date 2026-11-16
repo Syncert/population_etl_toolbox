@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from uuid import uuid4
+from random import randint
 
 from locust import HttpUser, between, events, task
 
@@ -34,13 +34,16 @@ class CachedApiUser(HttpUser):
     @task(4)
     def catalog_cache_hit(self) -> None:
         self.client.get(
-            "/api/v1/catalog/metrics?limit=100&load=hit",
+            "/api/v1/catalog/metrics?limit=100",
             name="/api/v1/catalog/metrics [cache hit]",
         )
 
     @task(1)
     def catalog_cache_miss(self) -> None:
+        # A declared parameter makes the unique key: the API refuses an
+        # undeclared one with a 422, which Locust counts as a failure and
+        # which never reaches the cache (API-093).
         self.client.get(
-            f"/api/v1/catalog/metrics?limit=100&load={uuid4().hex}",
+            f"/api/v1/catalog/metrics?limit=100&offset={randint(0, 100000)}",
             name="/api/v1/catalog/metrics [cache miss]",
         )
