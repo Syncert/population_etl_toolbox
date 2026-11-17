@@ -43,6 +43,7 @@ services:
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/DDL/silver_hhs_hospital_capacity.sql:/docker-entrypoint-initdb.d/111d_silver_hhs_hospital_capacity.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_covid_cases/DDL/silver_cdc_covid_cases.sql:/docker-entrypoint-initdb.d/111e_silver_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_ilinet/DDL/silver_cdc_ilinet.sql:/docker-entrypoint-initdb.d/111f_silver_cdc_ilinet.sql:ro
+      - ../../src/data_ingestion_toolbox/vehicle_registrations/DDL/silver_vehicle_registrations.sql:/docker-entrypoint-initdb.d/111g_silver_vehicle_registrations.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql:/docker-entrypoint-initdb.d/112_silver_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/DDL/silver_census_bps.sql:/docker-entrypoint-initdb.d/113_silver_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/bea/DDL/silver_bea.sql:/docker-entrypoint-initdb.d/114_silver_bea.sql:ro
@@ -93,6 +94,7 @@ services:
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/gold_hhs_hospital_capacity.sql:/docker-entrypoint-initdb.d/161d_gold_hhs_hospital_capacity.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/gold_cdc_covid_cases.sql:/docker-entrypoint-initdb.d/161e_gold_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/gold_cdc_ilinet.sql:/docker-entrypoint-initdb.d/161f_gold_cdc_ilinet.sql:ro
+      - ../../src/data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/gold_vehicle_registrations.sql:/docker-entrypoint-initdb.d/161g_gold_vehicle_registrations.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql:/docker-entrypoint-initdb.d/162_gold_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/gold_census_bps.sql:/docker-entrypoint-initdb.d/163_gold_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/gold_eia.sql:/docker-entrypoint-initdb.d/163_gold_eia.sql:ro

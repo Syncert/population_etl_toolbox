@@ -2719,6 +2719,44 @@ def cdc_ilinet_set_aside_rows(
     ]
 
 
+def vehicle_registrations_set_aside(
+    cursor: Any, scope: Mapping[str, Any]
+) -> list[RuleOutcome]:
+    """DQ-VEH-003 — lines and files of the newest published release set aside."""
+    del scope
+    published = _count(
+        cursor,
+        "SELECT COUNT(*) FROM control.vehicle_registrations_release WHERE status = 'published'",
+    )
+    if published == 0:
+        return [RuleOutcome("silver_vehicle_registrations.quarantine", "not_applicable")]
+    offenders, offenders_total = _offenders(
+        cursor,
+        """
+        SELECT quarantine.error_code, quarantine.capture_id::TEXT,
+               quarantine.source_row_index
+          FROM silver_vehicle_registrations.quarantine AS quarantine
+          JOIN control.vehicle_registrations_release AS release
+            ON release.release_id = quarantine.release_id
+         WHERE release.status = 'published'
+           AND release.published_at = (
+               SELECT MAX(published_at) FROM control.vehicle_registrations_release
+                WHERE status = 'published'
+           )
+        """,
+        order_by="1, 2, 3",
+    )
+    return [
+        RuleOutcome(
+            "silver_vehicle_registrations.quarantine",
+            "warn" if offenders else "pass",
+            observed_count=offenders_total,
+            expected_count=0,
+            evidence=offenders[:EVIDENCE_LIMIT],
+        )
+    ]
+
+
 def decennial_part_sums(cursor: Any, scope: Mapping[str, Any]) -> list[RuleOutcome]:
     """DQ-DECENNIAL-003 — each count's parts add to it as published, per area."""
     del scope
@@ -5713,6 +5751,7 @@ SOURCE_EXECUTORS: Mapping[str, RuleExecutor] = {
     "DQ-HHS-003": hhs_unplaced_hospitals,
     "DQ-COVID-003": cdc_covid_set_aside_records,
     "DQ-ILINET-003": cdc_ilinet_set_aside_rows,
+    "DQ-VEH-003": vehicle_registrations_set_aside,
     "DQ-DECENNIAL-003": decennial_part_sums,
     "DQ-DECENNIAL-004": decennial_tract_county_sums,
     "DQ-USASPENDING-002": usaspending_request_reconciliation,

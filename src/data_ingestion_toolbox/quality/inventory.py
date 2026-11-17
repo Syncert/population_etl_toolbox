@@ -90,6 +90,7 @@ SOURCES: tuple[str, ...] = (
     "HHS_HOSPITAL_CAPACITY",
     "CDC_COVID_CASES",
     "CDC_ILINET",
+    "VEHICLE_REGISTRATIONS",
     "CENSUS_GOVFIN",
     "CENSUS_BPS",
     "BLS_QCEW",
@@ -3172,6 +3173,92 @@ _CDC_ILINET_OBJECTS: tuple[WarehouseObject, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Vehicle registrations by type (WisDOT Report 28, FHWA MV-1).
+# ---------------------------------------------------------------------------
+
+_VEHICLE_REGISTRATIONS_OBJECTS: tuple[WarehouseObject, ...] = (
+    _obj(
+        "control.vehicle_registrations_release",
+        "control",
+        "VEHICLE_REGISTRATIONS",
+        grain="release_id (one read of both publishers)",
+        lineage="control.ingestion_run",
+        scope_method="WisDOT's index pages, every Report 28 they link, every MV-1 year",
+        cadence="monthly",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "control.vehicle_registrations_document",
+        "control",
+        "VEHICLE_REGISTRATIONS",
+        grain="release_id, document_key",
+        lineage="raw_capture.response_capture",
+        scope_method="each page or file a release captured, with its parse outcome",
+        cadence="per capture",
+        empty_behavior="empty only before the first run",
+    ),
+    _obj(
+        "silver_vehicle_registrations.wisdot_county",
+        "silver",
+        "VEHICLE_REGISTRATIONS",
+        grain="county_code (WisDOT's own)",
+        scope_method="registered counties in vehicle_registrations/registry.py",
+        cadence="per replay",
+        empty_behavior="empty only before the first replay",
+    ),
+    _obj(
+        "silver_vehicle_registrations.quarantine",
+        "silver",
+        "VEHICLE_REGISTRATIONS",
+        grain="capture_id, source_row_index, error_code",
+        lineage="raw_capture.response_capture",
+        scope_method="one row per line or file set aside; populated only on failure",
+        cadence="per replay",
+        empty_behavior="empty when every line conformed",
+    ),
+    _obj(
+        "silver_vehicle_registrations.wisdot_count",
+        "silver",
+        "VEHICLE_REGISTRATIONS",
+        grain="data_year, table_part, county_code, line_key, vehicle_type, release_id",
+        lineage="raw_capture.response_capture",
+        scope_method="each printed Report 28 figure as the release that first carried or changed it",
+        cadence="per replay",
+        empty_behavior="a blank cell is retained as blank with no number, never zero",
+    ),
+    _obj(
+        "silver_vehicle_registrations.fhwa_mv1_figure",
+        "silver",
+        "VEHICLE_REGISTRATIONS",
+        grain="data_year, area_name, vehicle_class, ownership, release_id",
+        lineage="raw_capture.response_capture",
+        scope_method="each MV-1 figure as the release that first carried or changed it",
+        cadence="per replay",
+        empty_behavior="an empty or dashed cell is retained as not_reported, never zero",
+    ),
+    _obj(
+        "gold_vehicle_registrations.wisdot_registration_latest",
+        "gold",
+        "VEHICLE_REGISTRATIONS",
+        grain="data_year, table_part, county_code, line_key, vehicle_type (newest published)",
+        lineage="silver_vehicle_registrations.wisdot_count, silver_vehicle_registrations.wisdot_county",
+        scope_method="newest-revision projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+    _obj(
+        "gold_vehicle_registrations.fhwa_mv1_latest",
+        "gold",
+        "VEHICLE_REGISTRATIONS",
+        grain="data_year, area_name, vehicle_class, ownership (newest published)",
+        lineage="silver_vehicle_registrations.fhwa_mv1_figure",
+        scope_method="newest-revision projection, never a replacement",
+        cadence="per publication",
+        empty_behavior="empty only before the first published release",
+    ),
+)
+
+# ---------------------------------------------------------------------------
 # 2020 Census redistricting data (group quarters by type).
 # ---------------------------------------------------------------------------
 
@@ -5960,6 +6047,7 @@ ALL_OBJECTS: tuple[WarehouseObject, ...] = (
     + _HHS_HOSPITAL_CAPACITY_OBJECTS
     + _CDC_COVID_CASES_OBJECTS
     + _CDC_ILINET_OBJECTS
+    + _VEHICLE_REGISTRATIONS_OBJECTS
     + _BPS_OBJECTS
     + _QCEW_OBJECTS
     + _BEA_OBJECTS
@@ -8583,6 +8671,101 @@ ALL_RULES: tuple[QualityRule, ...] = (
         (
             "silver_cdc_ilinet.quarantine",
             "control.cdc_ilinet_release",
+        ),
+    ),
+    # -- Vehicle registrations (WisDOT Report 28, FHWA MV-1) ----------------
+    _rule(
+        "DQ-VEH-001",
+        "BLOCK",
+        "uniqueness",
+        "A Report 28 figure has one row per year, table part, county, printed "
+        "line, vehicle type and the release that first carried or changed it, "
+        "and an MV-1 figure one per year, area, vehicle class, ownership and "
+        "release; an unchanged figure is never written again.",
+        (
+            "control.vehicle_registrations_document",
+            "silver_vehicle_registrations.wisdot_count",
+            "silver_vehicle_registrations.fhwa_mv1_figure",
+            "gold_vehicle_registrations.wisdot_registration_latest",
+            "gold_vehicle_registrations.fhwa_mv1_latest",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: the grain is each table's primary key; "
+            "the parsers set a repeated line aside before insert."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_vehicle_registrations.wisdot_count",
+                (
+                    "data_year",
+                    "table_part",
+                    "county_code",
+                    "line_key",
+                    "vehicle_type",
+                    "release_id",
+                ),
+            ),
+            EnforcedGrain(
+                "silver_vehicle_registrations.fhwa_mv1_figure",
+                ("data_year", "area_name", "vehicle_class", "ownership", "release_id"),
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-VEH-002",
+        "BLOCK",
+        "conformance",
+        "A valid registration figure carries a value; a blank Report 28 cell "
+        "or an MV-1 cell FHWA left empty or dashed carries none: neither is "
+        "stored as zero.",
+        (
+            "silver_vehicle_registrations.wisdot_count",
+            "silver_vehicle_registrations.fhwa_mv1_figure",
+        ),
+        automation="enforced",
+        automation_note=(
+            "Enforced, not measured: named CHECK constraints refuse a status "
+            "that disagrees with its value."
+        ),
+        enforced_grains=(
+            EnforcedGrain(
+                "silver_vehicle_registrations.wisdot_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="vehicle_registrations_wisdot_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_vehicle_registrations.wisdot_count",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="vehicle_registrations_wisdot_other_value_absent",
+            ),
+            EnforcedGrain(
+                "silver_vehicle_registrations.fhwa_mv1_figure",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="vehicle_registrations_mv1_valid_value_present",
+            ),
+            EnforcedGrain(
+                "silver_vehicle_registrations.fhwa_mv1_figure",
+                ("value_status", "value"),
+                kind="check",
+                constraint_name="vehicle_registrations_mv1_other_value_absent",
+            ),
+        ),
+    ),
+    _rule(
+        "DQ-VEH-003",
+        "WARN",
+        "completeness",
+        "Lines and files of the newest published vehicle registrations "
+        "release that were set aside (a Report 28 line whose counts do not add "
+        "to its printed Sum, a file not in the registered layout) are counted. "
+        "They are in no published figure.",
+        (
+            "silver_vehicle_registrations.quarantine",
+            "control.vehicle_registrations_release",
         ),
     ),
     # -- 2020 Census redistricting data (group quarters) ---------------------

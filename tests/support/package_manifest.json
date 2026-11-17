@@ -114,6 +114,8 @@
     "data_ingestion_toolbox/cdc_ilinet/DDL/silver_cdc_ilinet.sql",
     "data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/gold_cdc_ilinet.sql",
     "data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql",
+    "data_ingestion_toolbox/vehicle_registrations/DDL/silver_vehicle_registrations.sql",
+    "data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/gold_vehicle_registrations.sql",
     "data_ingestion_toolbox/fbi_ucr/DDL/silver_fbi.sql",
     "data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/gold_fbi.sql",
     "data_ingestion_toolbox/fbi_ucr/gold_fbi/DDL/publisher.sql",

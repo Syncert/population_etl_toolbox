@@ -231,12 +231,13 @@ def test_every_block_rule_is_automated_or_states_the_gap() -> None:
     # grain and conformance rules (DQ-USASPENDING-001 and -003) sixty-five,
     # the HHS hospital weeks' grain and conformance rules (DQ-HHS-001 and
     # -002) sixty-seven, and the CDC case counts' grain and conformance rules
-    # (DQ-COVID-001 and -002) sixty-nine, and ILINet's grain and conformance
-    # rules (DQ-ILINET-001 and -002) seventy-one.
+    # (DQ-COVID-001 and -002) sixty-nine, ILINet's grain and conformance
+    # rules (DQ-ILINET-001 and -002) seventy-one, and the vehicle
+    # registrations' (DQ-VEH-001 and -002) seventy-three.
     enforced = sorted(
         rule.rule_id for rule in blocking if rule.automation == "enforced"
     )
-    assert len(enforced) == 71, enforced
+    assert len(enforced) == 73, enforced
 
 
 def test_every_rule_the_operations_guide_names_can_be_selected() -> None:
@@ -470,6 +471,7 @@ def test_the_component_each_source_records_is_declared_once() -> None:
         "HHS_HOSPITAL_CAPACITY",
         "CDC_COVID_CASES",
         "CDC_ILINET",
+        "VEHICLE_REGISTRATIONS",
         "EIA",
         "FBI_UCR",
         "EPA_AQS",
