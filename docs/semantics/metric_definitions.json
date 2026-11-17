@@ -5706,6 +5706,441 @@
       "last_reviewed_date": "2026-11-17"
     },
     {
+      "metric_id": "CENSUS_ACS:B08302_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_001",
+        "CENSUS_ACS:acs1:B08302_001"
+      ],
+      "name": "Workers who left home to go to work",
+      "definition": "All workers 16 and over who did not work from home, the total the departure times below add up to.",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_002",
+        "CENSUS_ACS:acs1:B08302_002"
+      ],
+      "name": "Workers leaving home 12:00 a.m. to 4:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 12:00 a.m. and 4:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_003",
+        "CENSUS_ACS:acs1:B08302_003"
+      ],
+      "name": "Workers leaving home 5:00 a.m. to 5:29 a.m.",
+      "definition": "Workers who usually left home to go to work between 5:00 a.m. and 5:29 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_004",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_004",
+        "CENSUS_ACS:acs1:B08302_004"
+      ],
+      "name": "Workers leaving home 5:30 a.m. to 5:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 5:30 a.m. and 5:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_005",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_005",
+        "CENSUS_ACS:acs1:B08302_005"
+      ],
+      "name": "Workers leaving home 6:00 a.m. to 6:29 a.m.",
+      "definition": "Workers who usually left home to go to work between 6:00 a.m. and 6:29 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_006",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_006",
+        "CENSUS_ACS:acs1:B08302_006"
+      ],
+      "name": "Workers leaving home 6:30 a.m. to 6:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 6:30 a.m. and 6:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_007",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_007",
+        "CENSUS_ACS:acs1:B08302_007"
+      ],
+      "name": "Workers leaving home 7:00 a.m. to 7:29 a.m.",
+      "definition": "Workers who usually left home to go to work between 7:00 a.m. and 7:29 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_008",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_008",
+        "CENSUS_ACS:acs1:B08302_008"
+      ],
+      "name": "Workers leaving home 7:30 a.m. to 7:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 7:30 a.m. and 7:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_009",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_009",
+        "CENSUS_ACS:acs1:B08302_009"
+      ],
+      "name": "Workers leaving home 8:00 a.m. to 8:29 a.m.",
+      "definition": "Workers who usually left home to go to work between 8:00 a.m. and 8:29 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_010",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_010",
+        "CENSUS_ACS:acs1:B08302_010"
+      ],
+      "name": "Workers leaving home 8:30 a.m. to 8:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 8:30 a.m. and 8:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_011",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_011",
+        "CENSUS_ACS:acs1:B08302_011"
+      ],
+      "name": "Workers leaving home 9:00 a.m. to 9:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 9:00 a.m. and 9:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_012",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_012",
+        "CENSUS_ACS:acs1:B08302_012"
+      ],
+      "name": "Workers leaving home 10:00 a.m. to 10:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 10:00 a.m. and 10:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_013",
+        "CENSUS_ACS:acs1:B08302_013"
+      ],
+      "name": "Workers leaving home 11:00 a.m. to 11:59 a.m.",
+      "definition": "Workers who usually left home to go to work between 11:00 a.m. and 11:59 a.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_014",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_014",
+        "CENSUS_ACS:acs1:B08302_014"
+      ],
+      "name": "Workers leaving home 12:00 p.m. to 3:59 p.m.",
+      "definition": "Workers who usually left home to go to work between 12:00 p.m. and 3:59 p.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B08302_015",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B08302_015",
+        "CENSUS_ACS:acs1:B08302_015"
+      ],
+      "name": "Workers leaving home 4:00 p.m. to 11:59 p.m.",
+      "definition": "Workers who usually left home to go to work between 4:00 p.m. and 11:59 p.m..",
+      "unit": "workers",
+      "universe": "workers age 16 and over who did not work from home",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "Counts only workers 16 and over who did not work from home, and the time they usually left home in the week before the survey; it is not the time they arrived at work or the time of any one day's trip."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B08302",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-commute-departure-time",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
       "metric_id": "CENSUS_ACS:B25044_001",
       "metric_codes": [
         "CENSUS_ACS:acs5:B25044_001",

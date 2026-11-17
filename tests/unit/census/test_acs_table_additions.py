@@ -35,12 +35,11 @@ def test_property_tax_is_curated_at_every_grain_and_declared_as_added() -> None:
 
 FAMILY_TABLES = ["B13002", "B23008", "B19125"]
 HEATING_FUEL = "B25040"
-VEHICLE_TABLES = ["B25044", "B25046"]
 
 
 def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> None:
     """Covers: ETL-114 — births, parents' work and family income for areas, counties, places and metros only."""
-    assert CONFIG.added_tables[-6:-3] == FAMILY_TABLES
+    assert CONFIG.added_tables[-7:-4] == FAMILY_TABLES
     for table in FAMILY_TABLES:
         assert table in CONFIG.curated_tables
         assert table not in CONFIG.tract_tables
@@ -52,11 +51,29 @@ def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> N
 
 def test_heating_fuel_is_curated_added_and_a_dane_focus_table_only() -> None:
     """Covers: ETL-114 — B25040 is curated for areas, places and metros, never a tract table, and Dane's tracts get it by focus."""
-    assert CONFIG.added_tables[-3] == HEATING_FUEL
+    assert CONFIG.added_tables[-4] == HEATING_FUEL
     assert HEATING_FUEL in CONFIG.curated_tables
     assert HEATING_FUEL not in CONFIG.tract_tables
     (dane,) = CONFIG.focus_counties
     assert HEATING_FUEL in dane.tables
+
+
+DEPARTURE_TIME = "B08302"
+VEHICLE_TABLES = ["B25044", "B25046"]
+
+
+def test_departure_time_is_curated_added_and_a_dane_focus_table_only() -> None:
+    """Covers: ETL-114 — B08302 is curated for areas, places and metros, never a tract table, and Dane's tracts get it by focus."""
+    assert CONFIG.added_tables[-3] == DEPARTURE_TIME
+    assert DEPARTURE_TIME in CONFIG.curated_tables
+    assert DEPARTURE_TIME not in CONFIG.tract_tables
+    (dane,) = CONFIG.focus_counties
+    assert DEPARTURE_TIME in dane.tables
+    # The commute and work tables beside it are tract tables for every state
+    # already, so Dane's focus slice does not ask for them a second time.
+    for table in ("B08301", "B08303", "B23025", "B11001"):
+        assert table in CONFIG.tract_tables
+        assert table not in dane.tables
 
 
 def test_the_vehicle_tables_are_curated_last_added_and_dane_focus_tables_only() -> None:
@@ -72,25 +89,22 @@ def test_the_vehicle_tables_are_curated_last_added_and_dane_focus_tables_only() 
 def test_a_county_slice_asks_only_for_the_tables_it_lacks() -> None:
     """Covers: ETL-114 — held with or without B25103, a slice asks only for what it lacks."""
     tables = list(CONFIG.curated_tables)
-    with_fuel = [t for t in tables if t not in VEHICLE_TABLES]
+    with_departure = [t for t in tables if t not in VEHICLE_TABLES]
     request = added_tables_request(
-        _digest(with_fuel), "success", tables, CONFIG.added_tables, _digest
+        _digest(with_departure), "success", tables, CONFIG.added_tables, _digest
     )
     assert request is not None and request.tables == VEHICLE_TABLES
-    with_fuel_lacking = [t for t in with_fuel if t != HEATING_FUEL]
+    lacking_departure = [t for t in with_departure if t != DEPARTURE_TIME]
     request = added_tables_request(
-        _digest(with_fuel_lacking), "success", tables, CONFIG.added_tables, _digest
+        _digest(lacking_departure), "success", tables, CONFIG.added_tables, _digest
     )
-    assert request is not None and request.tables == [HEATING_FUEL, *VEHICLE_TABLES]
-    with_tax = [t for t in with_fuel if t not in (*FAMILY_TABLES, HEATING_FUEL)]
+    assert request is not None and request.tables == [DEPARTURE_TIME, *VEHICLE_TABLES]
+    later = [HEATING_FUEL, DEPARTURE_TIME, *VEHICLE_TABLES]
+    with_tax = [t for t in tables if t not in (*FAMILY_TABLES, *later)]
     request = added_tables_request(
         _digest(with_tax), "success", tables, CONFIG.added_tables, _digest
     )
-    assert request is not None and request.tables == [
-        *FAMILY_TABLES,
-        HEATING_FUEL,
-        *VEHICLE_TABLES,
-    ]
+    assert request is not None and request.tables == [*FAMILY_TABLES, *later]
     before_tax = [t for t in with_tax if t != "B25103"]
     request = added_tables_request(
         _digest(before_tax), "success", tables, CONFIG.added_tables, _digest
@@ -98,8 +112,7 @@ def test_a_county_slice_asks_only_for_the_tables_it_lacks() -> None:
     assert request is not None and request.tables == [
         "B25103",
         *FAMILY_TABLES,
-        HEATING_FUEL,
-        *VEHICLE_TABLES,
+        *later,
     ]
 
 
