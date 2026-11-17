@@ -34,11 +34,12 @@ def test_property_tax_is_curated_at_every_grain_and_declared_as_added() -> None:
 
 
 FAMILY_TABLES = ["B13002", "B23008", "B19125"]
+HEATING_FUEL = "B25040"
 
 
 def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> None:
     """Covers: ETL-114 — births, parents' work and family income for areas, counties, places and metros only."""
-    assert CONFIG.added_tables[-3:] == FAMILY_TABLES
+    assert CONFIG.added_tables[-4:-1] == FAMILY_TABLES
     for table in FAMILY_TABLES:
         assert table in CONFIG.curated_tables
         assert table not in CONFIG.tract_tables
@@ -48,19 +49,37 @@ def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> N
     ]
 
 
+def test_heating_fuel_is_curated_last_added_and_a_dane_focus_table_only() -> None:
+    """Covers: ETL-114 — B25040 is curated for areas, places and metros, never a tract table, and Dane's tracts get it by focus."""
+    assert CONFIG.added_tables[-1] == HEATING_FUEL
+    assert HEATING_FUEL in CONFIG.curated_tables
+    assert HEATING_FUEL not in CONFIG.tract_tables
+    (dane,) = CONFIG.focus_counties
+    assert HEATING_FUEL in dane.tables
+
+
 def test_a_county_slice_asks_only_for_the_tables_it_lacks() -> None:
     """Covers: ETL-114 — held with or without B25103, a slice asks only for what it lacks."""
     tables = list(CONFIG.curated_tables)
-    with_tax = [t for t in tables if t not in FAMILY_TABLES]
+    with_fuel_lacking = [t for t in tables if t != HEATING_FUEL]
+    request = added_tables_request(
+        _digest(with_fuel_lacking), "success", tables, CONFIG.added_tables, _digest
+    )
+    assert request is not None and request.tables == [HEATING_FUEL]
+    with_tax = [t for t in tables if t not in (*FAMILY_TABLES, HEATING_FUEL)]
     request = added_tables_request(
         _digest(with_tax), "success", tables, CONFIG.added_tables, _digest
     )
-    assert request is not None and request.tables == FAMILY_TABLES
+    assert request is not None and request.tables == [*FAMILY_TABLES, HEATING_FUEL]
     before_tax = [t for t in with_tax if t != "B25103"]
     request = added_tables_request(
         _digest(before_tax), "success", tables, CONFIG.added_tables, _digest
     )
-    assert request is not None and request.tables == ["B25103", *FAMILY_TABLES]
+    assert request is not None and request.tables == [
+        "B25103",
+        *FAMILY_TABLES,
+        HEATING_FUEL,
+    ]
 
 
 def test_an_added_table_must_be_curated_and_named_once() -> None:

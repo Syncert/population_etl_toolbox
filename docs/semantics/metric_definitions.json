@@ -5501,6 +5501,209 @@
       "version": 1,
       "effective_date": "2026-11-11",
       "last_reviewed_date": "2026-11-11"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_001",
+        "CENSUS_ACS:acs1:B25040_001"
+      ],
+      "name": "Occupied homes with a heating fuel reported",
+      "definition": "All occupied housing units, the total the fuel lines below add up to.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_002",
+        "CENSUS_ACS:acs1:B25040_002"
+      ],
+      "name": "Homes heated with utility gas",
+      "definition": "Occupied homes heated mainly with gas piped in from a utility.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_003",
+        "CENSUS_ACS:acs1:B25040_003"
+      ],
+      "name": "Homes heated with bottled, tank or LP gas",
+      "definition": "Occupied homes heated mainly with gas delivered in bottles or a tank.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_004",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_004",
+        "CENSUS_ACS:acs1:B25040_004"
+      ],
+      "name": "Homes heated with electricity",
+      "definition": "Occupied homes heated mainly with electricity.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_005",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_005",
+        "CENSUS_ACS:acs1:B25040_005"
+      ],
+      "name": "Homes heated with fuel oil or kerosene",
+      "definition": "Occupied homes heated mainly with fuel oil, kerosene, or the like.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_007",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_007",
+        "CENSUS_ACS:acs1:B25040_007"
+      ],
+      "name": "Homes heated with wood",
+      "definition": "Occupied homes heated mainly with wood.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25040_010",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25040_010",
+        "CENSUS_ACS:acs1:B25040_010"
+      ],
+      "name": "Homes using no heating fuel",
+      "definition": "Occupied homes that use no fuel for heating.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "The fuel used most for heating, as the household reports it; a home may burn other fuels as well, and the table says nothing about the equipment that burns it."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25040",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "acs-environment-profile-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
     }
   ]
 }
