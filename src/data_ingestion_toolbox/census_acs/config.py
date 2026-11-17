@@ -258,6 +258,7 @@ class AcsConfig(BaseModel):
         "B25010",  # Average household size by tenure
         "B25024",  # Units in structure
         "B25034",  # Year structure built; line meanings change when Census updates year bands
+        "B25040",  # House heating fuel by tenure; _002 utility gas, _004 electricity, _010 none
         "B25064",  # Median gross rent
         "B25070",  # Gross rent as a percent of household income
         "B25075",  # Distribution of owner-occupied home values
@@ -312,7 +313,9 @@ class AcsConfig(BaseModel):
     # B13002, B23008 and B19125 (acs-family-tables, 2026-11-10) are curated
     # only, not tract tables: tracts would be some 25 times the county volume
     # with the census schemas already most of the warehouse.
-    added_tables: List[str] = ["B25103", "B13002", "B23008", "B19125"]
+    # B25040 (acs-environment-profile-tables, 2026-11-17) is curated only, for
+    # the same reason; Dane's tracts get it through `focus_counties`.
+    added_tables: List[str] = ["B25103", "B13002", "B23008", "B19125", "B25040"]
     # The 5-year years requested at tract grain, declared as for places:
     # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
     # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
@@ -329,15 +332,24 @@ class AcsConfig(BaseModel):
     # Dane County, Wisconsin is the survival game's pilot county: its
     # characters are drawn from sex by age for each race group and
     # occupation by sex; its buildings are aged by year structure built
-    # (B25034). Hispanic or Latino by race (B03002) is a tract table for
-    # every state already. Dane's ~107 tracts on these 11 tables are about
+    # (B25034), its homes' type, cars and heating fuel (B25024, B08201,
+    # B25040). Hispanic or Latino by race (B03002) is a tract table for
+    # every state already. Dane's ~107 tracts on the first 11 tables are about
     # 33,000 estimates a year, against ~23 million for the same tables on
-    # every tract. Another county is one more entry.
+    # every tract; the three housing tables add about 25 more estimates a tract
+    # and year. Another county is one more entry.
     focus_counties: List[FocusCounty] = [
         FocusCounty(
             county_fips="55025",
             label="Dane County, WI",
-            tables=[*RACE_ITERATED_SEX_BY_AGE, "B24010", "B25034"],
+            tables=[
+                *RACE_ITERATED_SEX_BY_AGE,
+                "B24010",
+                "B25034",
+                "B25024",
+                "B08201",
+                "B25040",
+            ],
         )
     ]
     place_history_tables: List[str] = ["B01003", "B19013", "B17001", "B25064", "B25077"]

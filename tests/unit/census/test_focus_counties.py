@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_dane_county_is_the_configured_focus_county() -> None:
-    """Covers: ETL-137 — Dane's tracts carry race x sex x age, occupation and building age."""
+    """Covers: ETL-137 — Dane's tracts carry race x sex x age, occupation, building age, housing type, cars and heating fuel."""
     (dane,) = CONFIG.focus_counties
     assert (dane.county_fips, dane.state_fips, dane.county_code) == (
         "55025",
@@ -33,6 +33,9 @@ def test_dane_county_is_the_configured_focus_county() -> None:
         *RACE_ITERATED_SEX_BY_AGE,
         "B24010",
         "B25034",
+        "B25024",
+        "B08201",
+        "B25040",
     }
     # Hispanic or Latino by race is a tract table for every state already.
     assert "B03002" in CONFIG.tract_tables
