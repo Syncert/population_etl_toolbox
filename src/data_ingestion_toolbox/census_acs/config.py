@@ -259,6 +259,8 @@ class AcsConfig(BaseModel):
         "B25024",  # Units in structure
         "B25034",  # Year structure built; line meanings change when Census updates year bands
         "B25040",  # House heating fuel by tenure; _002 utility gas, _004 electricity, _010 none
+        "B25044",  # Tenure by vehicles available (vehicle-fleet-tables)
+        "B25046",  # Aggregate number of vehicles available by tenure (vehicle-fleet-tables)
         "B25064",  # Median gross rent
         "B25070",  # Gross rent as a percent of household income
         "B25075",  # Distribution of owner-occupied home values
@@ -315,7 +317,18 @@ class AcsConfig(BaseModel):
     # with the census schemas already most of the warehouse.
     # B25040 (acs-environment-profile-tables, 2026-11-17) is curated only, for
     # the same reason; Dane's tracts get it through `focus_counties`.
-    added_tables: List[str] = ["B25103", "B13002", "B23008", "B19125", "B25040"]
+    # B25044 and B25046 (vehicle-fleet-tables, 2026-11-17) likewise: tenure
+    # by vehicles available and the aggregate vehicles, curated only, with
+    # Dane's tracts through `focus_counties`.
+    added_tables: List[str] = [
+        "B25103",
+        "B13002",
+        "B23008",
+        "B19125",
+        "B25040",
+        "B25044",
+        "B25046",
+    ]
     # The 5-year years requested at tract grain, declared as for places:
     # every year, 2009 on Census 2000 tracts (`silver_ref`'s 2000 vintage),
     # 2010-2019 on 2010 tracts and 2020 on on 2020 tracts.
@@ -333,11 +346,13 @@ class AcsConfig(BaseModel):
     # characters are drawn from sex by age for each race group and
     # occupation by sex; its buildings are aged by year structure built
     # (B25034), its homes' type, cars and heating fuel (B25024, B08201,
-    # B25040). Hispanic or Latino by race (B03002) is a tract table for
+    # B25040), and its parked fleet by tenure and count (B25044, B25046,
+    # vehicle-fleet-tables). Hispanic or Latino by race (B03002) is a tract table for
     # every state already. Dane's ~107 tracts on the first 11 tables are about
     # 33,000 estimates a year, against ~23 million for the same tables on
     # every tract; the three housing tables add about 25 more estimates a tract
-    # and year. Another county is one more entry.
+    # and year; the two vehicle tables 18 more. Another county is one more
+    # entry.
     focus_counties: List[FocusCounty] = [
         FocusCounty(
             county_fips="55025",
@@ -349,6 +364,8 @@ class AcsConfig(BaseModel):
                 "B25024",
                 "B08201",
                 "B25040",
+                "B25044",
+                "B25046",
             ],
         )
     ]

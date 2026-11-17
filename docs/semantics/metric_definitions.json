@@ -5704,6 +5704,531 @@
       "version": 1,
       "effective_date": "2026-11-17",
       "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_001",
+        "CENSUS_ACS:acs1:B25044_001"
+      ],
+      "name": "Occupied homes by vehicles available",
+      "definition": "All occupied housing units, the total the owner and renter lines below add up to.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_002",
+        "CENSUS_ACS:acs1:B25044_002"
+      ],
+      "name": "Owner-occupied homes by vehicles available",
+      "definition": "All owner-occupied housing units, the total the vehicle lines below add up to.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_003",
+        "CENSUS_ACS:acs1:B25044_003"
+      ],
+      "name": "Owner-occupied homes with no vehicle available",
+      "definition": "Owner-occupied housing units whose household has no vehicle kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_004",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_004",
+        "CENSUS_ACS:acs1:B25044_004"
+      ],
+      "name": "Owner-occupied homes with 1 vehicle available",
+      "definition": "Owner-occupied housing units whose household has 1 vehicle kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_005",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_005",
+        "CENSUS_ACS:acs1:B25044_005"
+      ],
+      "name": "Owner-occupied homes with 2 vehicles available",
+      "definition": "Owner-occupied housing units whose household has 2 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_006",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_006",
+        "CENSUS_ACS:acs1:B25044_006"
+      ],
+      "name": "Owner-occupied homes with 3 vehicles available",
+      "definition": "Owner-occupied housing units whose household has 3 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_007",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_007",
+        "CENSUS_ACS:acs1:B25044_007"
+      ],
+      "name": "Owner-occupied homes with 4 vehicles available",
+      "definition": "Owner-occupied housing units whose household has 4 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_008",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_008",
+        "CENSUS_ACS:acs1:B25044_008"
+      ],
+      "name": "Owner-occupied homes with 5 or more vehicles available",
+      "definition": "Owner-occupied housing units whose household has 5 or more vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_009",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_009",
+        "CENSUS_ACS:acs1:B25044_009"
+      ],
+      "name": "Renter-occupied homes by vehicles available",
+      "definition": "All renter-occupied housing units, the total the vehicle lines below add up to.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_010",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_010",
+        "CENSUS_ACS:acs1:B25044_010"
+      ],
+      "name": "Renter-occupied homes with no vehicle available",
+      "definition": "Renter-occupied housing units whose household has no vehicle kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_011",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_011",
+        "CENSUS_ACS:acs1:B25044_011"
+      ],
+      "name": "Renter-occupied homes with 1 vehicle available",
+      "definition": "Renter-occupied housing units whose household has 1 vehicle kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_012",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_012",
+        "CENSUS_ACS:acs1:B25044_012"
+      ],
+      "name": "Renter-occupied homes with 2 vehicles available",
+      "definition": "Renter-occupied housing units whose household has 2 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_013",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_013",
+        "CENSUS_ACS:acs1:B25044_013"
+      ],
+      "name": "Renter-occupied homes with 3 vehicles available",
+      "definition": "Renter-occupied housing units whose household has 3 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_014",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_014",
+        "CENSUS_ACS:acs1:B25044_014"
+      ],
+      "name": "Renter-occupied homes with 4 vehicles available",
+      "definition": "Renter-occupied housing units whose household has 4 vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25044_015",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25044_015",
+        "CENSUS_ACS:acs1:B25044_015"
+      ],
+      "name": "Renter-occupied homes with 5 or more vehicles available",
+      "definition": "Renter-occupied housing units whose household has 5 or more vehicles kept at home for its use.",
+      "unit": "housing units",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25044",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25046_001",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25046_001",
+        "CENSUS_ACS:acs1:B25046_001"
+      ],
+      "name": "Vehicles available to households",
+      "definition": "Aggregate number of vehicles available to the households of all occupied housing units.",
+      "unit": "vehicles",
+      "universe": "occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted.",
+        "A sum of the vehicles each household reports, as the Bureau publishes it; not an average. B25044 stops at 5 or more, so this is the only published vehicle count."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25046",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25046_002",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25046_002",
+        "CENSUS_ACS:acs1:B25046_002"
+      ],
+      "name": "Vehicles available to owner households",
+      "definition": "Aggregate number of vehicles available to the households of owner-occupied housing units.",
+      "unit": "vehicles",
+      "universe": "owner-occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted.",
+        "A sum of the vehicles each household reports, as the Bureau publishes it; not an average. B25044 stops at 5 or more, so this is the only published vehicle count."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25046",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
+    },
+    {
+      "metric_id": "CENSUS_ACS:B25046_003",
+      "metric_codes": [
+        "CENSUS_ACS:acs5:B25046_003",
+        "CENSUS_ACS:acs1:B25046_003"
+      ],
+      "name": "Vehicles available to renter households",
+      "definition": "Aggregate number of vehicles available to the households of renter-occupied housing units.",
+      "unit": "vehicles",
+      "universe": "renter-occupied housing units",
+      "kind": "count",
+      "caveat": "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+      "intended_use": "Describe a place as the American Community Survey estimates it, beside its containing places.",
+      "limitations": [
+        "Survey estimate with a margin of error at 90 percent confidence; compare two values only when their intervals do not overlap.",
+        "5-year estimates describe a five-year period, not a single year; 1-year estimates exist only for places of 65,000 or more.",
+        "A vehicle is a car, van or truck of one ton capacity or less kept at home for the household's use; motorcycles and other recreational vehicles are not counted.",
+        "A sum of the vehicles each household reports, as the Bureau publishes it; not an average. B25044 stops at 5 or more, so this is the only published vehicle count."
+      ],
+      "citations": [
+        "https://data.census.gov/table/ACSDT5Y2023.B25046",
+        "https://www.census.gov/programs-surveys/acs/technical-documentation/subject-definitions.html"
+      ],
+      "status": "draft",
+      "owner": "vehicle-fleet-tables",
+      "reviewer": "Nick",
+      "version": 1,
+      "effective_date": "2026-11-17",
+      "last_reviewed_date": "2026-11-17"
     }
   ]
 }
