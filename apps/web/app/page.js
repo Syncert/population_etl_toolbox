@@ -4,21 +4,18 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, BarChart3, BookOpen, Database, Map } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import PlaceSearch, { usePlaceCatalog } from "../components/PlaceSearch";
-import { getSources, searchMetrics } from "../lib/api/client";
-import { displayMetricName, formatNumber } from "../lib/format";
+import { getSources } from "../lib/api/client";
 import { connectedSourcesBand } from "../lib/catalog";
 import { FEATURED_PLACE } from "../lib/featuredPlace";
 import { featurePlaceHref } from "../lib/placeDirectory";
 import { discoverTileMetadata } from "../lib/tiles";
-import { explorerHref } from "../lib/urlState";
 
 const ChoroplethMap = dynamic(() => import("../components/ChoroplethMap"), { ssr: false });
 
 export default function HomePage() {
   const [sources, setSources] = useState([]);
-  const [metrics, setMetrics] = useState({ total: 0, items: [] });
   const [status, setStatus] = useState("loading");
   const router = useRouter();
   const { catalog, error: placeError } = usePlaceCatalog();
@@ -49,13 +46,9 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      getSources(),
-      searchMetrics({ active_only: "true", q: "population", limit: "6" }),
-    ]).then(([sourceItems, metricPayload]) => {
+    getSources().then((sourceItems) => {
       if (!cancelled) {
         setSources(sourceItems);
-        setMetrics(metricPayload);
         setStatus("ready");
       }
     }).catch(() => {
@@ -64,12 +57,6 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
-  // The first metric the catalog answers for this search. It used to prefer
-  // one hard-coded Census variable, which made the home page's feature a
-  // client-authored choice of provider dressed as the catalog's answer -- and
-  // pointed the explorer at that code even when the catalog had never
-  // published it.
-  const featuredMetric = useMemo(() => metrics.items[0], [metrics]);
   const sourceBand = useMemo(() => connectedSourcesBand(status, sources), [status, sources]);
 
   return (
@@ -77,7 +64,7 @@ export default function HomePage() {
       <section className="home-intro home-finder">
         <div className="section-kicker">Economic Data Studio</div>
         <h1>What is going on in your place?</h1>
-        <p>One page for every county, every state, and the nation: the same chapters in the same order, each number beside its state&apos;s and the nation&apos;s, with its period and source.</p>
+        <p>One page for every city, county and state, and the nation. Each number sits beside its state&apos;s and the nation&apos;s, with its period and source.</p>
         <PlaceSearch catalog={catalog} error={placeError} />
       </section>
 
@@ -88,8 +75,8 @@ export default function HomePage() {
             rows={[]}
             tileMetadata={tileMetadata}
             geoLevel="COUNTY"
-            legendTitle="Counties, unpainted: no briefing measure is published yet"
-            missingLabel="Not painted"
+            legendTitle="Select a county to open its page"
+            missingLabel="County"
             testId="home-map"
             ariaLabel="County map. Select a county to open its page; the search above reaches every county too."
             onFeatureClick={openFeature}
@@ -111,25 +98,13 @@ export default function HomePage() {
       ) : null}
 
       <section className="home-tools" aria-labelledby="home-tools-heading">
-        <div className="section-kicker">Tools</div>
-        <h2 id="home-tools-heading">For analysts</h2>
-        <p>Explore published federal statistics with every metric, map, and chart tied back to its source.</p>
+        <h2 id="home-tools-heading">Tools for analysts</h2>
+        <p>Every published measure, with maps, tables and downloads, each tied back to its source.</p>
         <div className="command-row">
-          <Link className="button primary" href="/explore">Open the explorer <ArrowRight size={16} /></Link>
+          <Link className="button secondary" href="/explore">Open the explorer <ArrowRight size={16} /></Link>
           <Link className="button secondary" href="/catalog">Browse the catalog</Link>
-          <Link className="button secondary" href="/data">Where the numbers come from</Link>
+          <Link className="button secondary" href="/use-cases">Start from a question</Link>
         </div>
-      </section>
-
-      <section className="signal-strip" aria-label="Platform signals">
-        <div><strong>{status === "ready" ? sources.length : "-"}</strong><span>connected sources</span></div>
-        <div><strong>{status === "ready" ? formatNumber(metrics.total) : "-"}</strong><span>population matches</span></div>
-        {/* Two further cells stood here: "County / national map coverage" and
-            "Live / API-backed observations". Neither came from anything the
-            API answers -- the first is a claim about which grains the
-            warehouse publishes, which varies by source, and the second is a
-            claim about the deployment's own health that this page does not
-            check. The two that remain are counts the catalog just gave us. */}
       </section>
 
       {/* Always present so the first render is the baseline; a failure that
@@ -140,60 +115,20 @@ export default function HomePage() {
         ) : null}
       </div>
 
-      <section className="home-grid">
-        <article className="feature-story">
-          <div className="section-kicker">Featured analysis</div>
-          <h2>Population concentration is best read county by county</h2>
-          <p>Use the national county explorer to see the latest estimate, inspect uncertainty, and pin any county for its historical series.</p>
-          <Link className="text-link" href="/articles">Read the analysis <BookOpen size={15} /></Link>
-        </article>
-        <article className="snapshot-panel">
-          <div className="snapshot-icon"><Map aria-hidden="true" /></div>
-          <div>
-            <div className="section-kicker">National snapshot</div>
-            <h2>{featuredMetric ? displayMetricName(featuredMetric) : "County population estimates"}</h2>
-            <p>Latest source-backed metric metadata and observation coverage.</p>
-            {/* Only where the catalog answered one. A link built from a
-                metric code this client invented opens the explorer on a
-                measure the API may never have published. */}
-            {featuredMetric ? (
-              <Link
-                className="text-link"
-                data-testid="home-featured-link"
-                href={explorerHref({
-                  metric: featuredMetric.metric_code,
-                  source: featuredMetric.source_code || undefined,
-                })}
-              >
-                Open map <ArrowRight size={15} />
-              </Link>
-            ) : (
-              <Link className="text-link" data-testid="home-featured-link" href="/catalog">
-                Browse the catalog <ArrowRight size={15} />
-              </Link>
-            )}
-          </div>
-        </article>
-      </section>
-
-      <section className="path-grid" aria-label="Primary workflows">
-        <Link href="/catalog"><Database /><strong>Catalog</strong><span>Find metrics and inspect provenance.</span></Link>
-        <Link href="/explore"><BarChart3 /><strong>Explore</strong><span>Map, compare, and save a view.</span></Link>
-        <Link href="/builder"><BookOpen /><strong>Compose</strong><span>Build a page from reusable analysis.</span></Link>
-        <Link href="/use-cases"><Map /><strong>Use cases</strong><span>Start with a reviewed question and choose a place.</span></Link>
-      </section>
-
-      <section className="source-band">
-        <div><div className="section-kicker">Connected sources</div><h2>Public data with its identity intact</h2></div>
-        <div className="source-list" data-testid="home-source-list">
+      <section className="source-band" aria-labelledby="home-sources-heading">
+        <h2 id="home-sources-heading" data-testid="home-source-count">
+          {sourceBand.names.length > 0 ? `${sourceBand.names.length} public sources, each named beside its numbers` : "Public sources, each named beside its numbers"}
+        </h2>
+        <ul className="source-list" data-testid="home-source-list">
           {/* Named only where the API named them: a list from this page
               would read as a fact about the warehouse (WEB-080). */}
           {sourceBand.names.length > 0 ? (
-            sourceBand.names.map((name) => <span key={name}>{name}</span>)
+            sourceBand.names.map((name) => <li key={name}>{name}</li>)
           ) : (
-            <span className="subtle">{sourceBand.message}</span>
+            <li className="subtle">{sourceBand.message}</li>
           )}
-        </div>
+        </ul>
+        <p><Link className="text-link" href="/data">Where the numbers come from <ArrowRight size={13} /></Link></p>
       </section>
     </main>
   );

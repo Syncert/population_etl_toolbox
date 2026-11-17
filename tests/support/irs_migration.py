@@ -28,6 +28,7 @@ from data_ingestion_toolbox.irs_migration.silver_irs_migration.load import (
     replay_run,
 )
 from tests.support.capture_seed import delete_geography, seed_geography
+from tests.support.irs_migration_zips import zip_payload_for
 from tests.support.warehouse_scope import (
     delete_capture_graph,
     delete_harvested_glossary_rows,
@@ -111,6 +112,14 @@ class FixtureClient:
             override = self.overrides[name]
             return httpx.Response(
                 override.status_code, content=override.content, request=request
+            )
+        stand_in = zip_payload_for(name)
+        if stand_in is not None:
+            return httpx.Response(
+                200,
+                content=stand_in,
+                headers={"content-type": "application/zip"},
+                request=request,
             )
         path = FIXTURE_DIR / name
         if not path.is_file():

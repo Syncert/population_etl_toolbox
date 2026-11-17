@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 
 from data_ingestion_toolbox.cdc.capture import capture_asset_release
+from tests.unit.cdc._doubles import MemoryPageLedger
 from data_ingestion_toolbox.cdc.config import CdcConfig
 from data_ingestion_toolbox.cdc.metadata import MetadataDecision
 from data_ingestion_toolbox.cdc.registry import CDI_ASSET
@@ -98,6 +99,7 @@ def test_metadata_and_pages_commit_before_parsing_or_exposure(
         client=client,
         control=control,
         persist_capture=persist,
+        page_ledger=MemoryPageLedger(),
     )
 
     assert release.decision is MetadataDecision.INGEST
@@ -136,6 +138,7 @@ def test_capture_failure_marks_request_and_run_failed_without_exposing_bytes() -
             client=client,
             control=control,
             persist_capture=persist,
+            page_ledger=MemoryPageLedger(),
         )
 
     assert "finish_request:failed" in events

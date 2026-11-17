@@ -38,6 +38,7 @@ from tools.deployment import (  # noqa: E402  (path set above)
     FlagNames,
     airflow_metadata_isolation,
     compose_steps,
+    deploy_environment,
     guard_applies,
     resolve_compose_context,
 )
@@ -89,14 +90,8 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _default_commit_sha(environ: dict[str, str]) -> None:
-    """Stamp evidence with the deployed commit when the host has not.
-
-    The warehouse data-quality assessment records which code produced it, and
-    an unstamped run is evidence nobody can trace back to a revision.
-    """
-    if (environ.get("DATA_QUALITY_COMMIT_SHA") or "").strip():
-        return
+def _checked_out_commit() -> str:
+    """The commit this checkout is on, or empty when git cannot say."""
     try:
         resolved = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -106,9 +101,21 @@ def _default_commit_sha(environ: dict[str, str]) -> None:
             check=False,
         )
     except OSError:
+        return ""
+    return resolved.stdout.strip() if resolved.returncode == 0 else ""
+
+
+def _default_commit_sha(environ: dict[str, str]) -> None:
+    """Stamp evidence with the deployed commit when the host has not.
+
+    The warehouse data-quality assessment records which code produced it, and
+    an unstamped run is evidence nobody can trace back to a revision.
+    """
+    if (environ.get("DATA_QUALITY_COMMIT_SHA") or "").strip():
         return
-    if resolved.returncode == 0 and resolved.stdout.strip():
-        environ["DATA_QUALITY_COMMIT_SHA"] = resolved.stdout.strip()
+    sha = _checked_out_commit()
+    if sha:
+        environ["DATA_QUALITY_COMMIT_SHA"] = sha
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -152,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
             flags=flags,
         )
 
+    environment = deploy_environment(
+        context, environ=os.environ, commit_sha=_checked_out_commit()
+    )
+
     steps = compose_steps(
         arguments.action,
         context,
@@ -167,6 +178,9 @@ def main(argv: list[str] | None = None) -> int:
                     "compose_file": context.compose_file,
                     "env_file": context.env_file,
                     "use_host_env": context.use_host_env,
+                    # Exported by the caller before the steps run;
+                    # `deploy_stack.ps1` sets each one on `$env:`.
+                    "environment": environment,
                     "guard": {
                         "status": verdict.status if verdict else "not_applicable",
                         "message": verdict.message if verdict else "",
@@ -189,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
             log(verdict.message)
 
     _default_commit_sha(os.environ)
+    for name, value in environment.items():
+        log(f"{name}={value} (from the checked-out commit)")
+        os.environ[name] = value
 
     for step in steps:
         log(step.description)

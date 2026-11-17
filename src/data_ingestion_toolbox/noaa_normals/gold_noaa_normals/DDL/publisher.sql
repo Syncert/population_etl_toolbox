@@ -12,7 +12,7 @@ SELECT 'NOAA_NORMALS'::TEXT AS source_code,
        export.unit::TEXT AS units,
        'derived_summary'::TEXT AS measure_kind,
        served.valid_geo_grains,
-       ARRAY['ANNUAL']::TEXT[] AS valid_time_grains,
+       ARRAY[export.time_grain]::TEXT[] AS valid_time_grains,
        NULL::TEXT AS aggregation_characteristic,
        JSONB_BUILD_OBJECT(
            'schema', 'gold_noaa_normals',

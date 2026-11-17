@@ -1,4 +1,10 @@
-"""Capture-first CDC CDI and PLACES county release pipeline."""
+"""Capture-first CDC CDI and PLACES county and tract release pipeline.
+
+The PLACES tract release (about 3 million rows) is read in 50,000-row pages,
+each its own capture recorded in ``control.cdc_release_page``: a run that
+stops part way is resumed by the next at the next page, and the paged total
+must equal CDC's own ``count(*)``. Replay reads one page at a time.
+"""
 
 from __future__ import annotations
 
@@ -23,10 +29,7 @@ from data_ingestion_toolbox.cdc.gold_cdc.publisher import publish_release
 from data_ingestion_toolbox.cdc.metadata import load_latest_accepted_metadata
 from data_ingestion_toolbox.cdc.registry import enabled_assets, get_asset
 from data_ingestion_toolbox.cdc.schema import ensure_cdc_schema
-from data_ingestion_toolbox.cdc.silver_cdc.replay import (
-    persist_replay_result,
-    replay_captured_run,
-)
+from data_ingestion_toolbox.cdc.silver_cdc.replay import replay_and_persist_run
 from data_ingestion_toolbox.cdc.silver_cdc.transform import transform_release
 
 DEFAULT_ARGS = {
@@ -97,18 +100,11 @@ def _replay_registered_asset(capture: dict[str, Any]) -> dict[str, Any]:
     run_id = UUID(str(capture["run_id"]))
     hook = _get_postgres_hook()
     connection_factory = hook.get_conn
-    result = replay_captured_run(
+    replay_and_persist_run(
         connection_factory,
         run_id=run_id,
         asset=asset,
         release_watermark=str(capture["release_watermark"]),
-    )
-    persist_replay_result(
-        connection_factory,
-        run_id=run_id,
-        asset=asset,
-        release_watermark=str(capture["release_watermark"]),
-        result=result,
     )
     count = transform_release(
         connection_factory,
@@ -134,7 +130,7 @@ def _publish_registered_asset(replay: dict[str, Any]) -> dict[str, Any]:
 
 with DAG(
     dag_id="cdc_ingest",
-    description="Capture, replay, reconcile, and publish CDC CDI and PLACES county data",
+    description="Capture, replay, reconcile, and publish CDC CDI and PLACES county and tract data",
     default_args=DEFAULT_ARGS,
     schedule="0 9 * * 1",
     start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),

@@ -7,6 +7,7 @@ import type { VectorTileLayer } from "@mapbox/vector-tile";
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from "geojson";
 import Protobuf from "pbf";
 import { isDrawableTileGrain } from "./tileGrains";
+import type { TileLayer, TileLayerCatalogResponse } from "./api/types";
 
 /**
  * What a Martin catalog and a TileJSON document carry, as far as this module
@@ -506,4 +507,46 @@ export async function discoverTractTiles(): Promise<TractTiles | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The tile layer a grain is drawn from, as `/catalog/tile-layers` lists it
+ * (tiles-places-and-metros), or `null` when no layer draws that grain or the
+ * layer holds no boundary yet. A grain without a layer gets no map rather
+ * than an empty one.
+ */
+export function tileLayerForGrain(
+  catalog: TileLayerCatalogResponse | null | undefined,
+  grain: string | null | undefined,
+): TileLayer | null {
+  const wanted = String(grain || "").toUpperCase();
+  if (!wanted || !catalog) return null;
+  return (
+    catalog.layers.find(
+      (layer) => layer.available && layer.grains.some((g) => g.toUpperCase() === wanted),
+    ) || null
+  );
+}
+
+/**
+ * The same-origin tile template that draws one boundary vintage, or `null`
+ * when the layer does not hold it.
+ *
+ * Never a fallback: a value drawn on another vintage's boundary is drawn on
+ * the wrong shape, so an unheld vintage answers `null` and the caller says
+ * the map is not available for that period. An unversioned layer draws
+ * current boundaries, so it answers its template only when no vintage is
+ * asked for. Omitting the vintage on a versioned layer draws its default
+ * (newest) vintage.
+ */
+export function versionedTileTemplate(
+  layer: TileLayer,
+  vintage?: number | null,
+): string | null {
+  if (vintage === null || vintage === undefined) {
+    return layer.available ? layer.tile_template : null;
+  }
+  if (!layer.versioned) return null;
+  const held = layer.vintages.find((entry) => entry.boundary_vintage === vintage);
+  return held ? held.tile_template : null;
 }

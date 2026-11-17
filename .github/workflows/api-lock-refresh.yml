@@ -46,6 +46,11 @@ jobs:
           # uv is the resolver the lock's header names, so the refresh a
           # person runs and the refresh this job runs are the same one.
           python -m pip install uv==0.9.29
+      - name: Install the test runner
+        # The lock test below runs under the repository's root conftest,
+        # which imports the API's test client, so it needs the same install
+        # the unit jobs use, not pytest alone.
+        run: python -m pip install -e ".[api,dev]"
       - name: The committed lock still covers what pyproject declares
         run: pytest -o addopts='' tests/unit/tooling/test_api_lock.py -q
       - name: Re-resolve and show what changed

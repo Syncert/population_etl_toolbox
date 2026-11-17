@@ -56,8 +56,9 @@ test("an address the site does not serve gets the site's own page", async ({ pag
 test("a route that throws while rendering shows the boundary, and recovers", async ({ page }) => {
   await installRoutes(page);
 
-  // A real render error, injected where the page actually formats: the home
-  // page renders `formatNumber(metrics.total)` once the catalog answers.
+  // A real render error, injected where the page actually formats: the
+  // catalog page renders `formatNumber(page.total)` once the catalog answers.
+  // (The home page no longer prints a metric count: website UX review E1.)
   //
   // It throws on every render until the test clears it, which is deliberate
   // twice over. React retries a failed concurrent render synchronously, so a
@@ -79,7 +80,7 @@ test("a route that throws while rendering shows the boundary, and recovers", asy
     };
   });
 
-  await page.goto("/");
+  await page.goto("/catalog");
 
   const boundary = page.getByTestId("route-error");
   await expect(boundary).toBeVisible();
@@ -91,11 +92,11 @@ test("a route that throws while rendering shows the boundary, and recovers", asy
 
   // The address bar is untouched by a boundary, so a successful retry reopens
   // the route the reader was on rather than sending them somewhere else.
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/catalog$/);
   await page.evaluate(() => {
     window.__renderFailureCleared = true;
   });
   await page.getByRole("button", { name: "Try this page again" }).click();
   await expect(boundary).toBeHidden();
-  await expect(page.getByRole("heading", { level: 1, name: "What is going on in your place?" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Data Catalog" })).toBeVisible();
 });

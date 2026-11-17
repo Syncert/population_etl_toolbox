@@ -436,8 +436,8 @@ describe("the bins are the API's, not recomputed from its bounds", () => {
       ],
     };
     expect(distributionBins(distribution)).toEqual([
-      { binIndex: 1, color: "#edcf63", lowerBound: 0.1, upperBound: 0.25, count: 4 },
-      { binIndex: 2, color: "#9dc57d", lowerBound: 0.25, upperBound: 0.7, count: 6 },
+      { binIndex: 1, color: "#7fbfa9", lowerBound: 0.1, upperBound: 0.25, count: 4 },
+      { binIndex: 2, color: "#55a48b", lowerBound: 0.25, upperBound: 0.7, count: 6 },
     ]);
   });
 

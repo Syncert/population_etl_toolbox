@@ -11,7 +11,7 @@ import type { GeographySummary, MetricSummary, Observation } from "../lib/api/ty
 import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { formatObservationValue, observationUnit } from "../lib/explorerViewModel";
-import { displayMetricName } from "../lib/format";
+import { MetricName } from "./MetricName";
 import { buildUseCaseHistory, useCaseChartState, verifyUseCaseRows } from "../lib/useCaseAnalysis";
 import {
   describeHistoryLoad, normalizeObservationRows, observationPeriodLabel,
@@ -97,7 +97,7 @@ export default function UseCaseVisualizations({ entry, measures, sources, geoId,
         <button className="button secondary" type="button" onClick={exportHistory} disabled={!rows.length}><Download size={15} />Export history</button>
       </div>
       <div role="status"><StatusPill state={status.state} label="History" message={status.message} testId="use-case-history-status" /></div>
-      {metric ? <p className="use-case-viz-context">{displayMetricName(metric)} · {metric.metric_code}<br />Source: {metric.source_code} · Unit: {[...new Set(rows.map(observationUnit).filter(Boolean))].join(", ") || metric.units || "Not published"} · Geography: {geoId || "not selected"} ({geoLevel}) · {scope === "as_released" ? "Newest published release per period; revised history" : "Latest source publication"}</p> : null}
+      {metric ? <p className="use-case-viz-context"><MetricName metric={metric} /><br />Source: {metric.source_code} · Unit: {[...new Set(rows.map(observationUnit).filter(Boolean))].join(", ") || String(metric.units || "Not published")} · Geography: {geoId || "not selected"} ({geoLevel}) · {scope === "as_released" ? "Newest published release per period; revised history" : "Latest source publication"}</p> : null}
       {view === "peers" ? <UseCasePeers source={source} metric={metric} geoId={geoId} places={places} unavailableReason={reading.reason} /> : null}
       {view === "trend" && chart.drawable ? <TimeSeriesChart items={rows} publishesValueStatus={source?.publishesValueStatus !== false} /> : null}
       {rows.length > 0 && !chart.drawable ? <p className="coverage-note partial">{chart.reason}</p> : null}

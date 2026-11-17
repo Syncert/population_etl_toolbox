@@ -1,0 +1,35 @@
+{
+ "status": "OK",
+ "data": [
+  {
+   "label": "2024-precincts-codebook.md",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 13731185,
+    "filename": "2024-precincts-codebook.md",
+    "contentType": "text/markdown"
+   }
+  },
+  {
+   "label": "README.md",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 13731183,
+    "filename": "README.md",
+    "contentType": "text/markdown"
+   }
+  },
+  {
+   "label": "SENATE_precinct_general.csv",
+   "restricted": false,
+   "version": 1,
+   "dataFile": {
+    "id": 13731184,
+    "filename": "SENATE_precinct_general.csv",
+    "contentType": "text/comma-separated-values"
+   }
+  }
+ ]
+}

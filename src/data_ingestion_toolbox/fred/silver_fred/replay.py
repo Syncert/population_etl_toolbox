@@ -96,6 +96,50 @@ def parse_captured_observations(payload: bytes) -> list[dict[str, object]]:
     return parsed
 
 
+_REVISION_COLUMNS = (
+    "capture_id, observation_index, domain, series_id, observation_date_source, "
+    "value_source, realtime_start_source, realtime_end_source, observation_date, "
+    "value, value_status, realtime_start, realtime_end"
+)
+
+_INCOMING_TABLE_SQL = """
+    DROP TABLE IF EXISTS pg_temp.fred_incoming_revision;
+    CREATE TEMP TABLE fred_incoming_revision
+        (LIKE silver_fred.observation_revision INCLUDING DEFAULTS) ON COMMIT DROP
+"""
+
+#: Every monthly run re-reads each series' last two years so a revised value
+#: is read again, and most of the answer repeats what is stored: 8,713 of
+#: 62,876 revision rows on OFFICE_LAB repeated the previous read of the same
+#: observation (refresh-churn audit, 2026-11-06). The realtime period moves on
+#: every read, so a repeat that was stored also moved the silver fact and the
+#: served rows. An observation is stored again only when its value or status
+#: differs from the newest stored revision of it; the transform serves the
+#: newest revision, so a skipped repeat changes nothing served.
+_STORE_NEW_REVISIONS_SQL = f"""
+    INSERT INTO silver_fred.observation_revision ({_REVISION_COLUMNS})
+    SELECT {_REVISION_COLUMNS}
+    FROM fred_incoming_revision AS incoming
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM (
+            SELECT stored.value_source, stored.value_status
+            FROM silver_fred.observation_revision AS stored
+            WHERE stored.domain IS NOT DISTINCT FROM incoming.domain
+              AND stored.series_id = incoming.series_id
+              AND stored.observation_date = incoming.observation_date
+              AND stored.capture_id <> incoming.capture_id
+            ORDER BY stored.realtime_start DESC NULLS LAST,
+                     stored.parsed_at DESC, stored.capture_id DESC
+            LIMIT 1
+        ) AS newest
+        WHERE newest.value_source IS NOT DISTINCT FROM incoming.value_source
+          AND newest.value_status = incoming.value_status
+    )
+    ON CONFLICT (capture_id, observation_index) DO NOTHING
+"""
+
+
 def replay_fred_capture(
     connection_factory: Callable[[], Any],
     *,
@@ -130,21 +174,14 @@ def replay_fred_capture(
     database_connection = connection_factory()
     try:
         with database_connection.cursor() as cursor:
+            cursor.execute(_INCOMING_TABLE_SQL)
             execute_values(
                 cursor,
-                """
-                INSERT INTO silver_fred.observation_revision (
-                    capture_id, observation_index, domain, series_id,
-                    observation_date_source, value_source,
-                    realtime_start_source, realtime_end_source,
-                    observation_date, value, value_status,
-                    realtime_start, realtime_end
-                ) VALUES %s
-                ON CONFLICT (capture_id, observation_index) DO NOTHING
-                """,
+                f"INSERT INTO fred_incoming_revision ({_REVISION_COLUMNS}) VALUES %s",
                 records,
                 page_size=1000,
             )
+            cursor.execute(_STORE_NEW_REVISIONS_SQL)
         database_connection.commit()
     except BaseException:
         database_connection.rollback()

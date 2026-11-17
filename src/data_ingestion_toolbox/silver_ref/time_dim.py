@@ -106,7 +106,12 @@ def sync_time_dim(
             is_quarter_end = EXCLUDED.is_quarter_end,
             is_year_start = EXCLUDED.is_year_start,
             is_year_end = EXCLUDED.is_year_end,
-            ingested_at = EXCLUDED.ingested_at;
+            ingested_at = EXCLUDED.ingested_at
+                -- Only a row whose content changed is rewritten
+                -- (refresh-churn audit, 2026-11-06).
+                WHERE (silver_ref.dim_time.year, silver_ref.dim_time.quarter, silver_ref.dim_time.month, silver_ref.dim_time.day, silver_ref.dim_time.day_of_week, silver_ref.dim_time.day_name, silver_ref.dim_time.month_name, silver_ref.dim_time.week_of_year, silver_ref.dim_time.is_weekend, silver_ref.dim_time.is_month_start, silver_ref.dim_time.is_month_end, silver_ref.dim_time.is_quarter_start, silver_ref.dim_time.is_quarter_end, silver_ref.dim_time.is_year_start, silver_ref.dim_time.is_year_end)
+                      IS DISTINCT FROM
+                      (EXCLUDED.year, EXCLUDED.quarter, EXCLUDED.month, EXCLUDED.day, EXCLUDED.day_of_week, EXCLUDED.day_name, EXCLUDED.month_name, EXCLUDED.week_of_year, EXCLUDED.is_weekend, EXCLUDED.is_month_start, EXCLUDED.is_month_end, EXCLUDED.is_quarter_start, EXCLUDED.is_quarter_end, EXCLUDED.is_year_start, EXCLUDED.is_year_end);
     """
 
     with hook.get_conn() as conn, conn.cursor() as cur:

@@ -10,6 +10,7 @@ import type { ExplorerSource } from "../lib/explorerSources";
 import type { ObservationRow } from "../lib/explorerViewModel";
 import { publishedNumber, formatObservationValue, observationUnit } from "../lib/explorerViewModel";
 import { buildNewestValueRequest, normalizeObservationRows, observationPeriodLabel, observationUncertaintyLabel } from "../lib/observationAccess";
+import { displayMetricName } from "../lib/format";
 import { observationExport } from "../lib/observationExport";
 import { verifyUseCaseRows } from "../lib/useCaseAnalysis";
 
@@ -74,7 +75,7 @@ export default function UseCasePeers({ source, metric, places, geoId, unavailabl
     <div className="use-case-peer-selection">{selected.map((peer) => <span key={peer}>{String(places.find((place) => place.geo_id === peer)?.geo_name || places.find((place) => place.geo_id === peer)?.county_name || places.find((place) => place.geo_id === peer)?.state_name || peer)}{peer !== geoId ? <button type="button" aria-label={`Remove peer ${peer}`} onClick={() => setChosen((items) => items.filter((item) => item !== peer))}>×</button> : null}</span>)}</div>
     <p className="subtle" role="status">{status}</p>
     {!rationale ? <p className="subtle">Record the peer-selection rationale before using this comparison as planning evidence.</p> : null}
-    <BarChart bars={bars} orientation="geography" colorOf={() => "#0b6b57"} label={`${bars.length} explicitly selected peer values; ${metric?.metric_code}`} testId="use-case-peer-chart" unpublished={answers.length - bars.length} />
+    <BarChart bars={bars} orientation="geography" colorOf={() => "#0b6b57"} label={`${bars.length} explicitly selected peer values; ${metric ? displayMetricName(metric) : ""}`} testId="use-case-peer-chart" unpublished={answers.length - bars.length} />
     <p className="subtle">Values retain their own periods and uncertainty. This comparison contains one published measure; no composite score or statistical significance is computed.</p>
     <div className="table-wrap use-case-table"><table><caption>Selected peer evidence</caption><thead><tr><th scope="col">Geography</th><th scope="col">Value / unit</th><th scope="col">Period</th><th scope="col">Uncertainty / availability</th><th scope="col">Request</th></tr></thead><tbody>{answers.map((answer) => <tr key={answer.geoId}><td>{answer.geoId}</td><td>{answer.row?.value == null ? "Not published" : formatObservationValue(answer.row.value)} {observationUnit(answer.row)}</td><td>{observationPeriodLabel(answer.row) || "Not published"}</td><td>{answer.message || observationUncertaintyLabel(answer.row) || String(answer.row?.value_status || "Not published")}</td><td><a href={answer.query}>Reproduce</a></td></tr>)}</tbody></table></div>
     <button type="button" className="button secondary" onClick={exportPeers} disabled={!answers.length}><Download size={15} />Export selected peers</button>

@@ -31,9 +31,10 @@ _DESCRIPTIONS: dict[int, str] = {
         "every case by design."
     ),
     403: (
-        "Authenticated, and not authorized for this act. Account deletion is "
-        "the only route that answers it: it requires a recent sign-in, and a "
-        "long-lived session is not that."
+        "Authenticated, and not authorized for this act. Account deletion "
+        "requires a recent sign-in, and a long-lived session is not that; the "
+        "admin warehouse routes require an account on the deployment's admin "
+        "list."
     ),
     404: (
         "Unknown identifier, or a resource you do not own -- indistinguishable "

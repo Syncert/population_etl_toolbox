@@ -15,6 +15,13 @@ inconsistency. Completeness flags: ``S`` standard (24+ years), ``R``
 representative (10+ years, filled), ``P`` provisional (10+ years, not
 filled), ``E`` estimated (2+ years).
 
+The monthly normals (read from the archive on 2026-11-11 through OFFICE_LAB)
+are a second archive of the same shape under
+``https://www.ncei.noaa.gov/data/normals-monthly/1991-2020/archive/``
+(``..._monthly_multivariate_by-station_c20230404.tar.gz``, 29.7 MB, 15,616
+stations): twelve rows per station, ``month`` ``01`` to ``12``, each
+``MLY-*`` variable in the same group of four with the same flags.
+
 Stations carry coordinates, not counties; the county is assigned by this
 warehouse from the coordinates and a recorded county boundary vintage.
 """
@@ -80,6 +87,94 @@ VARIABLES: tuple[NormalsVariable, ...] = (
         "Annual cooling degree days normal, base 65 F",
     ),
 )
+
+MONTHLY_BASE_URL = "https://www.ncei.noaa.gov/data/normals-monthly/1991-2020"
+MONTHLY_ARCHIVE_PATH = "/archive/us-climate-normals_1991-2020_v1.0.1_monthly_multivariate_by-station_c20230404.tar.gz"
+MONTHLY_ARCHIVE_VERSION = "v1.0.1 (c20230404)"
+
+MONTHLY_VARIABLES: tuple[NormalsVariable, ...] = (
+    NormalsVariable(
+        "MLY-TAVG-NORMAL",
+        "monthly_mean_temperature",
+        "degrees Fahrenheit",
+        "Monthly mean temperature normal",
+    ),
+    NormalsVariable(
+        "MLY-TMAX-NORMAL",
+        "monthly_mean_maximum_temperature",
+        "degrees Fahrenheit",
+        "Monthly mean daily maximum temperature normal",
+    ),
+    NormalsVariable(
+        "MLY-TMIN-NORMAL",
+        "monthly_mean_minimum_temperature",
+        "degrees Fahrenheit",
+        "Monthly mean daily minimum temperature normal",
+    ),
+    NormalsVariable(
+        "MLY-PRCP-NORMAL",
+        "monthly_precipitation",
+        "inches",
+        "Monthly precipitation normal",
+    ),
+    NormalsVariable(
+        "MLY-SNOW-NORMAL",
+        "monthly_snowfall",
+        "inches",
+        "Monthly snowfall normal",
+    ),
+    NormalsVariable(
+        "MLY-HTDD-NORMAL",
+        "monthly_heating_degree_days",
+        "degree days (base 65 F)",
+        "Monthly heating degree days normal, base 65 F",
+    ),
+    NormalsVariable(
+        "MLY-CLDD-NORMAL",
+        "monthly_cooling_degree_days",
+        "degree days (base 65 F)",
+        "Monthly cooling degree days normal, base 65 F",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class NormalsProduct:
+    """One registered NCEI by-station archive."""
+
+    key: str
+    base_url: str
+    path: str
+    version: str
+    variables: tuple[NormalsVariable, ...]
+    #: Rows per station file: 1 for annual/seasonal, 12 for monthly.
+    rows_per_station: int
+    #: The provider dataset name recorded with each station's county.
+    dataset: str
+
+
+ANNUAL = "annualseasonal"
+MONTHLY = "monthly"
+PRODUCTS: dict[str, NormalsProduct] = {
+    ANNUAL: NormalsProduct(
+        ANNUAL,
+        NORMALS_BASE_URL,
+        ARCHIVE_PATH,
+        ARCHIVE_VERSION,
+        VARIABLES,
+        1,
+        "normals_annualseasonal_1991_2020",
+    ),
+    MONTHLY: NormalsProduct(
+        MONTHLY,
+        MONTHLY_BASE_URL,
+        MONTHLY_ARCHIVE_PATH,
+        MONTHLY_ARCHIVE_VERSION,
+        MONTHLY_VARIABLES,
+        12,
+        "normals_monthly_1991_2020",
+    ),
+}
 
 #: Measurement flags that withhold the value, and the status and reason.
 WITHHELD_FLAGS: dict[str, tuple[str, str]] = {

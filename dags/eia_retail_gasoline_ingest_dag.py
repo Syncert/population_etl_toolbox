@@ -8,6 +8,14 @@ Monday afternoon; the run is Tuesday. The first run reads the whole history
 from 2015; later runs go back eight weeks, so a revised week is read again
 and kept beside the first reading.
 
+The same run then reads every other registered EIA route
+(home-heating-fuel-prices, ``eia/routes.py``): residential electricity and
+natural gas by state (monthly), residential heating oil and propane by state
+and PADD (weekly, October to March) and retail diesel (weekly), one task
+each. A route's first run reads its whole history; later runs go back its
+refresh window, and a period never loaded is always inside it (LOADER RULE).
+A rerun over unchanged answers stores no silver row (CHURN RULE).
+
 The key is ``EIA_API_KEY``, read from the environment when the capture runs,
 never at import. Requests go through the one-slot ``eia_api`` pool.
 """
@@ -23,6 +31,7 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.eia.capture import capture_window, plan_window
 from data_ingestion_toolbox.eia.config import EiaConfig
+from data_ingestion_toolbox.eia.routes import ENERGY_ROUTES
 from data_ingestion_toolbox.eia.schema import ensure_eia_schema
 from data_ingestion_toolbox.eia.silver_eia.load import publish_run, replay_run
 from data_ingestion_toolbox.silver_ref.geography_guard import (
@@ -91,9 +100,31 @@ def eia_retail_gasoline_ingest():
             "published": published,
         }
 
+    @task(pool="eia_api")
+    def ingest_batch_route(route: str) -> dict[str, Any]:
+        connection_factory = _get_postgres_hook().get_conn
+        config = EiaConfig.from_environment()
+        start = plan_window(connection_factory, config, route)
+        run_id = capture_window(connection_factory, start, config=config, route=route)
+        facts = replay_run(connection_factory, run_id=UUID(str(run_id)))
+        published = publish_run(connection_factory, run_id=UUID(str(run_id)))
+        return {
+            "route": route,
+            "start": start.isoformat(),
+            "run_id": str(run_id),
+            "facts": facts,
+            "published": published,
+        }
+
     schema = ensure_eia_schema_task.override(task_id="ensure_eia_schema")()
     geography = require_shared_geography()
-    schema >> geography >> load_eia_areas() >> ingest_batch_weeks()
+    previous = schema >> geography >> load_eia_areas() >> ingest_batch_weeks()
+    # One route after another: one key and one pool slot. A failed route
+    # fails the run; each route's next read plans from what it published.
+    for route in ENERGY_ROUTES:
+        current = ingest_batch_route.override(task_id=f"ingest_batch_{route}")(route)
+        previous >> current
+        previous = current
 
 
 eia_retail_gasoline_ingest()

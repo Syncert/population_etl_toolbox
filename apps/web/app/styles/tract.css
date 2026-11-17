@@ -1,0 +1,44 @@
+/* Census tract pages (tract pages, D-4). */
+.tract-boundary {
+  border-left: 4px solid var(--line);
+}
+
+.tract-boundary-split,
+.tract-boundary-merged,
+.tract-boundary-redrawn {
+  border-left-color: var(--gold);
+}
+
+.tract-boundary-unchanged {
+  border-left-color: var(--ok);
+}
+
+/* The measure lists are long enough (W-4's tables) that a select must wrap
+   under its label and shrink to the column at phone width. */
+.within-county-measure {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.within-county-measure select {
+  max-width: 100%;
+  margin-left: 0;
+}
+
+.tract-history-derived th,
+.tract-history-derived td {
+  background: var(--bg-2);
+}
+
+.derived-tag {
+  margin-left: 6px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--warn);
+  font-size: 0.75rem;
+  font-weight: 650;
+}

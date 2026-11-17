@@ -1,0 +1,30 @@
+{
+  "description": "Census 2000 variables that measure what an ACS variable measures. Only a variable named here is requested from a census dataset, and it joins the ACS variable's series under its own dataset code (decennial-2000-and-1990-history). Labels were read from each dataset's variables.json on 2026-10-26.",
+  "datasets": {
+    "dec2000sf1": {
+      "P001001": {"acs": "B01003_001E", "label": "Total population"},
+      "P013001": {"acs": "B01002_001E", "label": "Median age, both sexes"},
+      "P015001": {"acs": "B11001_001E", "label": "Households"},
+      "P004002": {"acs": "B03002_012E", "label": "Hispanic or Latino"},
+      "P004003": {"acs": "B03002_002E", "label": "Not Hispanic or Latino"},
+      "P004005": {"acs": "B03002_003E", "label": "Not Hispanic or Latino, White alone"},
+      "P003003": {"acs": "B02001_002E", "label": "White alone"},
+      "H001001": {"acs": "B25001_001E", "label": "Housing units"},
+      "H003002": {"acs": "B25002_002E", "label": "Occupied housing units"},
+      "H003003": {"acs": "B25002_003E", "label": "Vacant housing units"},
+      "H004002": {"acs": "B25003_002E", "label": "Owner-occupied housing units"},
+      "H004003": {"acs": "B25003_003E", "label": "Renter-occupied housing units"}
+    },
+    "dec2000sf3": {
+      "P053001": {"acs": "B19013_001E", "label": "Median household income", "dollars_of": 1999},
+      "P082001": {"acs": "B19301_001E", "label": "Per capita income", "dollars_of": 1999},
+      "P087001": {"acs": "B17001_001E", "label": "Population for whom poverty status is determined"},
+      "P087002": {"acs": "B17001_002E", "label": "Income below the poverty level", "dollars_of": 1999},
+      "P030001": {"acs": "B08301_001E", "label": "Workers 16 and over"},
+      "P030002": {"acs": "B08301_002E", "label": "Commute by car, truck, or van"},
+      "P030003": {"acs": "B08301_003E", "label": "Drove alone to work"},
+      "H063001": {"acs": "B25064_001E", "label": "Median gross rent", "dollars_of": 2000, "note": "Specified renter-occupied units paying cash rent"},
+      "H085001": {"acs": "B25077_001E", "label": "Median home value, owner-occupied units", "dollars_of": 2000}
+    }
+  }
+}

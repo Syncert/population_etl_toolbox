@@ -294,3 +294,63 @@ def test_a_geocode_member_inside_the_zips_folder_is_found() -> None:
         archive.writestr(f"b/{item.member}", b"2")
     with pytest.raises(client.CcdPayloadError):
         client.open_member(twice.getvalue(), item)
+
+
+class _RecordingCursor:
+    def __init__(self, statements: list[str]) -> None:
+        self.statements = statements
+
+    def __enter__(self) -> _RecordingCursor:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, sql: str, parameters: object = None) -> None:
+        self.statements.append(" ".join(sql.split()))
+
+    def fetchall(self) -> list[tuple]:
+        return [("run",)]
+
+    def fetchone(self) -> tuple:
+        return ("published",)
+
+
+class _RecordingConnection:
+    def __init__(self, statements: list[str]) -> None:
+        self.statements = statements
+
+    def cursor(self) -> _RecordingCursor:
+        return _RecordingCursor(self.statements)
+
+    def commit(self) -> None:
+        self.statements.append("COMMIT")
+
+    def rollback(self) -> None:
+        self.statements.append("ROLLBACK")
+
+    def close(self) -> None:
+        return None
+
+
+def test_a_publication_refreshes_the_statistics_the_gold_views_plan_from(
+    monkeypatch,
+) -> None:
+    """Covers: ETL-070 — never analysed, a county read was planned over every school count."""
+    from uuid import uuid4
+
+    import data_ingestion_toolbox.glossary as glossary
+    from data_ingestion_toolbox.nces_ccd.silver_nces_ccd import load
+
+    statements: list[str] = []
+    monkeypatch.setattr(glossary, "emit_latest_publisher_ready", lambda *_a, **_k: None)
+    assert (
+        load.publish_run(lambda: _RecordingConnection(statements), run_id=uuid4()) == 1
+    )
+    analyzed = [s for s in statements if s.startswith("ANALYZE")]
+    assert analyzed == [f"ANALYZE {relation}" for relation in load.ANALYZED_RELATIONS]
+    assert {"control.nces_ccd_file", "silver_nces_ccd.school_count"} <= set(
+        load.ANALYZED_RELATIONS
+    )
+    # After the publication commits, so the counts are the published ones.
+    assert statements.index(analyzed[0]) > statements.index("COMMIT")

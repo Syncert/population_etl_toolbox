@@ -60,8 +60,14 @@ def test_average_prices_select_only_the_pairs_bls_publishes() -> None:
             "APU040074714",
             "APUS12A74714",
             "APUS35A74714",
+            # Electricity per kWh and utility gas per therm (cost-of-living-section).
+            "APU000072610",
+            "APU000072620",
+            "APUS12A72610",
         ]
     )
+    # The Midwest's utility gas series ended in 2022, so it is not requested.
+    assert "APU020072620" not in selected
     # Flour is not a configured item; Pittsburgh and the size classes are not places.
     assert not any("701111" in s or "A104" in s or "N100" in s for s in selected)
 

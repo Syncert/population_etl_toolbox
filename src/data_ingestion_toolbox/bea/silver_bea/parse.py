@@ -4,7 +4,9 @@ Pure functions over the captured zip. Every registered line of every
 in-scope row yields one observation per year column, carrying the line's
 unit and dollar basis. A code in a year cell keeps its own status --
 withheld, not available, not meaningful, below threshold -- and no number.
-The release is the date the file's footer states.
+The release is the date the file's footer states. A combined area's rows
+(``registry.COMBINED_AREAS``) are parsed apart from the loaded observations:
+they are not loaded, and serve only to sum a metro area from its counties.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from ..client import BeaPayloadError, every_area_member
-from ..registry import CELL_CODES, BeaTable
+from ..registry import CELL_CODES, COMBINED_AREAS, BeaTable
 
 _RELEASE = re.compile(r"Last updated:\s*([A-Z][a-z]+ \d{1,2}, \d{4})")
 
@@ -56,6 +58,8 @@ class ParsedTable:
     row_count: int
     in_scope_row_count: int
     out_of_scope_row_count: int
+    #: The combined areas' cells, parsed like any row but never loaded.
+    combined: tuple[BeaObservation, ...] = ()
 
 
 def _code(text: str) -> str:
@@ -130,6 +134,7 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
             0,
         )
     observations: list[BeaObservation] = []
+    combined: list[BeaObservation] = []
     quarantined: list[BeaQuarantine] = []
     data_rows = 0
     in_scope = out_of_scope = 0
@@ -164,10 +169,15 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
         except ValueError as exc:
             quarantined.append(BeaQuarantine(index, "unreadable_geography", str(exc)))
             continue
+        target = observations
         if geography is None:
             out_of_scope += 1
-            continue
-        in_scope += 1
+            if table.geography != "county" or _code(row[0]) not in COMBINED_AREAS:
+                continue
+            geography = ("provider_area", f"area:bea:{_code(row[0])}")
+            target = combined
+        else:
+            in_scope += 1
         geo_type, geo_id = geography
         for column, year in year_columns:
             text = row[column].strip()
@@ -188,7 +198,7 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
                 if status == "missing":
                     value = None
             identity = "|".join((table.code, line, _code(row[0]), str(year)))
-            observations.append(
+            target.append(
                 BeaObservation(
                     source_row_index=index,
                     line_code=line,
@@ -215,4 +225,5 @@ def parse_table(payload: bytes, *, table: BeaTable) -> ParsedTable:
         data_rows,
         in_scope,
         out_of_scope,
+        tuple(combined),
     )

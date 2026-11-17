@@ -50,3 +50,22 @@ postgres:
         area_name: text
         latitude: float8
         longitude: float8
+  # Cities and towns (Census places) and metros (CBSAs), versioned by boundary
+  # vintage (tiles-places-and-metros). Function sources rather than tables,
+  # because a table source cannot take a parameter: `?vintage=YYYY` draws that
+  # vintage's boundaries, and no vintage draws the newest. A vintage the layer
+  # does not hold draws nothing; it never falls back to another one.
+  # `/api/v1/catalog/tile-layers` lists the vintages each layer holds.
+  functions:
+    places:
+      schema: gold
+      function: tile_places
+      minzoom: 6
+      maxzoom: 14
+      bounds: [-180.0, -90.0, 180.0, 90.0]
+    metros:
+      schema: gold
+      function: tile_metros
+      minzoom: 0
+      maxzoom: 12
+      bounds: [-180.0, -90.0, 180.0, 90.0]

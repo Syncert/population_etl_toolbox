@@ -14,11 +14,19 @@ import type { SourceFreshness, SourceSummary } from "../lib/api/types";
 import { formatDate, formatNumber } from "../lib/format";
 import { SITE_RULES, sourceCards } from "../lib/placeDirectory";
 
+/** "November 6, 2026", not "11/6/2026" (website UX review F8). */
+const DAY_IN_WORDS = { year: "numeric", month: "long", day: "numeric" } as const;
+
 const GRAIN_WORDS: Record<string, string> = {
   NATIONAL: "nation",
   STATE: "states",
   COUNTY: "counties",
   PLACE: "places",
+  TRACT: "census tracts",
+  METRO: "metro areas",
+  CENSUS_REGION: "census regions",
+  CENSUS_DIVISION: "census divisions",
+  PROVIDER_AREA: "the publisher's own areas",
   AGENCY: "law enforcement agencies",
 };
 
@@ -70,9 +78,9 @@ export default function PublicDataPage() {
             <article key={card.sourceCode} className="source-card" data-testid={`source-card-${card.sourceCode}`} data-reported={card.reported ? "true" : "false"}>
               <h3>{card.name}</h3>
               <dl>
-                <div><dt>Last refreshed here</dt><dd>{card.reported ? (card.lastRefresh ? formatDate(card.lastRefresh) : "not reported") : "not reported"}</dd></div>
-                <div><dt>Newest publication</dt><dd>{card.reported && card.newestPublication ? formatDate(card.newestPublication) : "not reported"}</dd></div>
-                <div><dt>Covers</dt><dd>{card.grains.length ? card.grains.map((grain) => GRAIN_WORDS[grain] || grain.toLowerCase()).join(", ") : "not reported"}</dd></div>
+                <div><dt>Last refreshed here</dt><dd>{card.reported ? (card.lastRefresh ? formatDate(card.lastRefresh, DAY_IN_WORDS) : "not reported") : "not reported"}</dd></div>
+                <div><dt>Newest publication</dt><dd>{card.reported && card.newestPublication ? formatDate(card.newestPublication, DAY_IN_WORDS) : "not reported"}</dd></div>
+                <div><dt>Covers</dt><dd>{card.grains.length ? card.grains.map((grain) => GRAIN_WORDS[grain] || grain.toLowerCase().replaceAll("_", " ")).join(", ") : "not reported"}</dd></div>
                 <div><dt>Measures</dt><dd>{card.metricCount === null ? "not reported" : `${formatNumber(card.metricCount)}${card.staleCount ? `, ${formatNumber(card.staleCount)} awaiting refresh` : ""}`}</dd></div>
               </dl>
               {card.referenceUrl ? (
@@ -90,7 +98,7 @@ export default function PublicDataPage() {
         {timeline.length ? (
           <ol className="refresh-timeline" data-testid="refresh-timeline">
             {timeline.map((card) => (
-              <li key={card.sourceCode}><strong>{formatDate(card.lastRefresh)}</strong> · {card.name}</li>
+              <li key={card.sourceCode}><strong>{formatDate(card.lastRefresh, DAY_IN_WORDS)}</strong> · {card.name}</li>
             ))}
           </ol>
         ) : (

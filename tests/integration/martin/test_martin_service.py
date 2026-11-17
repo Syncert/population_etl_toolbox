@@ -187,3 +187,122 @@ def test_missing_relation_failure_is_clear_and_does_not_disclose_dsn(
     assert "relation_that_does_not_exist" in output or "missing_counties" in output
     assert secret not in output
     assert "postgres://" not in output
+
+
+#: The largest tile the place and metro layers may serve at a seeded zoom.
+#: The seed is three polygons; a few kilobytes is the whole budget, so a
+#: layer that started serialising something it should not -- every vintage at
+#: once, or another grain -- fails here before it reaches a browser. The
+#: loaded-warehouse budget is measured by `scripts/measure_tile_layers.py`.
+SEEDED_TILE_BUDGET_BYTES = 4_096
+
+
+def _layer_tile(config: MartinTestConfig, layer: str, query: str = "") -> bytes:
+    zoom, x, y = tile_for_coordinate(SEEDED_LONGITUDE, SEEDED_LATITUDE)
+    response = httpx.get(
+        f"{config.direct_url}/{layer}/{zoom}/{x}/{y}{query}", timeout=5.0
+    )
+    assert response.status_code in {200, 204}, response.text
+    return response.content
+
+
+def _features(payload: bytes, layer: str) -> list[dict]:
+    if not payload:
+        return []
+    return decode_mvt(payload).get(layer, {}).get("features", [])
+
+
+@pytest.mark.parametrize(
+    ("layer", "zooms", "fields"),
+    [
+        (
+            "places",
+            (6, 14),
+            {
+                "geo_id",
+                "geo_level",
+                "state_fips",
+                "place_fips",
+                "state_name",
+                "place_name",
+                "latitude",
+                "longitude",
+                "boundary_vintage",
+            },
+        ),
+        (
+            "metros",
+            (0, 12),
+            {
+                "geo_id",
+                "geo_level",
+                "cbsa_code",
+                "metro_name",
+                "lsad",
+                "latitude",
+                "longitude",
+                "boundary_vintage",
+            },
+        ),
+    ],
+)
+def test_live_place_and_metro_tilejson_publish_their_contract(
+    martin_test_config: MartinTestConfig,
+    layer: str,
+    zooms: tuple[int, int],
+    fields: set[str],
+) -> None:
+    """Covers: MARTIN-013 — the function sources publish their zooms and their fields."""
+    payload = request_json(f"{martin_test_config.direct_url}/{layer}", timeout=5.0)
+    assert (payload["minzoom"], payload["maxzoom"]) == zooms
+    assert payload["bounds"] == [-180.0, -90.0, 180.0, 90.0]
+    vector_layer = extract_vector_layer(payload, layer)
+    assert set(field_names(vector_layer)) == fields
+    assert choose_join_key(field_names(vector_layer)) == "geo_id"
+
+
+def test_live_place_tiles_draw_the_vintage_asked_for_and_never_another(
+    martin_test_config: MartinTestConfig,
+) -> None:
+    """Covers: MARTIN-013 — `?vintage=` selects, the default is the newest, an unheld one is empty."""
+    newest = _features(_layer_tile(martin_test_config, "places"), "places")
+    assert [f["properties"]["boundary_vintage"] for f in newest] == [2020]
+    asked = _features(
+        _layer_tile(martin_test_config, "places", "?vintage=2010"), "places"
+    )
+    assert [f["properties"]["boundary_vintage"] for f in asked] == [2010]
+    assert asked[0]["properties"]["geo_id"] == "state:55|place:48000"
+    assert asked[0]["properties"]["place_name"] == "Madison city"
+    assert "value" not in asked[0]["properties"]
+    for unheld in ("?vintage=1999", "?vintage=latest"):
+        assert (
+            _features(_layer_tile(martin_test_config, "places", unheld), "places") == []
+        )
+
+    metros = _features(_layer_tile(martin_test_config, "metros"), "metros")
+    assert [
+        (f["properties"]["geo_id"], f["properties"]["boundary_vintage"]) for f in metros
+    ] == [("cbsa:31540", 2023)]
+
+
+@pytest.mark.parametrize("layer", ["places", "metros"])
+def test_live_place_and_metro_tiles_stay_inside_the_seeded_budget(
+    martin_test_config: MartinTestConfig, layer: str
+) -> None:
+    """Covers: MARTIN-013 — a seeded tile is a few kilobytes, not every vintage at once."""
+    payload = _layer_tile(martin_test_config, layer)
+    assert 0 < len(payload) <= SEEDED_TILE_BUDGET_BYTES
+
+
+def test_same_origin_proxy_serves_versioned_place_tiles(
+    martin_test_config: MartinTestConfig,
+) -> None:
+    """Covers: MARTIN-013 — the public /tiles/ proxy passes the vintage through."""
+    zoom, x, y = tile_for_coordinate(SEEDED_LONGITUDE, SEEDED_LATITUDE)
+    tile = httpx.get(
+        f"{martin_test_config.proxy_url}/places/{zoom}/{x}/{y}?vintage=2010",
+        timeout=5.0,
+    )
+    tile.raise_for_status()
+    (feature,) = decode_mvt(tile.content)["places"]["features"]
+    assert feature["properties"]["boundary_vintage"] == 2010

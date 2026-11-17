@@ -103,6 +103,30 @@ describe("earlier releases on the map", () => {
     expect(earlierReleaseChoices([])).toEqual([]);
   });
 
+  // Covers: WEB-158 — a release identity that is a load's capture time
+  // (Census SAIPE) is offered once per period, not once per load.
+  it("offers one earlier release per period, the newest load of it", () => {
+    const loads = (stamp, year) => ({
+      release: stamp,
+      newest_period_start: `${year}-01-01`,
+      newest_period_end: `${year}-12-31`,
+    });
+    expect(earlierReleaseChoices([
+      loads("2026-10-16T09:00:00Z", 2024),
+      loads("2026-10-16T08:00:00Z", 2024),
+      loads("2026-10-16T07:00:00Z", 2023),
+      loads("2026-10-08T09:00:00Z", 2024),
+      loads("2026-10-08T08:00:00Z", 2023),
+      { release: "unnamed" },
+    ])).toEqual([
+      {
+        value: "release:2026-10-16T07:00:00Z",
+        label: "2023-01-01 – 2023-12-31 (2026-10-16T07:00:00Z release, as published)",
+      },
+      { value: "release:unnamed", label: "unnamed release, as published" },
+    ]);
+  });
+
   it("tells a release choice from a period", () => {
     expect(releaseOfChoice("release:2022")).toBe("2022");
     expect(releaseOfChoice("2018-01-01")).toBeNull();

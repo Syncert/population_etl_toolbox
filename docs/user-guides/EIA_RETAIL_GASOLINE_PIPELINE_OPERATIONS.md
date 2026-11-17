@@ -13,8 +13,8 @@ v2, route `petroleum/pri/gnd` (grocery-and-gasoline-prices).
 | `EPMP` | Premium gasoline | `EIA:EPMP` |
 | `EPM0` | All grades | `EIA:EPM0` |
 
-Diesel is not registered. Each price is in U.S. dollars per gallon (`$/GAL`)
-for the week starting its `period` (a Monday).
+Each price is in U.S. dollars per gallon (`$/GAL`) for the week starting
+its `period` (a Monday). Diesel and home energy are separate routes below.
 
 Areas are read from their EIA code, never their name:
 
@@ -28,6 +28,41 @@ Areas are read from their EIA code, never their name:
 EIA's PADDs and cities are loaded from the route's own `duoarea` facet by
 the DAG's `load_eia_areas` task. That list needs the key, so the reference
 DAG does not load it.
+
+## Home energy and diesel routes (home-heating-fuel-prices)
+
+The same DAG then reads every other route in `eia/routes.py`, one task each
+(`ingest_batch_<route>`), after gasoline and one after another. They land in
+`silver_eia.energy_price_revision` and `silver_eia.fact_energy_price`, keyed
+`(series_id, period_start, capture_id)`; gasoline's tables are unchanged.
+`control.eia_read.route` names each read's route (default `gasoline`).
+
+| Route key | API v2 route | Metric code | Unit | Frequency | First period |
+| --- | --- | --- | --- | --- | --- |
+| `res_electricity` | `electricity/retail-sales`, sector `RES`, data `price` | `EIA:ELEC_RES` | cents per kilowatt-hour | Monthly | 2001-01 |
+| `res_natural_gas` | `natural-gas/pri/sum`, process `PRS` | `EIA:NG_RES` | dollars per thousand cubic feet | Monthly | 1973-01 |
+| `heating_fuels` | `petroleum/pri/wfr`, products `EPD2F`, `EPLLPA`, process `PRS` | `EIA:EPD2F`, `EIA:EPLLPA` | dollars per gallon | Weekly, October to March | 1990-10-01 |
+| `diesel` | `petroleum/pri/gnd`, product `EPD2D`, process `PTE` | `EIA:EPD2D` | dollars per gallon | Weekly | 2015-01-05 |
+
+- Electricity names the nation `US` and a state by its bare USPS code; its
+  Census division codes (`ENC`, `PACC`) are set aside as `unregistered_area`.
+  Electricity carries no series id, so one is composed as
+  `res_electricity:<state>:RES`.
+- The `wfr` answer also holds wholesale prices (process `PWR`); they are set
+  aside as `unregistered_product`, never served.
+- EIA does not survey heating oil or propane from April to September: a
+  summer week has no row. A value in such a month is kept as published with
+  `outside_survey_season` true, and `DQ-EIA-005` warns.
+- Each route's first read asks for the first period above (EIA's own route
+  metadata); later reads go back 14 months (monthly) or 8 weeks (weekly) from
+  the route's newest published period.
+
+```sql
+SELECT route, status, row_total, parsed_row_count, repeated_row_count
+  FROM control.eia_read ORDER BY created_at DESC LIMIT 10;
+SELECT route, metric_key, geo_type, COUNT(*), MIN(period_start), MAX(period_start)
+  FROM silver_eia.fact_energy_price GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;
+```
 
 ## Credential
 
@@ -60,10 +95,15 @@ with its captures kept. A row whose grade, unit, week, area or value cannot
 be read is set aside in `silver_eia.observation_quarantine` with its reason;
 a week with no price is kept as `missing` with no number.
 
+Each read goes back several weeks so a revised price is caught. A week whose
+price and status equal the newest stored reading is not stored again; the
+read counts it in `control.eia_read.repeated_row_count`, so an unchanged
+reread adds no rows.
+
 ## Checks after a run
 
 ```sql
-SELECT status, row_total, parsed_row_count FROM control.eia_read ORDER BY created_at DESC LIMIT 5;
+SELECT status, row_total, parsed_row_count, repeated_row_count FROM control.eia_read ORDER BY created_at DESC LIMIT 5;
 SELECT geo_level, COUNT(*) FROM gold_eia.observation_latest GROUP BY 1;
 SELECT source_code, status FROM silver_ref.geography_resolution
  WHERE provider_source = 'EIA' AND status <> 'resolved';
@@ -73,9 +113,11 @@ SELECT source_code, status FROM silver_ref.geography_resolution
 
 - `DQ-EIA-001` (uniqueness) and `DQ-EIA-003` (a price is positive, a missing
   week has no number) are enforced by the fact's key and named CHECKs.
-- `DQ-EIA-002` reconciles each read's rows and runs in the daily sweep.
+- `DQ-EIA-002` reconciles each read's rows (stored, set aside or repeated) and runs in the daily sweep.
 - `DQ-EIA-004` (every area resolves) is declared; unresolved areas are in
   `silver_ref.geography_resolution`.
+- `DQ-EIA-005` warns on a heating oil or propane price in a month EIA does
+  not survey.
 
 Data are used under EIA's
 [copyrights and reuse policy](https://www.eia.gov/about/copyrights_reuse.php);

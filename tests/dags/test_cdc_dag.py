@@ -10,7 +10,7 @@ pytestmark = pytest.mark.dag
 def test_cdc_assets_have_capture_replay_publish_paths(dagbag) -> None:
     """Covers: DAG-010 — each CDC asset follows the required stage order."""
     dag = dagbag.dags["cdc_ingest"]
-    for asset_id in ("cdi", "places_county"):
+    for asset_id in ("cdi", "places_county", "places_tract"):
         capture = dag.get_task(f"ingest_batch_{asset_id}")
         replay = dag.get_task(f"replay_{asset_id}")
         publish = dag.get_task(f"publish_{asset_id}")
@@ -28,7 +28,7 @@ def test_cdc_assets_have_capture_replay_publish_paths(dagbag) -> None:
 def test_cdc_geography_dependency_precedes_all_captures(dagbag) -> None:
     """Covers: DAG-009 — CDC validates shared geography before provider work."""
     dag = dagbag.dags["cdc_ingest"]
-    for asset_id in ("cdi", "places_county"):
+    for asset_id in ("cdi", "places_county", "places_tract"):
         capture = dag.get_task(f"ingest_batch_{asset_id}")
         assert "require_shared_geography" in {
             task.task_id for task in capture.get_flat_relatives(upstream=True)

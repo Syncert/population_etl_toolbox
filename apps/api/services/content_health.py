@@ -35,6 +35,7 @@ from sqlalchemy import text
 
 from apps.api.services.metric_freshness import (
     FRESHNESS_CURRENT,
+    FRESHNESS_ENDED,
     FRESHNESS_RETIRED,
     FRESHNESS_STALE,
 )
@@ -65,6 +66,7 @@ CONTENT_QUERY = text(
     SELECT published.source_code,
            published.metrics_total,
            published.metrics_current,
+           published.metrics_ended,
            published.metrics_stale,
            published.metrics_retired,
            state.last_publication_time AS last_publication_time
@@ -73,6 +75,8 @@ CONTENT_QUERY = text(
                COUNT(*) AS metrics_total,
                COUNT(*) FILTER (WHERE freshness_state = :current)
                    AS metrics_current,
+               COUNT(*) FILTER (WHERE freshness_state = :ended)
+                   AS metrics_ended,
                COUNT(*) FILTER (WHERE freshness_state = :stale)
                    AS metrics_stale,
                COUNT(*) FILTER (WHERE freshness_state = :retired)
@@ -88,6 +92,7 @@ CONTENT_QUERY = text(
 
 CONTENT_QUERY_PARAMETERS = {
     "current": FRESHNESS_CURRENT,
+    "ended": FRESHNESS_ENDED,
     "stale": FRESHNESS_STALE,
     "retired": FRESHNESS_RETIRED,
 }
@@ -120,6 +125,7 @@ def grade_source(row: Mapping[str, Any]) -> dict[str, Any]:
     """
     current = _counted(row, "metrics_current")
     total = _counted(row, "metrics_total")
+    ended = _counted(row, "metrics_ended")
     stale = _counted(row, "metrics_stale")
     retired = _counted(row, "metrics_retired")
     return {
@@ -127,13 +133,14 @@ def grade_source(row: Mapping[str, Any]) -> dict[str, Any]:
         "status": SERVING if current > 0 else EMPTY,
         "metrics_total": total,
         "metrics_current": current,
+        "metrics_ended": ended,
         "metrics_stale": stale,
         "metrics_retired": retired,
-        # True when the three counted states account for the whole catalog.
+        # True when the counted states account for the whole catalog.
         # A future harvest writing a fourth word would leave measures in no
         # counted bucket, and a tally that quietly dropped them would report
         # a smaller catalog than the warehouse holds.
-        "counts_are_complete": current + stale + retired == total,
+        "counts_are_complete": current + ended + stale + retired == total,
         "last_publication_time": _text_or_none(row.get("last_publication_time")),
     }
 

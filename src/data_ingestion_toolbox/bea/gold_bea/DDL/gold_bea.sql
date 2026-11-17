@@ -34,7 +34,10 @@ SELECT fact.table_code || ':' || fact.line_code AS metric_key,
        fact.retrieved_at,
        fact.source_record_id,
        fact.capture_id,
-       fact.run_id
+       fact.run_id,
+       -- NULL for a figure BEA published; otherwise how it was derived from
+       -- BEA's figures (a metro area summed from its counties).
+       fact.derivation
 FROM silver_bea.fact_observation AS fact
 JOIN silver_bea.dim_line AS line
   ON line.table_code = fact.table_code
@@ -46,10 +49,10 @@ WHERE capture.status = 'published'
 -- The newest release of each observation; a recapture of the same release
 -- is resolved by retrieval time.
 CREATE OR REPLACE VIEW gold_bea.observation_latest AS
-SELECT DISTINCT ON (revision.metric_key, revision.geo_id, revision.year)
+SELECT DISTINCT ON (revision.metric_key, revision.table_code, revision.line_code, revision.geo_id, revision.year)
        revision.*
 FROM gold_bea.observation_revision AS revision
-ORDER BY revision.metric_key, revision.geo_id, revision.year,
+ORDER BY revision.metric_key, revision.table_code, revision.line_code, revision.geo_id, revision.year,
          revision.release_date DESC, revision.retrieved_at DESC, revision.capture_id DESC;
 
 CREATE OR REPLACE VIEW gold_bea.measure_export AS

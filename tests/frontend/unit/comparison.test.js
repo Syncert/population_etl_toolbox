@@ -14,6 +14,7 @@ import {
   DEFAULT_COMPARISON_SELECTION,
   comparisonCells,
   comparisonColumns,
+  pairLabel,
   comparisonExport,
   comparisonGrainOffer,
   comparisonMapRows,
@@ -268,6 +269,25 @@ describe("published inputs and derived values stay distinct", () => {
     expect(future.at(-1)).toEqual({ key: "z_score", label: "z_score", derived: true });
     expect(isDerivedField(comparison, "ratio")).toBe(true);
     expect(isDerivedField(comparison, "value_a")).toBe(false);
+  });
+
+  test("each side's column is headed by the plain label the API served", () => {
+    // Covers: WEB-144 — `/comparison` serves `metric_label_a`/`_b` (A-2); a
+    // reader sees those, and the code only where no label was served.
+    const labelled = {
+      ...comparison,
+      metric_label_a: "Total population (survey estimate)",
+      metric_label_status_a: "draft",
+      metric_label_b: "Resident population estimate",
+      metric_label_status_b: "draft",
+    };
+    const columns = comparisonColumns(labelled);
+    expect(columns[1].label).toBe("Total population (survey estimate)");
+    expect(columns[2].label).toBe("Total population (survey estimate) period");
+    expect(columns[3].label).toBe("Resident population estimate");
+    expect(pairLabel(labelled, "b")).toBe("Resident population estimate");
+    expect(pairLabel({ metric_code_a: "CENSUS_PEP:POPESTIMATE" }, "a")).toBe("CENSUS_PEP:POPESTIMATE");
+    expect(pairLabel(null, "b")).toBe("measure B");
   });
 
   test("a side that published nothing is never rendered as zero", () => {

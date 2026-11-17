@@ -322,6 +322,8 @@ def test_a_city_names_its_metro_through_the_counties_it_lies_in(
             assert ("part_of", "cbsa:31540") in [
                 (row[0], row[1]) for row in cursor.fetchall()
             ]
+            _pair_rows_match_related(cursor, "state:55|place:48000")
+            _pair_rows_match_related(cursor, "state:55|county:025")
         writer.rollback()
     finally:
         writer.close()
@@ -450,3 +452,22 @@ def test_bls_cpi_metros_load_as_provider_areas(
             cleanup.commit()
         finally:
             cleanup.close()
+
+
+def _pair_rows_match_related(cursor, geo_id: str) -> None:
+    """Every related row is what the pair query answers for that one place
+    (API-178): the comparison reads only the pair, and must not lose a row."""
+    cursor.execute(
+        str(catalog_queries.GEOGRAPHY_RELATED_QUERY).replace(":geo_id", "%(geo_id)s"),
+        {"geo_id": geo_id},
+    )
+    related = cursor.fetchall()
+    assert related
+    pair_sql = (
+        str(catalog_queries.GEOGRAPHY_PAIR_RELATIONSHIP_QUERY)
+        .replace(":other_geo_id", "%(other_geo_id)s")
+        .replace(":geo_id", "%(geo_id)s")
+    )
+    for other in sorted({row[1] for row in related}):
+        cursor.execute(pair_sql, {"geo_id": geo_id, "other_geo_id": other})
+        assert cursor.fetchall() == [row for row in related if row[1] == other]

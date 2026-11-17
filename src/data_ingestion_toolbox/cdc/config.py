@@ -40,6 +40,13 @@ class CdcConfig(BaseModel):
     # page without an app token, so 1000 is the safe universal default.
     socrata_page_size: int = 1000
 
+    # A bulk asset (the PLACES tract release, about 3 million rows) is read
+    # in pages of this size, each one capture with per-page resume, under a
+    # longer timeout. data.cdc.gov answered a 50,000-row limit to the plain
+    # client on 2026-11-12; the paged total is checked against count(*).
+    socrata_bulk_page_size: int = 50_000
+    socrata_bulk_timeout_seconds: float = 300.0
+
     # Transport / concurrency controls.
     socrata_timeout_seconds: float = 60.0
     socrata_min_spacing_seconds: float = 0.25
@@ -72,7 +79,10 @@ class CdcConfig(BaseModel):
         return value
 
     @field_validator(
-        "socrata_page_size", "socrata_max_attempts", "silver_max_active_tis"
+        "socrata_page_size",
+        "socrata_bulk_page_size",
+        "socrata_max_attempts",
+        "silver_max_active_tis",
     )
     @classmethod
     def _validate_positive(cls, value: int) -> int:
@@ -80,7 +90,7 @@ class CdcConfig(BaseModel):
             raise ValueError("CDC sizing values must be at least 1")
         return value
 
-    @field_validator("socrata_timeout_seconds")
+    @field_validator("socrata_timeout_seconds", "socrata_bulk_timeout_seconds")
     @classmethod
     def _validate_timeout(cls, value: float) -> float:
         if value <= 0:

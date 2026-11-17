@@ -32,16 +32,19 @@ def test_api_cache_hit_load_meets_latency_and_error_slo(
     finally:
         redis_client.close()
     with configured_api_client(monkeypatch, redis_url=config.url) as client:
-        assert client.get("/api/v1/catalog/sources?load=hit").status_code == 200
+        # Bare targets only: the API refuses an undeclared query parameter
+        # with a 422 (API-093), which would time the refusal, not the cache.
+        assert client.get("/api/v1/catalog/sources").status_code == 200
 
         def request_once(_: int) -> tuple[int, float]:
             started = time.perf_counter()
-            response = client.get("/api/v1/catalog/sources?load=hit")
+            response = client.get("/api/v1/catalog/sources")
             return response.status_code, time.perf_counter() - started
 
         with ThreadPoolExecutor(max_workers=16) as executor:
             results = list(executor.map(request_once, range(200)))
 
+    assert all(status == 200 for status, _ in results)
     durations = [duration for _, duration in results]
     assert sum(status >= 500 for status, _ in results) / len(results) < 0.01
     assert percentile(durations, 0.95) < BASELINES["api_cache_hit_p95_seconds"]
@@ -62,12 +65,14 @@ def test_api_cache_miss_load_meets_latency_and_error_slo(
 
         def request_once(index: int) -> tuple[int, float]:
             started = time.perf_counter()
-            response = client.get(f"/api/v1/catalog/sources?load=miss-{index}")
+            # A declared parameter gives each request its own cache key.
+            response = client.get(f"/api/v1/catalog/metrics?limit=100&offset={index}")
             return response.status_code, time.perf_counter() - started
 
         with ThreadPoolExecutor(max_workers=16) as executor:
             results = list(executor.map(request_once, range(100)))
 
+    assert all(status == 200 for status, _ in results)
     durations = [duration for _, duration in results]
     assert sum(status >= 500 for status, _ in results) / len(results) < 0.01
     assert percentile(durations, 0.95) < BASELINES["api_cache_miss_p95_seconds"]

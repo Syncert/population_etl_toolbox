@@ -30,10 +30,17 @@ from data_ingestion_toolbox.capture import (
     ResponseCapture,
     persist_response_capture,
 )
+from data_ingestion_toolbox.utility.unchanged import stored_copy_of_capture
 from data_ingestion_toolbox.census_acs.silver_census.replay import (
     replay_census_capture,
 )
-from .config import CONFIG, place_parent_fips, tract_parent_fips
+from .config import (
+    ACS_METRO_GEOGRAPHY,
+    CONFIG,
+    census_api_url,
+    place_parent_fips,
+    tract_parent_fips,
+)
 
 CENSUS_NULL_SENTINELS = {
     "-222222222",
@@ -74,6 +81,25 @@ class CensusFetchedResponse(list):
 
 # initialize logger
 logger = logging.getLogger(__name__)
+
+_PARSER_CONTRACT = "census-acs-array-v1"
+_REVISION_TABLE = "silver_census.observation_revision"
+
+
+def _stored_revision_rows(capture_id: object) -> int:
+    """How many revision rows an earlier capture already stored."""
+    connection = _get_pg_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM silver_census.observation_revision "
+                "WHERE capture_id = %s",
+                (str(capture_id),),
+            )
+            return int(cursor.fetchone()[0])
+    finally:
+        connection.close()
+
 
 # Which database inside the Postgres instance do you want?
 # If you want this configurable, put it in CONFIG (recommended).
@@ -136,6 +162,7 @@ def build_geo_params(
     geo_level: str,
     state_fips: Optional[str] = None,
     dataset: Optional[str] = None,
+    county_fips: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Build the 'for' and 'in' query params for the ACS API, given geo_level.
@@ -143,7 +170,12 @@ def build_geo_params(
     A place request is sliced by state, as counties are, and is refused for a
     state outside the dataset's declared place scope (``ACS_PLACE_PARENT_FIPS``)
     rather than sent and answered empty.
+
+    ``county_fips`` (three digits, tract grain only) narrows a tract request
+    to one county's tracts: a focus-county slice (focus-counties).
     """
+    if county_fips is not None and geo_level != "tract":
+        raise ValueError("county_fips narrows tract-level requests only")
     if geo_level == "us":
         return {"for": "us:1"}
     elif geo_level == "state":
@@ -160,6 +192,10 @@ def build_geo_params(
                 f"{dataset or 'unknown dataset'} publishes no places for state {state_fips}"
             )
         return {"for": "place:*", "in": f"state:{state_fips}"}
+    elif geo_level == "metro":
+        # Every metropolitan and micropolitan statistical area at once: the
+        # Bureau's own CBSA estimates, which span states (W-7).
+        return {"for": f"{ACS_METRO_GEOGRAPHY}:*"}
     elif geo_level == "tract":
         # Every tract in every county of one state: the API takes the county
         # wildcard inside `in` (sub-county-geography).
@@ -169,6 +205,10 @@ def build_geo_params(
             raise ValueError(
                 f"{dataset or 'unknown dataset'} publishes no tracts for state {state_fips}"
             )
+        if county_fips is not None:
+            if len(county_fips) != 3 or not county_fips.isdigit():
+                raise ValueError("county_fips must be the three-digit county code")
+            return {"for": "tract:*", "in": f"state:{state_fips} county:{county_fips}"}
         return {"for": "tract:*", "in": f"state:{state_fips} county:*"}
     else:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -192,18 +232,19 @@ def fetch_acs_api(
     variables: List[str],
     geo_level: str,
     state_fips: Optional[str] = None,
+    county_fips: Optional[str] = None,
 ) -> List[List[str]]:
     """
     Call the Census API and return the raw JSON (list-of-lists).
 
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    base_url = census_api_url(year, dataset)
 
     params: Dict[str, str] = {
         "get": ",".join(variables),
         "key": CONFIG.require_api_key(),
     }
-    params.update(build_geo_params(geo_level, state_fips, dataset))
+    params.update(build_geo_params(geo_level, state_fips, dataset, county_fips))
 
     # Small jitter even under lock to avoid rhythmic bursts on retries
     time.sleep(0.2 + random.random() * 0.4)
@@ -288,6 +329,7 @@ def rows_to_polars(
         "county": {"state", "county"},
         "place": {"state", "place"},
         "tract": {"state", "county", "tract"},
+        "metro": {ACS_METRO_GEOGRAPHY},
     }
     if geo_level not in expected_geo_columns:
         raise ValueError(f"Unsupported geo_level: {geo_level}")
@@ -301,7 +343,9 @@ def rows_to_polars(
 
     # Determine which columns are variables and which are geos
     geo_cols = [
-        c for c in df.columns if c in ("us", "state", "county", "place", "tract")
+        c
+        for c in df.columns
+        if c in ("us", "state", "county", "place", "tract", ACS_METRO_GEOGRAPHY)
     ]
     var_cols = [c for c in df.columns if c not in geo_cols]
 
@@ -337,6 +381,12 @@ def rows_to_polars(
                 [pl.lit("state:"), pl.col("state"), pl.lit("|place:"), pl.col("place")]
             ),
             state_fips=pl.col("state"),
+            county_fips=pl.lit(None, dtype=pl.Utf8),
+        )
+    elif geo_level == "metro":
+        df = df.with_columns(
+            geo_id=pl.concat_str([pl.lit("cbsa:"), pl.col(ACS_METRO_GEOGRAPHY)]),
+            state_fips=pl.lit(None, dtype=pl.Utf8),
             county_fips=pl.lit(None, dtype=pl.Utf8),
         )
     elif geo_level == "tract":
@@ -428,13 +478,17 @@ def ingest_slice(
     geo_level: str,
     state_fips: Optional[str] = None,
     tables: Optional[List[str]] = None,
+    county_fips: Optional[str] = None,
 ) -> int:
     """
     Ingest one slice: (year, dataset, geo_level[, state_fips]).
 
     ``tables`` narrows the request to those curated tables, as the planner
     does for an older place year (`AcsConfig.place_tables`); ``None`` keeps
-    the level's own scope.
+    the level's own scope. ``county_fips`` (three digits) makes a tract
+    slice one focus county's (`AcsConfig.focus_counties`): it asks for that
+    county's tracts and that county's tables, and ``tables`` is refused
+    beside it.
 
     For example:
         (2022, 'acs5', 'us')
@@ -443,7 +497,14 @@ def ingest_slice(
     """
     # A tract slice asks for the tract tables only; every other level for
     # the whole curated list.
-    if tables is not None:
+    if county_fips is not None:
+        if geo_level != "tract" or not state_fips:
+            raise ValueError("a focus-county slice is a tract slice of one state")
+        if tables is not None:
+            raise ValueError("a focus-county slice asks for its county's tables")
+        focus = CONFIG.focus_county(f"{state_fips}{county_fips}")
+        variables = get_curated_variables(year, dataset, focus.tables)
+    elif tables is not None:
         variables = get_curated_variables(year, dataset, tables)
     elif geo_level == "tract":
         variables = get_curated_variables(year, dataset, CONFIG.tract_tables)
@@ -461,9 +522,10 @@ def ingest_slice(
             "year": year,
             "geo_level": geo_level,
             "state_fips": state_fips,
+            **({"county_fips": county_fips} if county_fips is not None else {}),
         }
     )
-    endpoint = f"https://api.census.gov/data/{year}/acs/{dataset}"
+    endpoint = census_api_url(year, dataset)
     total_rows = 0
 
     return _ingest_capture_chunks(
@@ -472,6 +534,7 @@ def ingest_slice(
         dataset=dataset,
         geo_level=geo_level,
         state_fips=state_fips,
+        county_fips=county_fips,
         control=control,
         run_id=run_id,
         endpoint=endpoint,
@@ -487,6 +550,7 @@ def _ingest_capture_chunks(
     geo_level: str,
     state_fips: str | None,
     control: CaptureControl,
+    county_fips: str | None = None,
     run_id: uuid.UUID,
     endpoint: str,
     total_rows: int,
@@ -499,7 +563,9 @@ def _ingest_capture_chunks(
                 "year": year,
                 "geo_level": geo_level,
             }
-            parameters.update(build_geo_params(geo_level, state_fips, dataset))
+            parameters.update(
+                build_geo_params(geo_level, state_fips, dataset, county_fips)
+            )
             request = control.start_request(
                 run_id=run_id,
                 endpoint=endpoint,
@@ -513,6 +579,9 @@ def _ingest_capture_chunks(
                     variables=variable_chunk,
                     geo_level=geo_level,
                     state_fips=state_fips,
+                    # Only a focus-county slice names its county, so every
+                    # other request keeps the call it always made.
+                    **({"county_fips": county_fips} if county_fips is not None else {}),
                 )
                 payload = getattr(raw, "payload", None)
                 if payload is None:
@@ -522,7 +591,7 @@ def _ingest_capture_chunks(
                         ensure_ascii=False,
                     ).encode("utf-8")
                 capture_id = uuid.uuid4()
-                persist_response_capture(
+                receipt = persist_response_capture(
                     _get_pg_connection,
                     ResponseCapture(
                         capture_id=capture_id,
@@ -536,7 +605,7 @@ def _ingest_capture_chunks(
                         response_headers=getattr(raw, "response_headers", {}),
                         media_type="application/json",
                         payload=payload,
-                        payload_schema_version="census-acs-array-v1",
+                        payload_schema_version=_PARSER_CONTRACT,
                         source_revision=str(year),
                     ),
                 )
@@ -546,6 +615,36 @@ def _ingest_capture_chunks(
 
             if not raw:
                 control.finish_request(request.request_id, status="empty")
+                continue
+            # A retried or re-planned slice asks again for chunks it already
+            # stored; identical bytes would store every cell a second time
+            # (9,542 captures, 77M revision rows on OFFICE_LAB, 2026-11-05).
+            stored = stored_copy_of_capture(
+                _get_pg_connection,
+                revision_table=_REVISION_TABLE,
+                source_code="CENSUS_ACS",
+                request_fingerprint=request.request_fingerprint,
+                capture_id=capture_id,
+                payload_checksum=receipt.payload_checksum,
+                parser_contract=_PARSER_CONTRACT,
+            )
+            if stored is not None:
+                rows = _stored_revision_rows(stored)
+                logger.info(
+                    "Census ACS unchanged: %s %s %s %s repeats capture %s; "
+                    "replay skipped",
+                    dataset,
+                    year,
+                    geo_level,
+                    state_fips or "",
+                    stored,
+                )
+                control.finish_request(
+                    request.request_id,
+                    status="captured" if rows else "empty",
+                )
+                total_rows += rows
+                time.sleep(0.2 + random.random() * 0.3)
                 continue
             try:
                 rows = replay_census_capture(
@@ -559,7 +658,7 @@ def _ingest_capture_chunks(
                 control.quarantine(
                     capture_id=capture_id,
                     run_id=run_id,
-                    parser_version="census-acs-array-v1",
+                    parser_version=_PARSER_CONTRACT,
                     error_code="INVALID_CENSUS_ACS_ARRAY",
                     error=error,
                 )

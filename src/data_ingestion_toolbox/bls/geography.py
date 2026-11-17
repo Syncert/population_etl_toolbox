@@ -107,6 +107,9 @@ def get_laus_series_ids(
         if len(state_fips_padded) != 2 or not state_fips_padded.isdigit():
             raise ValueError(f"state_fips must be one or two digits, got: {state_fips}")
         area_prefix = f"CN{state_fips_padded}"
+    elif geo_level == "metro":
+        # Every metropolitan area at once: a CBSA can span states (W-7).
+        area_prefix = "MT"
     else:
         raise ValueError(f"Unsupported LAUS geo_level for ingestion: {geo_level}")
 
@@ -206,8 +209,12 @@ def parse_laus_series_id(series_id: str) -> dict:
     - Positions 3-17: 15-character area code
     - Positions 18-19: 2-digit measure code
 
-    Only state and county area patterns are supported by the geographic
-    dimension used by this pipeline. LAUS has no national series.
+    State, county and metropolitan area patterns are supported. A metro
+    code is `MT` + the state LAUS files it under + the five-digit CBSA code +
+    six zeros (`MT4812420000000` is Austin); it is keyed by its CBSA alone,
+    as the shared reference keys a CBSA, because a CBSA can span states (W-7).
+    A New England NECTA code (CBSA codes from 70000) names no CBSA and stays
+    unresolved rather than being matched. LAUS has no national series.
 
     Returns:
         Parsed fields. Invalid IDs return the same keys populated with ``None``.
@@ -234,6 +241,7 @@ def parse_laus_series_id(series_id: str) -> dict:
 
     state_match = re.fullmatch(r"ST(\d{2})0{11}", area_code)
     county_match = re.fullmatch(r"CN(\d{2})(\d{3})0{8}", area_code)
+    metro_match = re.fullmatch(r"MT(\d{2})(\d{5})0{6}", area_code)
     if state_match:
         geo_level = "state"
         state_fips = state_match.group(1)
@@ -243,6 +251,10 @@ def parse_laus_series_id(series_id: str) -> dict:
         geo_level = "county"
         state_fips, county_fips = county_match.groups()
         geo_id = f"state:{state_fips}|county:{county_fips}"
+    elif metro_match:
+        geo_level = "metro"
+        state_fips, county_fips = None, None
+        geo_id = f"cbsa:{metro_match.group(2)}"
     else:
         return empty
 

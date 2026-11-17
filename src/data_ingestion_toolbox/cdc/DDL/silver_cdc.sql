@@ -1,4 +1,4 @@
--- Capture-first CDC CDI and PLACES county silver contract.
+-- Capture-first CDC CDI and PLACES county and tract silver contract.
 --
 -- The source owns its relations: this file is applied by the bootstrap
 -- manifest and re-applied by the `cdc_ingest` DAG's `ensure_cdc_schema` task,
@@ -18,7 +18,7 @@ CREATE SCHEMA IF NOT EXISTS gold_cdc;
 
 CREATE TABLE IF NOT EXISTS control.cdc_dataset_release (
     run_id UUID PRIMARY KEY REFERENCES control.ingestion_run(run_id),
-    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county', 'places_tract')),
     socrata_id TEXT NOT NULL CHECK (socrata_id ~ '^[a-z0-9]{4}-[a-z0-9]{4}$'),
     title TEXT NOT NULL CHECK (BTRIM(title) <> ''),
     release_watermark BIGINT NOT NULL CHECK (release_watermark >= 0),
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS silver_cdc.observation_revision (
     capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
     source_row_index BIGINT NOT NULL CHECK (source_row_index >= 0),
     run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
-    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county', 'places_tract')),
     release_watermark TEXT NOT NULL,
     source_record_id TEXT NOT NULL CHECK (source_record_id ~ '^[0-9a-f]{64}$'),
     source_record JSONB NOT NULL,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS silver_cdc.observation_revision (
     period_end INTEGER NOT NULL CHECK (period_end >= period_start),
     geo_source_code TEXT NOT NULL,
     geo_source_label TEXT,
-    geo_type TEXT NOT NULL CHECK (geo_type IN ('nation', 'state', 'county', 'unsupported')),
+    geo_type TEXT NOT NULL CHECK (geo_type IN ('nation', 'state', 'county', 'tract', 'unsupported')),
     geo_id TEXT,
     value_source TEXT,
     value NUMERIC,
@@ -101,7 +101,7 @@ CREATE INDEX IF NOT EXISTS cdc_observation_revision_run_idx
 CREATE TABLE IF NOT EXISTS silver_cdc.observation_quarantine (
     quarantine_sk BIGSERIAL PRIMARY KEY,
     run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
-    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county', 'places_tract')),
     release_watermark TEXT NOT NULL,
     source_row_index BIGINT NOT NULL CHECK (source_row_index >= 0),
     error_code TEXT NOT NULL,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS silver_cdc.observation_quarantine (
 );
 
 CREATE TABLE IF NOT EXISTS silver_cdc.dim_dataset_release (
-    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county', 'places_tract')),
     release_watermark TEXT NOT NULL,
     socrata_id TEXT NOT NULL,
     title TEXT NOT NULL,
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS silver_cdc.dim_dataset_release (
 );
 
 CREATE TABLE IF NOT EXISTS silver_cdc.dim_measure (
-    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county')),
+    asset_id TEXT NOT NULL CHECK (asset_id IN ('cdi', 'places_county', 'places_tract')),
     measure_id TEXT NOT NULL,
     value_type_id TEXT NOT NULL,
     measure_label TEXT NOT NULL,
@@ -210,6 +210,74 @@ CREATE INDEX IF NOT EXISTS cdc_fact_measure_geo_period_idx
 
 CREATE INDEX IF NOT EXISTS cdc_fact_capture_idx
     ON silver_cdc.fact_health_observation (capture_id, source_row_index);
+
+-- One row per observation page a release run reads: the page's offset,
+-- limit, rows and capture. A bulk run that stops part way is resumed by the
+-- next run of the same release watermark, which records the pages already
+-- captured (their captures stay those of the run that read them) and reads
+-- only from the next offset; replay reads a run's pages from here.
+CREATE TABLE IF NOT EXISTS control.cdc_release_page (
+    run_id UUID NOT NULL REFERENCES control.ingestion_run(run_id),
+    asset_id TEXT NOT NULL,
+    release_watermark BIGINT NOT NULL CHECK (release_watermark >= 0),
+    page_offset BIGINT NOT NULL CHECK (page_offset >= 0),
+    page_limit INTEGER NOT NULL CHECK (page_limit > 0),
+    row_count INTEGER NOT NULL CHECK (row_count >= 0 AND row_count <= page_limit),
+    capture_id UUID NOT NULL REFERENCES raw_capture.response_capture(capture_id),
+    resumed_from_run_id UUID REFERENCES control.ingestion_run(run_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (run_id, page_offset)
+);
+
+CREATE INDEX IF NOT EXISTS cdc_release_page_resume_idx
+    ON control.cdc_release_page (asset_id, release_watermark, page_limit, created_at);
+
+-- The provider's own row count for a bulk release, captured beside its pages.
+ALTER TABLE control.cdc_dataset_release
+    ADD COLUMN IF NOT EXISTS counted_row_count BIGINT
+        CHECK (counted_row_count IS NULL OR counted_row_count >= 0);
+
+-- A warehouse bootstrapped before the tract release keeps the older asset and
+-- grain lists in these constraints; widen them in place (rerun-safe).
+DO $$
+DECLARE
+    target RECORD;
+BEGIN
+    FOR target IN
+        SELECT * FROM (VALUES
+            ('control.cdc_dataset_release', 'cdc_dataset_release_asset_id_check'),
+            ('silver_cdc.observation_revision', 'observation_revision_asset_id_check'),
+            ('silver_cdc.observation_quarantine', 'observation_quarantine_asset_id_check'),
+            ('silver_cdc.dim_dataset_release', 'dim_dataset_release_asset_id_check'),
+            ('silver_cdc.dim_measure', 'dim_measure_asset_id_check')
+        ) AS item(relation, constraint_name)
+    LOOP
+        IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = target.relation::regclass
+              AND conname = target.constraint_name
+              AND pg_get_constraintdef(oid) NOT LIKE '%places_tract%'
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %s DROP CONSTRAINT %I, ADD CONSTRAINT %I '
+                'CHECK (asset_id IN (''cdi'', ''places_county'', ''places_tract''))',
+                target.relation, target.constraint_name, target.constraint_name
+            );
+        END IF;
+    END LOOP;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'silver_cdc.observation_revision'::regclass
+          AND conname = 'observation_revision_geo_type_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%tract%'
+    ) THEN
+        ALTER TABLE silver_cdc.observation_revision
+            DROP CONSTRAINT observation_revision_geo_type_check,
+            ADD CONSTRAINT observation_revision_geo_type_check
+            CHECK (geo_type IN ('nation', 'state', 'county', 'tract', 'unsupported'));
+    END IF;
+END
+$$;
 
 COMMENT ON SCHEMA silver_cdc IS
     'Source-faithful CDC CDI and PLACES release history and reconciliation.';

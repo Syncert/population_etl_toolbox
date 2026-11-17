@@ -41,7 +41,9 @@ SELECT
     COALESCE(MAX(fact.updated_at), series.updated_at) AS publication_time,
     'Federal Reserve Economic Data'::TEXT AS source_name,
     'economic-data-aggregator'::TEXT AS source_type,
-    series.reference_url::TEXT AS reference_url
+    series.reference_url::TEXT AS reference_url,
+    -- Optional in the publisher contract; appended at the end.
+    served.last_value_date::DATE AS last_value_date
 FROM gold_fred.dim_fred_series AS series
 LEFT JOIN gold_fred.fact_fred_observation AS fact ON fact.fred_series_sk = series.fred_series_sk
 LEFT JOIN (
@@ -64,9 +66,13 @@ LEFT JOIN (
                    FILTER (WHERE latest.value IS NOT NULL),
                ARRAY[]::TEXT[]
            )::TEXT[]
-               AS valid_geo_grains
+               AS valid_geo_grains,
+           -- The newest period served with a value, for the harvest's
+           -- `ended` rule (migration 042).
+           MAX(latest.observation_date) FILTER (WHERE latest.value IS NOT NULL)
+               AS last_value_date
     FROM gold_fred.mv_fred_latest AS latest
     GROUP BY latest.metric_code
 ) AS served
   ON served.metric_code = 'FRED:' || series.series_id
-GROUP BY series.fred_series_sk, served.valid_geo_grains;
+GROUP BY series.fred_series_sk, served.valid_geo_grains, served.last_value_date;

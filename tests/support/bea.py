@@ -2,7 +2,9 @@
 
 The checked-in zips under ``tests/fixtures/bea`` hold each table's
 every-area CSV with its header, a subset of its data rows and its footer,
-copied verbatim. They are played through the adapter's own capture path by
+copied verbatim. ``CAINC35.zip`` and ``SAINC.zip`` keep only the three newest
+year columns of the rows they hold (read 2026-11-05); ``SAINC.zip`` holds the
+three registered members of BEA's state zip. They are played through the adapter's own capture path by
 a scripted HTTP client.
 """
 

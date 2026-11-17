@@ -17,8 +17,11 @@ main.dashboard {
   margin: 0 0 12px;
 }
 
+/* 37 sources do not fit one row: the tabs wrap inside the page instead of
+   widening it (the explorer scrolled sideways at every width; UX review F2). */
 .source-page-tabs {
-  width: max-content;
+  flex-wrap: wrap;
+  max-width: 100%;
   margin: 0 0 12px;
 }
 
@@ -67,7 +70,7 @@ main.dashboard.dashboard-wide {
 
 /* A map this wide at the shared 360px height is a letterbox; follow the
    viewport instead, within bounds. */
-.dashboard-wide .map-shell {
+.dashboard-wide .map-canvas {
   height: clamp(360px, 62vh, 860px);
 }
 

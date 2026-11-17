@@ -159,6 +159,22 @@ def test_contract_fingerprint_tracks_the_served_contract() -> None:
     assert len(contract_fingerprint(app)) == 16
 
 
+def test_the_fingerprint_is_built_at_startup_not_with_the_application() -> None:
+    """Covers: PERF-001 — building an application does not build its OpenAPI document.
+
+    The document takes about two seconds, and every unit test that built an
+    application paid for it. A started application has it before its first
+    request, and the cache middleware keys on the same digest.
+    """
+    application = create_app(Settings())
+    assert application.openapi_schema is None
+    with TestClient(application):
+        assert application.openapi_schema is not None
+        assert application.state.contract_fingerprint() == contract_fingerprint(
+            application
+        )
+
+
 def test_epoch_provider_memoizes_within_the_freshness_window() -> None:
     """Covers: API-054 — hits stay cheap: one read per declared window."""
     now = [0.0]

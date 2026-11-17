@@ -12,7 +12,8 @@ import { BarChart3, BookOpen, Bookmark, ChevronDown, Columns3, Database, FilePen
 const navigation = [
   // One page per place: the nation, each state, each county (place-pages).
   { href: "/us", label: "Find your place", icon: Landmark },
-  { href: "/data", label: "Where the numbers come from", icon: ShieldCheck },
+  // `short` is what a phone shows, so the navigation stays on one row.
+  { href: "/data", label: "Where the numbers come from", short: "Sources", icon: ShieldCheck },
 ];
 
 const tools = [
@@ -77,7 +78,7 @@ export default function SiteHeader({ useCaseGroups = [] }) {
             </div>
           </div>
         </details>
-        {navigation.map(({ href, label, icon: Icon }) => {
+        {navigation.map(({ href, label, short, icon: Icon }) => {
           const active = isActive(href, pathname);
           return (
             <Link
@@ -89,12 +90,19 @@ export default function SiteHeader({ useCaseGroups = [] }) {
               aria-current={active ? "page" : undefined}
             >
               {Icon ? <Icon aria-hidden="true" size={15} /> : null}
-              <span>{label}</span>
+              {short ? (
+                <>
+                  <span className="nav-label-long">{label}</span>
+                  <span className="nav-label-short">{short}</span>
+                </>
+              ) : (
+                <span>{label}</span>
+              )}
             </Link>
           );
         })}
         <details className="use-case-menu tools-menu" ref={toolsMenu} data-testid="tools-menu">
-          <summary className={`nav-link${tools.some(({ href }) => isActive(href, pathname)) ? " active" : ""}`}><Wrench size={15} aria-hidden="true" />Tools<ChevronDown size={13} aria-hidden="true" /></summary>
+          <summary className={`nav-link${tools.some(({ href }) => href !== "/" && isActive(href, pathname)) ? " active" : ""}`}><Wrench size={15} aria-hidden="true" />Tools<ChevronDown size={13} aria-hidden="true" /></summary>
           <ul className="tools-dropdown">
             {tools.map(({ href, label, icon: Icon }) => {
               const active = isActive(href, pathname);

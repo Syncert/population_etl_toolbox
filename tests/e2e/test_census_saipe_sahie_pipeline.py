@@ -106,6 +106,15 @@ def test_saipe_and_sahie_reach_the_neutral_api_with_their_intervals(
             assert Decimal(item["uncertainty"]["margin_of_error"]) == Decimal(
                 str(expected[f"{measure_id}_MOE"])
             )
+            # The margin as a percent of the estimate, as ACS serves it: the
+            # place page printed "(0%)" while this field was served null.
+            moe_pct = Decimal(item["uncertainty"]["margin_of_error_pct"])
+            assert round(moe_pct, 6) == round(
+                Decimal(str(expected[f"{measure_id}_MOE"]))
+                / Decimal(str(expected[f"{measure_id}_PT"]))
+                * 100,
+                6,
+            )
             assert item["value_status"] == "valid"
             assert item["geo_level"] == "COUNTY"
             assert item["dimensions"]["estimate_method"].startswith(

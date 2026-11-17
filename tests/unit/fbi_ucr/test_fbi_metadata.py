@@ -136,7 +136,7 @@ def test_unpublished_period_window_is_quarantined() -> None:
 
 def test_period_window_ending_exactly_at_the_latest_month_is_ingestible() -> None:
     """Covers: ETL-029 — the boundary month counts as published."""
-    decision = decide_release(PRODUCT, _release("08/15/2026", "06/2023"), None)
+    decision = decide_release(PRODUCT, _release("08/15/2026", "12/2025"), None)
 
     assert decision is ReleaseDecision.INGEST
 

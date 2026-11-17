@@ -1,0 +1,12 @@
+series_id                     	seasonal	category_code	subcategory_code	item_code	demographics_code	characteristics_code	process_code	series_title	footnote_codes	begin_year	begin_period	end_year	end_period
+CXUFOODHOMELB0101M            	U	EXPEND	FOODTOTL	FOODHOME	LB01	01	M	Food at home by Income Quintiles: All Consumer Units		1984	A01	2025	A01
+CXUFOODHOMELB0502M            	U	EXPEND	FOODTOTL	FOODHOME	LB05	02	M	Food at home by Size of consumer unit: One person consumer unit		1984	A01	2025	A01
+CXUFOODHOMELB0504M            	U	EXPEND	FOODTOTL	FOODHOME	LB05	04	M	Food at home by Size of consumer unit: Two people in consumer unit		1984	A01	2025	A01
+CXUFOODHOMELB0505M            	U	EXPEND	FOODTOTL	FOODHOME	LB05	05	M	Food at home by Size of consumer unit: Three people in consumer unit		1984	A01	2025	A01
+CXUFOODHOMELB0506M            	U	EXPEND	FOODTOTL	FOODHOME	LB05	06	M	Food at home by Size of consumer unit: Four people in consumer unit		1984	A01	2025	A01
+CXUFOODHOMELB0507M            	U	EXPEND	FOODTOTL	FOODHOME	LB05	07	M	Food at home by Size of consumer unit: Five or more people in consumer unit		1988	A01	2025	A01
+CXUFOODHOMELB1101M            	U	EXPEND	FOODTOTL	FOODHOME	LB11	01	M	Food at home by Census Region: All Consumer Units		1984	A01	2025	A01
+CXUFOODHOMELB1102M            	U	EXPEND	FOODTOTL	FOODHOME	LB11	02	M	Food at home by Census Region: Region of residence: northeast		1984	A01	2025	A01
+CXUFOODHOMELB1103M            	U	EXPEND	FOODTOTL	FOODHOME	LB11	03	M	Food at home by Census Region: Region of residence: midwest		1984	A01	2025	A01
+CXUFOODHOMELB1104M            	U	EXPEND	FOODTOTL	FOODHOME	LB11	04	M	Food at home by Census Region: Region of residence: south		1984	A01	2025	A01
+CXUFOODHOMELB1105M            	U	EXPEND	FOODTOTL	FOODHOME	LB11	05	M	Food at home by Census Region: Region of residence: west		1984	A01	2025	A01

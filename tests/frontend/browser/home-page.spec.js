@@ -3,76 +3,66 @@ import { expect, test } from "../support/servedRequests.js";
 // Covers: WEB-112 — the home page states what the catalog answered and
 // nothing else.
 //
-// It hard-coded one Census variable as its featured metric, so the feature
-// was a client-authored choice of provider dressed as the catalog's answer --
-// and the explorer link it built named that code even when the catalog had
-// never published it. Two cells of the signal strip read "County / national
-// map coverage" and "Live / API-backed observations": the first is a claim
-// about which grains the warehouse publishes, which varies by source, and the
-// second is a claim about the deployment's health that this page never
-// checked.
+// It once hard-coded a featured Census variable and two signal cells the API
+// never answered. The website UX review (2026-11, E1 to E3) then found the
+// page turning from residents to analysts below the search: a count of
+// "population matches", a featured analysis linking to an empty page, and a
+// raw catalog name as a headline. What remains under the finder is a short
+// row of analyst tools and the sources, counted and named once each, as the
+// catalog answered them.
 
 const sources = [
   { source_code: "FRED", source_name: "Federal Reserve Economic Data" },
   { source_code: "BLS", source_name: "Bureau of Labor Statistics" },
 ];
 
-/** A catalog whose first answer is deliberately not the old hard-coded one. */
-const metrics = {
-  total: 4210,
-  items: [
-    {
-      metric_code: "FRED:UNRATE",
-      metric_display_name: "Unemployment rate",
-      source_code: "FRED",
-      units: "percent",
-    },
-    {
-      metric_code: "CENSUS_ACS:acs5:B01003_001",
-      metric_display_name: "Total population",
-      source_code: "CENSUS_ACS",
-      units: "people",
-    },
-  ],
-};
-
-async function installRoutes(page, { emptyCatalog = false } = {}) {
+async function installRoutes(page, { sourceItems = sources } = {}) {
   await page.route("**/api/v1/health", (route) => route.fulfill({ json: { status: "ok" } }));
-  await page.route("**/api/v1/catalog/sources", (route) => route.fulfill({ json: sources }));
-  await page.route("**/api/v1/catalog/metrics?*", (route) =>
-    route.fulfill({ json: emptyCatalog ? { total: 0, items: [] } : metrics }),
-  );
+  await page.route("**/api/v1/catalog/sources", (route) => route.fulfill({ json: sourceItems }));
 }
 
-test("the featured link opens the metric the catalog answered first", async ({ page }) => {
+test("the sources are counted and named once each, as the catalog answered", async ({ page }) => {
+  // Three NOAA programs publish under one agency name.
+  await installRoutes(page, {
+    sourceItems: [
+      ...sources,
+      { source_code: "NOAA_NORMALS", source_name: "NOAA National Centers for Environmental Information" },
+      { source_code: "NOAA_STORMS", source_name: "NOAA National Centers for Environmental Information" },
+    ],
+  });
+  await page.goto("/");
+
+  await expect(page.getByTestId("home-source-count")).toHaveText("3 public sources, each named beside its numbers");
+  await expect(page.getByTestId("home-source-list").getByRole("listitem")).toHaveText([
+    "Federal Reserve Economic Data",
+    "Bureau of Labor Statistics",
+    "NOAA National Centers for Environmental Information",
+  ]);
+});
+
+test("below the finder the page offers analyst tools and nothing the API did not say", async ({ page }) => {
   await installRoutes(page);
   await page.goto("/");
 
-  // The catalog's first answer, which is not the code this page used to
-  // prefer -- so a link naming that code would be this client's choice.
-  const featured = page.getByTestId("home-featured-link");
-  await expect(featured).toHaveAttribute("href", /metric=FRED%3AUNRATE/);
-  await expect(featured).not.toHaveAttribute("href", /B01003_001/);
+  const main = page.locator("main");
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("What is going on in your place?");
+  await expect(main.getByRole("link", { name: "Open the explorer" })).toHaveAttribute("href", "/explore");
+  await expect(main.getByRole("link", { name: "Browse the catalog" })).toHaveAttribute("href", "/catalog");
+  await expect(main.getByRole("link", { name: "Where the numbers come from" })).toHaveAttribute("href", "/data");
+  // Gone: the metric search count, the featured analysis and the raw-named snapshot.
+  await expect(main).not.toContainText("population matches");
+  await expect(main).not.toContainText("Featured analysis");
+  await expect(main).not.toContainText("National snapshot");
+  await expect(main).not.toContainText("national map coverage");
+  await expect(main).not.toContainText("API-backed observations");
+  await expect(main).not.toContainText("briefing measure");
 });
 
-test("an empty catalog offers the catalog, not a metric nobody published", async ({ page }) => {
-  await installRoutes(page, { emptyCatalog: true });
+test("a failed source read is said, and no source is named", async ({ page }) => {
+  await page.route("**/api/v1/catalog/sources", (route) => route.fulfill({ status: 503, json: { detail: "down" } }));
   await page.goto("/");
 
-  await expect(page.getByTestId("home-featured-link")).toHaveAttribute("href", "/catalog");
-});
-
-test("the signal strip states only what the catalog answered", async ({ page }) => {
-  await installRoutes(page);
-  await page.goto("/");
-
-  const strip = page.getByRole("region", { name: "Platform signals" });
-  // Two counts, both from the answers this page just read.
-  await expect(strip).toContainText("2");
-  await expect(strip).toContainText("connected sources");
-  await expect(strip).toContainText("4,210");
-
-  // And nothing the API did not say.
-  await expect(strip).not.toContainText("national map coverage");
-  await expect(strip).not.toContainText("API-backed observations");
+  await expect(page.getByTestId("home-status")).toContainText("temporarily unavailable");
+  await expect(page.getByTestId("home-source-count")).toHaveText("Public sources, each named beside its numbers");
+  await expect(page.getByTestId("home-source-list")).toContainText("unavailable");
 });

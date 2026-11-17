@@ -3,9 +3,12 @@
 Each run asks for the registered county and state files of the last few
 calendar months, and the annual county, state and place files of the years
 they fall in (``BpsConfig.recent_months``). A month not yet published answers
-404 and is recorded empty. A manual run with ``{"history": true}`` sweeps
-every registered period from 2000 (places from 2007), which is how a fresh
-warehouse is loaded (``docs/reference/BETA_RESET_REINGESTION.md``).
+404 and is recorded empty. Each run also asks for every registered period
+from 2000 (places from 2007) the warehouse has never had answered, so the
+first run on a fresh warehouse loads the whole history and later runs are
+the window again (``data_ingestion_toolbox.utility.backfill``). A manual run
+with ``{"history": true}`` re-sweeps every registered period, answered or
+not (``docs/reference/BETA_RESET_REINGESTION.md``).
 
 One mapped task per (frequency, year, month): capture every file, replay the
 run into silver, publish it. Requests go through the one-slot
@@ -15,7 +18,7 @@ run into silver, publish it. Requests go through the one-slot
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -23,9 +26,9 @@ from airflow.decorators import dag, task
 
 from data_ingestion_toolbox.census_bps.capture import capture_period
 from data_ingestion_toolbox.census_bps.config import BpsConfig
-from data_ingestion_toolbox.census_bps.registry import (
-    recent_periods,
-    registered_periods,
+from data_ingestion_toolbox.census_bps.plan import (
+    answered_bps_periods,
+    periods_to_capture,
 )
 from data_ingestion_toolbox.census_bps.schema import ensure_census_bps_schema
 from data_ingestion_toolbox.census_bps.silver_census_bps.load import (
@@ -44,21 +47,10 @@ DEFAULT_ARGS = {
 }
 
 
-def _get_postgres_hook():  # noqa: ANN202
+def _get_postgres_hook():
     from airflow.providers.postgres.hooks.postgres import PostgresHook
 
     return PostgresHook(postgres_conn_id=BpsConfig().postgres_conn_id.strip())
-
-
-def periods_to_capture(
-    today: date, conf: dict[str, Any] | None, config: BpsConfig
-) -> list[str]:
-    """The `frequency-year-month` keys one run captures: recent by default, all on request."""
-    if conf and conf.get("history"):
-        periods = registered_periods(today)
-    else:
-        periods = recent_periods(today, config.recent_months)
-    return [f"{frequency}-{year}-{month:02d}" for frequency, year, month in periods]
 
 
 @dag(
@@ -91,7 +83,13 @@ def census_building_permits_ingest():
         dag_run = context.get("dag_run")
         conf = dict(getattr(dag_run, "conf", None) or {})
         logical = context.get("logical_date") or datetime.now(timezone.utc)
-        return periods_to_capture(logical.date(), conf, BpsConfig())
+        with _get_postgres_hook().get_conn() as connection:
+            answered = answered_bps_periods(connection)
+        planned = periods_to_capture(logical.date(), conf, BpsConfig(), answered)
+        logging.getLogger("airflow.task").info(
+            "capturing %d period(s); %d already answered", len(planned), len(answered)
+        )
+        return planned
 
     @task(pool="census_bps_files")
     def ingest_batch_period(period_key: str) -> dict[str, Any]:

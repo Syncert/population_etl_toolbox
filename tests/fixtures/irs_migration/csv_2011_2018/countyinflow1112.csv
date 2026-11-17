@@ -1,0 +1,12 @@
+y2_statefips,y2_countyfips,y1_statefips,y1_countyfips,y1_state,y1_countyname,n1,n2,agi
+01,000,96,000,AL,Total Migration-US and Foreign,114109,238230,4549431
+01,000,97,000,AL,Total Migration-US,113093,235901,4500247
+01,000,97,001,AL,Total Migration-Same State,63752,135124,2381712
+01,000,97,003,AL,Total Migration-Different State,49341,100777,2118535
+01,000,98,000,AL,Total Migration-Foreign,1016,2329,49184
+01,001,96,000,AL,Autauga County Total Migration-US and Foreign,2006,4618,83494
+01,001,97,000,AL,Autauga County Total Migration-US,1971,4511,80882
+01,001,97,001,AL,Autauga County Total Migration-Same State,1348,2961,48904
+01,001,97,003,AL,Autauga County Total Migration-Different State,623,1550,31978
+01,001,98,000,AL,Autauga County Total Migration-Foreign,35,107,2612
+01,001,01,001,AL,Autauga County Non-migrants,17696,41757,971428

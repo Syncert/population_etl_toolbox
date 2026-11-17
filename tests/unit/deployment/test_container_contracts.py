@@ -76,6 +76,42 @@ def test_runtime_hardening_and_published_ports_are_bounded() -> None:
                 ), f"{compose_name}:{service_name} publishes an unbounded port"
 
 
+def test_the_deployed_web_container_is_a_production_build() -> None:
+    """Covers: DEPLOY-005 — the web container serves `next build`, never `next dev`.
+
+    Any public or demo address needs the production server: `next dev`
+    compiles routes on request and has hung under load. Both deployment stacks
+    build `Dockerfile.web`, whose builder runs `next build` with standalone
+    output and whose runner starts that output with `node server.js` under
+    `NODE_ENV=production`. `npm run dev` stays the local development path and
+    nothing in a deployment starts it. The healthcheck uses `node` (the image
+    has no curl) against a route that asks the API nothing.
+    """
+    dockerfile = (ROOT / "infra/docker/Dockerfile.web").read_text(encoding="utf-8")
+    runner = dockerfile.rsplit("\nFROM ", 1)[1]
+    assert "RUN npm run build" in dockerfile
+    assert "ENV NODE_ENV=production" in runner
+    assert 'CMD ["node", "server.js"]' in runner
+    assert "/app/.next/standalone" in runner
+    assert "next dev" not in dockerfile and "npm run dev" not in dockerfile
+
+    next_config = (ROOT / "apps/web/next.config.mjs").read_text(encoding="utf-8")
+    assert 'output: "standalone"' in next_config
+
+    package = (ROOT / "apps/web/package.json").read_text(encoding="utf-8")
+    assert '"dev": "next dev -p 3100"' in package
+
+    for compose_name in ("docker-compose.yml", "docker-compose.external.yml"):
+        web = _compose(compose_name)["services"]["web"]
+        assert web["build"]["dockerfile"] == "infra/docker/Dockerfile.web"
+        assert "command" not in web and "entrypoint" not in web, (
+            f"{compose_name}:web overrides the image's production command"
+        )
+        assert web["build"]["args"]["NEXT_PUBLIC_BUILD_ID"] == "${WEB_BUILD_ID:-}"
+        probe = " ".join(web["healthcheck"]["test"])
+        assert "node -e" in probe and "127.0.0.1:3100/robots.txt" in probe
+
+
 def test_next_and_nginx_proxy_only_expected_api_and_tile_origins() -> None:
     """Covers: DEPLOY-001 — public proxies route API/Martin without leaking origins."""
     next_config = (ROOT / "apps/web/next.config.mjs").read_text(encoding="utf-8")
