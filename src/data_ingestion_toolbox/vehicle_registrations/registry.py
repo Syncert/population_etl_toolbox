@@ -162,3 +162,59 @@ MV1_STATE_FIPS: dict[str, str] = {
 }
 MV1_STATE_FIPS["Dist. of Col."] = "11"
 MV1_TOTAL_LABEL = "Total"
+
+
+@dataclass(frozen=True)
+class Measure:
+    """One served figure: a Report 28 column or an MV-1 column."""
+
+    measure_id: str
+    publisher: str  # wisdot_rpt28 | fhwa_mv1
+    source_column: str
+    label: str
+    basis: str
+
+
+def _wisdot_measures() -> tuple[Measure, ...]:
+    measures = [
+        Measure(
+            f"wisdot_rpt28:{code.lower()}",
+            "wisdot_rpt28",
+            code,
+            f"WisDOT {code}: {label}",
+            f"vehicles WisDOT counts as valid registrations of type {code} for the "
+            "calendar year, by the owner's county, as Report 28 prints them",
+        )
+        for code, label in WISDOT_VEHICLE_TYPES.items()
+    ]
+    measures.append(
+        Measure(
+            "wisdot_rpt28:all",
+            "wisdot_rpt28",
+            SUM_COLUMN,
+            "WisDOT Sum: registered vehicles of every type",
+            "the Sum Report 28 prints for the county or state, every vehicle type "
+            "including trailers",
+        )
+    )
+    return tuple(measures)
+
+
+def _mv1_measures() -> tuple[Measure, ...]:
+    return tuple(
+        Measure(
+            f"fhwa_mv1:{vehicle_class}:{ownership}",
+            "fhwa_mv1",
+            f"{vehicle_class}:{ownership}",
+            f"{MV1_VEHICLE_CLASS_LABELS[vehicle_class]} registered, {ownership_label}",
+            f"{MV1_VEHICLE_CLASS_LABELS[vehicle_class].lower()} registered in the "
+            f"state, {ownership_label}, as FHWA's Highway Statistics table MV-1 "
+            "publishes them",
+        )
+        for _label, vehicle_class in MV1_GROUPS
+        for ownership, ownership_label in MV1_OWNERSHIP
+    )
+
+
+MEASURES: tuple[Measure, ...] = _wisdot_measures() + _mv1_measures()
+MEASURE_IDS = frozenset(measure.measure_id for measure in MEASURES)

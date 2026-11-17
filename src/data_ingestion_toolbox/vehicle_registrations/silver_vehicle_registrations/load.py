@@ -20,9 +20,18 @@ from psycopg2.extras import execute_values
 
 from data_ingestion_toolbox.capture import load_captured_payload
 
-from ..registry import WISDOT_COUNTIES, county_geo_id
+from ..registry import (
+    MEASURES,
+    MV1_CONTRACT_VERSION,
+    RPT28_CONTRACT_VERSION,
+    WISDOT_COUNTIES,
+    county_geo_id,
+)
 from .parse_mv1 import parse_mv1
 from .parse_rpt28 import parse_rpt28
+
+
+PUBLISHER_SCHEMA = "gold_vehicle_registrations"
 
 
 class VehicleRegistrationsReconciliationError(RuntimeError):
@@ -124,6 +133,51 @@ def _upsert_counties(cursor: Any) -> None:
     )
 
 
+def _upsert_measures(cursor: Any) -> None:
+    contracts = {
+        "wisdot_rpt28": RPT28_CONTRACT_VERSION,
+        "fhwa_mv1": MV1_CONTRACT_VERSION,
+    }
+    execute_values(
+        cursor,
+        """
+        INSERT INTO silver_vehicle_registrations.dim_measure (
+            measure_id, publisher, source_column, measure_label, unit, basis,
+            parser_contract_version
+        ) VALUES %s
+        ON CONFLICT (measure_id) DO UPDATE SET
+            publisher = EXCLUDED.publisher,
+            source_column = EXCLUDED.source_column,
+            measure_label = EXCLUDED.measure_label,
+            unit = EXCLUDED.unit,
+            basis = EXCLUDED.basis,
+            parser_contract_version = EXCLUDED.parser_contract_version,
+            updated_at = NOW()
+        WHERE (silver_vehicle_registrations.dim_measure.publisher,
+               silver_vehicle_registrations.dim_measure.source_column,
+               silver_vehicle_registrations.dim_measure.measure_label,
+               silver_vehicle_registrations.dim_measure.unit,
+               silver_vehicle_registrations.dim_measure.basis,
+               silver_vehicle_registrations.dim_measure.parser_contract_version)
+              IS DISTINCT FROM
+              (EXCLUDED.publisher, EXCLUDED.source_column, EXCLUDED.measure_label,
+               EXCLUDED.unit, EXCLUDED.basis, EXCLUDED.parser_contract_version)
+        """,
+        [
+            (
+                m.measure_id,
+                m.publisher,
+                m.source_column,
+                m.label,
+                "vehicles",
+                m.basis,
+                contracts[m.publisher],
+            )
+            for m in MEASURES
+        ],
+    )
+
+
 def _set_aside(
     cursor: Any, release_id: str, run_id: str, capture_id: str, items: tuple
 ) -> None:
@@ -138,8 +192,14 @@ def _set_aside(
         ON CONFLICT (capture_id, source_row_index, error_code) DO NOTHING
         """,
         [
-            (release_id, run_id, capture_id, item.source_row_index, item.error_code,
-             item.error_summary)
+            (
+                release_id,
+                run_id,
+                capture_id,
+                item.source_row_index,
+                item.error_code,
+                item.error_summary,
+            )
             for item in items
         ],
     )
@@ -178,8 +238,14 @@ def _finish_document(
 
 
 def _replay_rpt28(
-    cursor: Any, payload: bytes, *, year: int, capture_id: str, release_id: str,
-    run_id: str, key: str,
+    cursor: Any,
+    payload: bytes,
+    *,
+    year: int,
+    capture_id: str,
+    release_id: str,
+    run_id: str,
+    key: str,
 ) -> None:
     parsed = parse_rpt28(payload)
     whole = [item for item in parsed.quarantined if item.source_row_index == 0]
@@ -187,13 +253,20 @@ def _replay_rpt28(
         from .parse_rpt28 import SetAside
 
         whole = [
-            SetAside(0, "year_disagrees", f"the report reads year {parsed.data_year}, its link {year}")
+            SetAside(
+                0,
+                "year_disagrees",
+                f"the report reads year {parsed.data_year}, its link {year}",
+            )
         ]
     if whole:
         _set_aside(cursor, release_id, run_id, capture_id, tuple(whole))
         _finish_document(cursor, release_id, key, status="set_aside")
         return
-    if len(parsed.lines) + parsed.repeated_count + len(parsed.quarantined) != parsed.row_count:
+    if (
+        len(parsed.lines) + parsed.repeated_count + len(parsed.quarantined)
+        != parsed.row_count
+    ):
         raise VehicleRegistrationsReconciliationError(
             f"{key}: {len(parsed.lines)} kept, {parsed.repeated_count} repeated and "
             f"{len(parsed.quarantined)} set aside of {parsed.row_count} lines"
@@ -201,10 +274,22 @@ def _replay_rpt28(
     _set_aside(cursor, release_id, run_id, capture_id, parsed.quarantined)
     values = [
         (
-            year, line.table_part, line.county_code, line.line_key, column,
-            line.row_kind, line.county_name, line.cvt_name, line.cvt_code,
-            line.cvt_kind, capture_id, line.page_number, line.source_row_index,
-            cell.source, cell.value, cell.status,
+            year,
+            line.table_part,
+            line.county_code,
+            line.line_key,
+            column,
+            line.row_kind,
+            line.county_name,
+            line.cvt_name,
+            line.cvt_code,
+            line.cvt_kind,
+            capture_id,
+            line.page_number,
+            line.source_row_index,
+            cell.source,
+            cell.value,
+            cell.status,
         )
         for line in parsed.lines
         for column, cell in line.cells.items()
@@ -230,16 +315,27 @@ def _replay_rpt28(
         kept=len(parsed.lines),
         repeated=parsed.repeated_count,
         disagreements=[
-            {"check": check, "county_code": code, "column": column, "printed": printed,
-             "summed": summed}
+            {
+                "check": check,
+                "county_code": code,
+                "column": column,
+                "printed": printed,
+                "summed": summed,
+            }
             for check, code, column, printed, summed in parsed.disagreements
         ],
     )
 
 
 def _replay_mv1(
-    cursor: Any, payload: bytes, *, year: int, capture_id: str, release_id: str,
-    run_id: str, key: str,
+    cursor: Any,
+    payload: bytes,
+    *,
+    year: int,
+    capture_id: str,
+    release_id: str,
+    run_id: str,
+    key: str,
 ) -> None:
     parsed = parse_mv1(payload)
     whole = [item for item in parsed.quarantined if item.source_row_index == 0]
@@ -255,9 +351,18 @@ def _replay_mv1(
     _set_aside(cursor, release_id, run_id, capture_id, parsed.quarantined)
     values = [
         (
-            year, row.area_name, figure.vehicle_class, figure.ownership,
-            row.source_label, row.fips or None, list(row.footnote_marks), capture_id,
-            row.source_row_index, figure.source, figure.value, figure.status,
+            year,
+            row.area_name,
+            figure.vehicle_class,
+            figure.ownership,
+            row.source_label,
+            row.fips or None,
+            list(row.footnote_marks),
+            capture_id,
+            row.source_row_index,
+            figure.source,
+            figure.value,
+            figure.status,
         )
         for row in parsed.rows
         for figure in row.figures
@@ -298,11 +403,14 @@ def replay_release(factory: Callable[[], Any], *, release_id: UUID) -> int:
             )
             found = cursor.fetchone()
             if found is None:
-                raise VehicleRegistrationsReconciliationError(f"no release {release_id}")
+                raise VehicleRegistrationsReconciliationError(
+                    f"no release {release_id}"
+                )
             status, run_id = found
             if status != "captured":
                 return 0
             _upsert_counties(cursor)
+            _upsert_measures(cursor)
             for relation in ("wisdot_count", "fhwa_mv1_figure", "quarantine"):
                 cursor.execute(
                     f"DELETE FROM silver_vehicle_registrations.{relation} WHERE release_id = %s",
@@ -377,4 +485,8 @@ def publish_release(factory: Callable[[], Any], *, release_id: UUID) -> int:
         raise
     finally:
         connection.close()
+    if published:
+        from data_ingestion_toolbox.glossary import emit_latest_publisher_ready
+
+        emit_latest_publisher_ready(factory, publisher_schema=PUBLISHER_SCHEMA)
     return published

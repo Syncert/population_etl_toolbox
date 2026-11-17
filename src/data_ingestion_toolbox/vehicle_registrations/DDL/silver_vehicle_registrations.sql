@@ -66,6 +66,19 @@ CREATE TABLE IF NOT EXISTS silver_vehicle_registrations.wisdot_county (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- The served figures, written from `vehicle_registrations.registry`: one
+-- per Report 28 column and one per MV-1 column.
+CREATE TABLE IF NOT EXISTS silver_vehicle_registrations.dim_measure (
+    measure_id TEXT PRIMARY KEY,
+    publisher TEXT NOT NULL CHECK (publisher IN ('wisdot_rpt28', 'fhwa_mv1')),
+    source_column TEXT NOT NULL,
+    measure_label TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    basis TEXT NOT NULL,
+    parser_contract_version TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS silver_vehicle_registrations.quarantine (
     quarantine_sk BIGSERIAL PRIMARY KEY,
     release_id UUID NOT NULL REFERENCES control.vehicle_registrations_release(release_id),

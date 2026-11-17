@@ -80,7 +80,9 @@ def test_dane_county_sum_is_read_as_printed(report) -> None:  # noqa: ANN001
     (table_one,) = [
         line
         for line in report.lines
-        if line.table_part == "cvt" and line.county_code == "13" and line.row_kind == "sum"
+        if line.table_part == "cvt"
+        and line.county_code == "13"
+        and line.row_kind == "sum"
     ]
     assert _values(table_one) == expected
     (table_two,) = [
@@ -124,20 +126,28 @@ def test_dane_lines_add_to_its_sum_and_counties_to_the_state(report) -> None:  #
     dane = [
         line
         for line in report.lines
-        if line.table_part == "cvt" and line.county_code == "13" and line.row_kind != "sum"
+        if line.table_part == "cvt"
+        and line.county_code == "13"
+        and line.row_kind != "sum"
     ]
     assert sum(line.cells["SUM"].value for line in dane) == 530_076
     (state,) = [
-        line for line in report.lines if line.table_part == "county" and line.row_kind == "sum"
+        line
+        for line in report.lines
+        if line.table_part == "county" and line.row_kind == "sum"
     ]
     assert state.county_code == "" and state.cells["SUM"].value == 6_384_450
     assert state.cells["AUTO"].value == 1_517_380
     counties = [
-        line for line in report.lines if line.table_part == "county" and line.row_kind != "sum"
+        line
+        for line in report.lines
+        if line.table_part == "county" and line.row_kind != "sum"
     ]
     assert len(counties) == 73  # 72 counties and the UNKNOWN line
     assert sum(line.cells["SUM"].value for line in counties) == 6_384_450
-    assert {item[0:2] for item in report.disagreements} == {("cvt_lines_to_county_sum", "14")}
+    assert {item[0:2] for item in report.disagreements} == {
+        ("cvt_lines_to_county_sum", "14")
+    }
     assert report.quarantined == ()
     assert report.row_count == len(report.lines) + report.repeated_count
 
@@ -179,12 +189,17 @@ def test_mv1_wisconsin_row_matches_the_published_total() -> None:
     assert figures[("motorcycles", "total")] == 279_308
     assert figures[("all_motor_vehicles", "total")] == 5_836_776
     assert figures[("all_motor_vehicles", "total")] == sum(
-        figures[(group, "total")] for group in ("automobiles", "buses", "trucks", "motorcycles")
+        figures[(group, "total")]
+        for group in ("automobiles", "buses", "trucks", "motorcycles")
     )
     total = by_area["Total"]
-    assert total.fips == "" and {
-        (f.vehicle_class, f.ownership): f.value for f in total.figures
-    }[("all_motor_vehicles", "total")] == 297_525_836
+    assert (
+        total.fips == ""
+        and {(f.vehicle_class, f.ownership): f.value for f in total.figures}[
+            ("all_motor_vehicles", "total")
+        ]
+        == 297_525_836
+    )
     marks = dict(parsed.footnotes)
     assert marks["2"].startswith("State did not report one or more publicly-owned")
 
@@ -194,7 +209,9 @@ def test_mv1_estimates_keep_the_decimals_fhwa_stored() -> None:
     parsed = parse_mv1((FIXTURES / "mv1-2023.xlsx").read_bytes())
     wisconsin = next(row for row in parsed.rows if row.area_name == "Wisconsin")
     automobiles = next(
-        f for f in wisconsin.figures if (f.vehicle_class, f.ownership) == ("automobiles", "total")
+        f
+        for f in wisconsin.figures
+        if (f.vehicle_class, f.ownership) == ("automobiles", "total")
     )
     assert automobiles.source == "1683880.4848862195"
     assert automobiles.value == Decimal("1683880.4848862195")

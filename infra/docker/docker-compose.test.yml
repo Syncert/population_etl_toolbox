@@ -135,6 +135,7 @@ services:
       - ../../src/data_ingestion_toolbox/hhs_hospital_capacity/gold_hhs_hospital_capacity/DDL/publisher.sql:/docker-entrypoint-initdb.d/191d_publisher_hhs_hospital_capacity.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_covid_cases/gold_cdc_covid_cases/DDL/publisher.sql:/docker-entrypoint-initdb.d/191e_publisher_cdc_covid_cases.sql:ro
       - ../../src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql:/docker-entrypoint-initdb.d/191f_publisher_cdc_ilinet.sql:ro
+      - ../../src/data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/publisher.sql:/docker-entrypoint-initdb.d/191g_publisher_vehicle_registrations.sql:ro
       - ../../src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql:/docker-entrypoint-initdb.d/192_publisher_bls_qcew.sql:ro
       - ../../src/data_ingestion_toolbox/census_bps/gold_census_bps/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_census_bps.sql:ro
       - ../../src/data_ingestion_toolbox/eia/gold_eia/DDL/publisher.sql:/docker-entrypoint-initdb.d/193_publisher_eia.sql:ro

@@ -115,7 +115,9 @@ def parse_mv1(raw_bytes: bytes) -> Mv1Parse:
     if ordered != sorted(ordered) or any(
         later - earlier != 3 for earlier, later in zip(ordered, ordered[1:])
     ):
-        return _whole("unregistered_layout", "the vehicle groups are not three columns each")
+        return _whole(
+            "unregistered_layout", "the vehicle groups are not three columns each"
+        )
     totals_seen = all(
         any(
             cell.kind == "text" and cell.value.strip().upper() == "TOTAL"
@@ -127,7 +129,9 @@ def parse_mv1(raw_bytes: bytes) -> Mv1Parse:
         for start in ordered
     )
     if not totals_seen:
-        return _whole("unregistered_layout", "a group's third column is not headed TOTAL")
+        return _whole(
+            "unregistered_layout", "a group's third column is not headed TOTAL"
+        )
     rows: list[Mv1Row] = []
     quarantined: list[SetAside] = []
     footnotes: list[tuple[str, str]] = []
@@ -160,12 +164,18 @@ def parse_mv1(raw_bytes: bytes) -> Mv1Parse:
             elif not only_label:
                 row_count += 1
                 quarantined.append(
-                    SetAside(number, "unregistered_area", f"{name!r} is not a registered state")
+                    SetAside(
+                        number,
+                        "unregistered_area",
+                        f"{name!r} is not a registered state",
+                    )
                 )
             continue
         row_count += 1
         if name in seen:
-            quarantined.append(SetAside(number, "repeated_area", f"{name} appears twice"))
+            quarantined.append(
+                SetAside(number, "repeated_area", f"{name} appears twice")
+            )
             continue
         figures: list[Mv1Figure] = []
         unreadable = False
@@ -174,7 +184,11 @@ def parse_mv1(raw_bytes: bytes) -> Mv1Parse:
                 cell = cells.get(start + offset)
                 source = cell.value.strip() if cell is not None else ""
                 if source in _DASHES:
-                    figures.append(Mv1Figure(vehicle_class, ownership, source, None, "not_reported"))
+                    figures.append(
+                        Mv1Figure(
+                            vehicle_class, ownership, source, None, "not_reported"
+                        )
+                    )
                     continue
                 try:
                     value = Decimal(source.replace(",", ""))
@@ -184,14 +198,20 @@ def parse_mv1(raw_bytes: bytes) -> Mv1Parse:
                 if value < 0:
                     unreadable = True
                     break
-                figures.append(Mv1Figure(vehicle_class, ownership, source, value, "valid"))
+                figures.append(
+                    Mv1Figure(vehicle_class, ownership, source, value, "valid")
+                )
             if unreadable:
                 break
         if unreadable:
-            quarantined.append(SetAside(number, "unreadable_value", f"{name}: a cell is not a count"))
+            quarantined.append(
+                SetAside(number, "unreadable_value", f"{name}: a cell is not a count")
+            )
             continue
         seen.add(name)
         rows.append(Mv1Row(label.strip(), name, fips, marks, number, tuple(figures)))
     if not any(row.fips == "" for row in rows) or len(rows) < 2:
-        return _whole("unregistered_layout", "no Total row or no state rows under the header")
+        return _whole(
+            "unregistered_layout", "no Total row or no state rows under the header"
+        )
     return Mv1Parse(tuple(rows), tuple(quarantined), row_count, tuple(footnotes))

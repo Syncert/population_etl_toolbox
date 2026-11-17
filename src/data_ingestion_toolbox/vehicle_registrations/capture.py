@@ -32,7 +32,11 @@ from .config import (
     WISDOT_INDEX_PATHS,
     VehicleRegistrationsConfig,
 )
-from .registry import INDEX_CONTRACT_VERSION, MV1_CONTRACT_VERSION, RPT28_CONTRACT_VERSION
+from .registry import (
+    INDEX_CONTRACT_VERSION,
+    MV1_CONTRACT_VERSION,
+    RPT28_CONTRACT_VERSION,
+)
 
 PersistCapture = Callable[[Callable[[], Any], ResponseCapture], CaptureReceipt]
 
@@ -122,7 +126,13 @@ def capture_release(
     first = True
 
     def read(
-        base_url: str, path: str, kind: str, key: str, year: int | None, *, optional: bool
+        base_url: str,
+        path: str,
+        kind: str,
+        key: str,
+        year: int | None,
+        *,
+        optional: bool,
     ) -> bytes | None:
         nonlocal changed, documents, first
         if not first:
@@ -153,7 +163,9 @@ def capture_release(
             capture_control.finish_request(request.request_id, status="empty")
             return None
         except BaseException as exc:
-            capture_control.finish_request(request.request_id, status="failed", error=exc)
+            capture_control.finish_request(
+                request.request_id, status="failed", error=exc
+            )
             raise
         try:
             receipt = persist_capture(
@@ -175,13 +187,18 @@ def capture_release(
                 ),
             )
         except BaseException as exc:
-            capture_control.finish_request(request.request_id, status="failed", error=exc)
+            capture_control.finish_request(
+                request.request_id, status="failed", error=exc
+            )
             raise
         capture_control.finish_request(request.request_id, status="captured")
         status = "captured"
         if kind != "index":
             published = _query(factory, _PUBLISHED_SQL, (key,))
-            if published and published[0] == (receipt.payload_checksum, CONTRACTS[kind]):
+            if published and published[0] == (
+                receipt.payload_checksum,
+                CONTRACTS[kind],
+            ):
                 status = "unchanged"
             else:
                 changed += 1
@@ -219,7 +236,11 @@ def capture_release(
         links: dict[int, str] = {}
         for path in WISDOT_INDEX_PATHS:
             page = read(
-                runtime.wisdot_base_url, path, "index", f"wisdot_index:{path}", None,
+                runtime.wisdot_base_url,
+                path,
+                "index",
+                f"wisdot_index:{path}",
+                None,
                 optional=False,
             )
             links.update(report28_links(page or b""))
@@ -229,7 +250,11 @@ def capture_release(
             )
         for year, path in sorted(links.items()):
             read(
-                runtime.wisdot_base_url, path, "rpt28", f"wisdot_rpt28:cal:{year}", year,
+                runtime.wisdot_base_url,
+                path,
+                "rpt28",
+                f"wisdot_rpt28:cal:{year}",
+                year,
                 optional=False,
             )
         for year in range(runtime.fhwa_first_year, today().year + 1):

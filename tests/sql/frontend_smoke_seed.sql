@@ -127,7 +127,8 @@ INSERT INTO control.ingestion_run (run_id, source_code, status) VALUES
     ('00000000-0000-4000-8000-0000000001ed', 'NCES_IPEDS', 'success'),
     ('00000000-0000-4000-8000-00000000044b', 'HHS_HOSPITAL_CAPACITY', 'success'),
     ('00000000-0000-4000-8000-000000000c19', 'CDC_COVID_CASES', 'success'),
-    ('00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'success')
+    ('00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'success'),
+    ('00000000-0000-4000-8000-000000000e17', 'VEHICLE_REGISTRATIONS', 'success')
 ON CONFLICT (run_id) DO NOTHING;
 
 INSERT INTO raw_capture.payload_blob (payload_checksum, payload, payload_size)
@@ -205,7 +206,9 @@ INSERT INTO control.ingestion_request (
     ('00000000-0000-4000-9000-000000000c19', '00000000-0000-4000-8000-000000000c19',
      'CDC_COVID_CASES', 'smoke://seed', '{}'::JSONB, '4282adb525d6e1b6157c4d22daff4f0b913d6f5c232b17382e93c01a7bc279b2', 'captured'),
     ('00000000-0000-4000-9000-00000000f1e7', '00000000-0000-4000-8000-00000000f1e7',
-     'CDC_ILINET', 'smoke://seed', '{}'::JSONB, 'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', 'captured')
+     'CDC_ILINET', 'smoke://seed', '{}'::JSONB, 'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', 'captured'),
+    ('00000000-0000-4000-9000-000000000e17', '00000000-0000-4000-8000-000000000e17',
+     'VEHICLE_REGISTRATIONS', 'smoke://seed', '{}'::JSONB, 'e4a1d2c3b5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90', 'captured')
 ON CONFLICT (request_id) DO NOTHING;
 
 INSERT INTO raw_capture.response_capture (
@@ -348,6 +351,10 @@ INSERT INTO raw_capture.response_capture (
     ('00000000-0000-4000-a000-00000000f1e7', '00000000-0000-4000-9000-00000000f1e7',
      '00000000-0000-4000-8000-00000000f1e7', 'CDC_ILINET', 'smoke://seed', '{}'::JSONB,
      'c52b9d174262440b590513fbae0cf804fa1c33767f6d28d42243e18b56be65a1', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/json',
+     '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'),
+    ('00000000-0000-4000-a000-000000000e17', '00000000-0000-4000-9000-000000000e17',
+     '00000000-0000-4000-8000-000000000e17', 'VEHICLE_REGISTRATIONS', 'smoke://seed', '{}'::JSONB,
+     'e4a1d2c3b5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90', '2098-12-31 00:00:00+00', 200, '{}'::JSONB, 'application/pdf',
      '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a')
 ON CONFLICT (capture_id) DO NOTHING;
 
@@ -1699,6 +1706,49 @@ INSERT INTO silver_cdc_ilinet.week_value (
 ) ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- Vehicle registrations -- one county's registered automobiles (Report 28).
+-- ---------------------------------------------------------------------------
+
+INSERT INTO control.vehicle_registrations_release (
+    release_id, run_id, document_count, changed_value_count, status, published_at
+) VALUES (
+    '00000000-0000-4000-b000-000000000e17', '00000000-0000-4000-8000-000000000e17',
+    1, 1, 'published', '2098-12-31 00:00:00+00'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO control.vehicle_registrations_document (
+    release_id, document_key, document_kind, data_year, source_url, capture_id,
+    payload_checksum, status, row_count, kept_row_count
+) VALUES (
+    '00000000-0000-4000-b000-000000000e17', 'wisdot_rpt28:cal:2098', 'rpt28', 2098,
+    'smoke://seed', '00000000-0000-4000-a000-000000000e17',
+    '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a', 'parsed', 1, 1
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_vehicle_registrations.wisdot_county (county_code, county_name, geo_id)
+VALUES ('13', 'DANE', 'state:55|county:025')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_vehicle_registrations.dim_measure (
+    measure_id, publisher, source_column, measure_label, unit, basis, parser_contract_version
+) VALUES (
+    'wisdot_rpt28:auto', 'wisdot_rpt28', 'AUTO', 'WisDOT AUTO: Automobiles (passenger vehicles)',
+    'vehicles',
+    'vehicles WisDOT counts as valid registrations of type AUTO for the calendar year, by the owner''s county, as Report 28 prints them',
+    'wisdot_rpt28_pdf_layout:v1'
+) ON CONFLICT DO NOTHING;
+
+INSERT INTO silver_vehicle_registrations.wisdot_count (
+    data_year, table_part, county_code, line_key, vehicle_type, release_id, row_kind,
+    county_name, cvt_name, cvt_code, cvt_kind, capture_id, page_number, source_row_index,
+    value_source, value, value_status
+) VALUES (
+    2098, 'county', '13', 'COUNTY', 'AUTO', '00000000-0000-4000-b000-000000000e17', 'county',
+    'DANE', '', '', '', '00000000-0000-4000-a000-000000000e17', 1, 1001,
+    '152,184', 152184, 'valid'
+) ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- Publish the catalog, exactly as the glossary harvest would.
 --
 -- `glossary/harvest.py` reads each `gold_<source>.metric_publisher` view and
@@ -1750,7 +1800,8 @@ UNION ALL SELECT source_code, publisher_contract_version, source_object_key, sou
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_nces_ipeds.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_hhs_hospital_capacity.metric_publisher
 UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_covid_cases.metric_publisher
-UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_ilinet.metric_publisher;
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_cdc_ilinet.metric_publisher
+UNION ALL SELECT source_code, publisher_contract_version, source_object_key, source_object_type, metric_display_name, units, measure_kind, valid_geo_grains, valid_time_grains, aggregation_characteristic, physical_lineage, source_watermark, source_run_id, publication_time, source_name, source_type, reference_url FROM gold_vehicle_registrations.metric_publisher;
 
 INSERT INTO gold_glossary.dim_source_system (
     source_code, source_name, source_type, reference_url

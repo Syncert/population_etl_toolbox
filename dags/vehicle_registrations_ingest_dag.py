@@ -35,6 +35,9 @@ from data_ingestion_toolbox.vehicle_registrations.silver_vehicle_registrations.l
     publish_release,
     replay_release,
 )
+from data_ingestion_toolbox.silver_ref.geography_guard import (
+    require_shared_geography_loaded,
+)
 
 DEFAULT_ARGS = {
     "owner": "data-eng",
@@ -55,12 +58,25 @@ def _ensure_schema() -> None:
     ensure_vehicle_registrations_schema(_get_postgres_hook())
 
 
+def _require_shared_geography() -> None:
+    with _get_postgres_hook().get_conn() as connection:
+        counts = require_shared_geography_loaded(connection)
+    logging.getLogger("airflow.task").info(
+        "shared geography reference is loaded: %s",
+        ", ".join(f"{grain}={count}" for grain, count in sorted(counts.items())),
+    )
+
+
 def _ingest(**_context: Any) -> dict[str, Any]:
     log = logging.getLogger("airflow.task")
     connection_factory = _get_postgres_hook().get_conn
-    release_id = capture_release(connection_factory, config=VehicleRegistrationsConfig())
+    release_id = capture_release(
+        connection_factory, config=VehicleRegistrationsConfig()
+    )
     if release_id is None:
-        log.info("every registration document repeats the published release: nothing to write")
+        log.info(
+            "every registration document repeats the published release: nothing to write"
+        )
         return {"release_id": None, "changed": 0, "published": 0}
     changed = replay_release(connection_factory, release_id=release_id)
     published = publish_release(connection_factory, release_id=release_id)
@@ -87,8 +103,12 @@ with DAG(
         task_id="ensure_vehicle_registrations_schema",
         python_callable=_ensure_schema,
     )
+    require_shared_geography = PythonOperator(
+        task_id="require_shared_geography",
+        python_callable=_require_shared_geography,
+    )
     ingest = PythonOperator(
         task_id="ingest_vehicle_registrations",
         python_callable=_ingest,
     )
-    ensure_schema >> ingest
+    ensure_schema >> require_shared_geography >> ingest

@@ -1533,6 +1533,54 @@ r control.usda_nass_slice
     index usda_nass_slice_pkey CREATE UNIQUE INDEX usda_nass_slice_pkey ON control.usda_nass_slice USING btree (run_id, slice_key)
     index usda_nass_slice_product_idx CREATE INDEX usda_nass_slice_product_idx ON control.usda_nass_slice USING btree (product_id, agg_level_desc, year)
 
+r control.vehicle_registrations_document
+    column release_id uuid NOT NULL
+    column document_key text NOT NULL
+    column document_kind text NOT NULL
+    column data_year smallint
+    column source_url text NOT NULL
+    column capture_id uuid NOT NULL
+    column payload_checksum text NOT NULL
+    column status text NOT NULL
+    column row_count integer NOT NULL DEFAULT 0
+    column kept_row_count integer NOT NULL DEFAULT 0
+    column repeated_row_count integer NOT NULL DEFAULT 0
+    column disagreements jsonb NOT NULL DEFAULT '[]'::jsonb
+    column footnotes jsonb NOT NULL DEFAULT '[]'::jsonb
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint vehicle_registrations_document_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint vehicle_registrations_document_data_year_check CHECK (((data_year IS NULL) OR ((data_year >= 1990) AND (data_year <= 2100))))
+    constraint vehicle_registrations_document_document_kind_check CHECK ((document_kind = ANY (ARRAY['index'::text, 'rpt28'::text, 'mv1'::text])))
+    constraint vehicle_registrations_document_kept_row_count_check CHECK ((kept_row_count >= 0))
+    constraint vehicle_registrations_document_payload_checksum_check CHECK ((payload_checksum ~ '^[0-9a-f]{64}$'::text))
+    constraint vehicle_registrations_document_pkey PRIMARY KEY (release_id, document_key)
+    constraint vehicle_registrations_document_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.vehicle_registrations_release(release_id)
+    constraint vehicle_registrations_document_repeated_row_count_check CHECK ((repeated_row_count >= 0))
+    constraint vehicle_registrations_document_row_count_check CHECK ((row_count >= 0))
+    constraint vehicle_registrations_document_status_check CHECK ((status = ANY (ARRAY['captured'::text, 'unchanged'::text, 'parsed'::text, 'set_aside'::text])))
+    constraint vehicle_registrations_document_year_of_kind CHECK (((document_kind = 'index'::text) = (data_year IS NULL)))
+    index vehicle_registrations_document_capture_idx CREATE INDEX vehicle_registrations_document_capture_idx ON control.vehicle_registrations_document USING btree (capture_id)
+    index vehicle_registrations_document_key_idx CREATE INDEX vehicle_registrations_document_key_idx ON control.vehicle_registrations_document USING btree (document_key, release_id)
+    index vehicle_registrations_document_pkey CREATE UNIQUE INDEX vehicle_registrations_document_pkey ON control.vehicle_registrations_document USING btree (release_id, document_key)
+
+r control.vehicle_registrations_release
+    column release_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column document_count integer NOT NULL DEFAULT 0
+    column changed_value_count integer NOT NULL DEFAULT 0
+    column status text NOT NULL
+    column published_at timestamp with time zone
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint vehicle_registrations_release_changed_value_count_check CHECK ((changed_value_count >= 0))
+    constraint vehicle_registrations_release_document_count_check CHECK ((document_count >= 0))
+    constraint vehicle_registrations_release_pkey PRIMARY KEY (release_id)
+    constraint vehicle_registrations_release_published_has_time CHECK (((status <> 'published'::text) OR (published_at IS NOT NULL)))
+    constraint vehicle_registrations_release_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint vehicle_registrations_release_status_check CHECK ((status = ANY (ARRAY['capturing'::text, 'failed'::text, 'captured'::text, 'unchanged'::text, 'silver_ready'::text, 'published'::text])))
+    index vehicle_registrations_release_pkey CREATE UNIQUE INDEX vehicle_registrations_release_pkey ON control.vehicle_registrations_release USING btree (release_id)
+    index vehicle_registrations_release_status_idx CREATE INDEX vehicle_registrations_release_status_idx ON control.vehicle_registrations_release USING btree (status, created_at)
+
 v gold.dim_geo_latest
     column geo_id text
     column geo_level text
@@ -15309,6 +15357,345 @@ v gold_usda_ers.observation_revision
     body      JOIN gold_usda_ers.measure_definition measure ON measure.measure = fact.measure
     body   WHERE file.status = 'published'::text AND (fact.geography_status <> ALL (ARRAY['unsupported'::text, 'ambiguous'::text, 'unmapped'::text]));
 
+v gold_vehicle_registrations.fhwa_mv1_latest
+    column data_year smallint
+    column area_name text
+    column source_label text
+    column geo_id text
+    column geo_type text
+    column vehicle_class text
+    column ownership text
+    column value numeric
+    column value_status text
+    column value_source text
+    column footnote_marks text[]
+    column table_footnotes jsonb
+    column source_url text
+    column retrieved_at timestamp with time zone
+    column capture_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (value.data_year, value.area_name, value.vehicle_class, value.ownership) value.data_year,
+    body     value.area_name,
+    body     value.source_label,
+    body         CASE
+    body             WHEN value.state_fips IS NULL THEN 'us:1'::text
+    body             ELSE 'state:'::text || value.state_fips
+    body         END AS geo_id,
+    body         CASE
+    body             WHEN value.state_fips IS NULL THEN 'nation'::text
+    body             ELSE 'state'::text
+    body         END AS geo_type,
+    body     value.vehicle_class,
+    body     value.ownership,
+    body     value.value,
+    body     value.value_status,
+    body     value.value_source,
+    body     value.footnote_marks,
+    body     document.footnotes AS table_footnotes,
+    body     document.source_url,
+    body     capture.retrieved_at,
+    body     value.capture_id,
+    body     release.release_id,
+    body     release.published_at
+    body    FROM silver_vehicle_registrations.fhwa_mv1_figure value
+    body      JOIN control.vehicle_registrations_release release ON release.release_id = value.release_id
+    body      JOIN control.vehicle_registrations_document document ON document.release_id = value.release_id AND document.capture_id = value.capture_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = value.capture_id
+    body   WHERE release.status = 'published'::text
+    body   ORDER BY value.data_year, value.area_name, value.vehicle_class, value.ownership, release.published_at DESC, release.release_id DESC;
+
+v gold_vehicle_registrations.measure_export
+    column source_dataset text
+    column source_measure_code text
+    column display_name text
+    column unit text
+    column basis text
+    column source_column text
+    column schema_version text
+    body SELECT publisher AS source_dataset,
+    body     measure_id AS source_measure_code,
+    body     measure_label AS display_name,
+    body     unit,
+    body     basis,
+    body     source_column,
+    body     parser_contract_version AS schema_version
+    body    FROM silver_vehicle_registrations.dim_measure measure;
+
+v gold_vehicle_registrations.metric_publisher
+    column source_code text
+    column publisher_contract_version text
+    column source_object_key text
+    column source_object_type text
+    column metric_display_name text
+    column units text
+    column measure_kind text
+    column valid_geo_grains text[]
+    column valid_time_grains text[]
+    column aggregation_characteristic text
+    column physical_lineage jsonb
+    column source_watermark text
+    column source_run_id uuid
+    column publication_time timestamp with time zone
+    column source_name text
+    column source_type text
+    column reference_url text
+    body SELECT 'VEHICLE_REGISTRATIONS'::text AS source_code,
+    body     '1.0'::text AS publisher_contract_version,
+    body     measure.measure_id AS source_object_key,
+    body     'measure'::text AS source_object_type,
+    body     measure.measure_label AS metric_display_name,
+    body     measure.unit AS units,
+    body     'source_fact'::text AS measure_kind,
+    body     served.valid_geo_grains,
+    body     ARRAY['ANNUAL'::text] AS valid_time_grains,
+    body     NULL::text AS aggregation_characteristic,
+    body     jsonb_build_object('schema', 'gold_vehicle_registrations', 'relation', 'registration_revision', 'key', measure.measure_id) AS physical_lineage,
+    body     served.source_watermark,
+    body     served.source_run_id,
+    body     served.publication_time,
+    body         CASE measure.publisher
+    body             WHEN 'wisdot_rpt28'::text THEN 'WisDOT DMV Report 28, registered vehicles by county and city/village/town'::text
+    body             ELSE 'FHWA Highway Statistics, Table MV-1, state motor-vehicle registrations'::text
+    body         END AS source_name,
+    body     'government-statistics'::text AS source_type,
+    body         CASE measure.publisher
+    body             WHEN 'wisdot_rpt28'::text THEN 'https://wisconsindot.gov/Pages/about-wisdot/newsroom/statistics/veh-info.aspx'::text
+    body             ELSE 'https://www.fhwa.dot.gov/policyinformation/statistics.cfm'::text
+    body         END AS reference_url
+    body    FROM silver_vehicle_registrations.dim_measure measure
+    body      JOIN LATERAL ( SELECT max(served_row.period_start)::text AS source_watermark,
+    body             COALESCE(array_agg(DISTINCT gold_glossary.geo_grain(served_row.geo_type) ORDER BY (gold_glossary.geo_grain(served_row.geo_type))) FILTER (WHERE served_row.value IS NOT NULL), ARRAY[]::text[]) AS valid_geo_grains,
+    body             (array_agg(served_row.run_id ORDER BY served_row.published_at DESC))[1] AS source_run_id,
+    body             max(served_row.published_at) AS publication_time
+    body            FROM gold_vehicle_registrations.registration_revision served_row
+    body           WHERE served_row.measure_id = measure.measure_id) served ON served.publication_time IS NOT NULL;
+
+v gold_vehicle_registrations.registration_latest
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column publisher text
+    column period_start date
+    column period_end date
+    column data_year smallint
+    column source_area text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column value numeric
+    column value_status text
+    column value_source text
+    column footnote_marks text[]
+    column source_url text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (metric_key, geo_id, period_start) measure_id,
+    body     metric_key,
+    body     measure_label,
+    body     unit,
+    body     basis,
+    body     publisher,
+    body     period_start,
+    body     period_end,
+    body     data_year,
+    body     source_area,
+    body     geo_id,
+    body     geo_sk,
+    body     geo_type,
+    body     value,
+    body     value_status,
+    body     value_source,
+    body     footnote_marks,
+    body     source_url,
+    body     retrieved_at,
+    body     release_key,
+    body     source_record_id,
+    body     capture_id,
+    body     run_id,
+    body     release_id,
+    body     published_at
+    body    FROM gold_vehicle_registrations.registration_revision revision
+    body   ORDER BY metric_key, geo_id, period_start, published_at DESC, release_id DESC;
+
+v gold_vehicle_registrations.registration_revision
+    column measure_id text
+    column metric_key text
+    column measure_label text
+    column unit text
+    column basis text
+    column publisher text
+    column period_start date
+    column period_end date
+    column data_year smallint
+    column source_area text
+    column geo_id text
+    column geo_sk bigint
+    column geo_type text
+    column value numeric
+    column value_status text
+    column value_source text
+    column footnote_marks text[]
+    column source_url text
+    column retrieved_at timestamp with time zone
+    column release_key text
+    column source_record_id text
+    column capture_id uuid
+    column run_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body WITH served AS (
+    body          SELECT 'wisdot_rpt28:'::text ||
+    body                 CASE
+    body                     WHEN value.vehicle_type = 'SUM'::text THEN 'all'::text
+    body                     ELSE lower(value.vehicle_type)
+    body                 END AS measure_id,
+    body             value.data_year,
+    body                 CASE
+    body                     WHEN value.row_kind = 'sum'::text THEN 'state:55'::text
+    body                     ELSE county.geo_id
+    body                 END AS geo_id,
+    body                 CASE
+    body                     WHEN value.row_kind = 'sum'::text THEN 'state'::text
+    body                     ELSE 'county'::text
+    body                 END AS geo_type,
+    body                 CASE
+    body                     WHEN value.row_kind = 'sum'::text THEN 'WISCONSIN'::text
+    body                     ELSE value.county_name
+    body                 END AS source_area,
+    body             value.value::numeric AS value,
+    body             value.value_status,
+    body             value.value_source,
+    body             ARRAY[]::text[] AS footnote_marks,
+    body             (((value.data_year::text || '|wisdot|'::text) || value.county_code) || '|'::text) || value.vehicle_type AS record_key,
+    body             value.capture_id,
+    body             value.release_id
+    body            FROM silver_vehicle_registrations.wisdot_count value
+    body              LEFT JOIN silver_vehicle_registrations.wisdot_county county ON county.county_code = value.county_code
+    body           WHERE value.table_part = 'county'::text AND (value.row_kind = 'sum'::text OR value.row_kind = 'county'::text AND county.geo_id IS NOT NULL)
+    body         UNION ALL
+    body          SELECT (('fhwa_mv1:'::text || value.vehicle_class) || ':'::text) || value.ownership,
+    body             value.data_year,
+    body                 CASE
+    body                     WHEN value.state_fips IS NULL THEN 'us:1'::text
+    body                     ELSE 'state:'::text || value.state_fips
+    body                 END AS "case",
+    body                 CASE
+    body                     WHEN value.state_fips IS NULL THEN 'nation'::text
+    body                     ELSE 'state'::text
+    body                 END AS "case",
+    body             value.source_label,
+    body             value.value,
+    body                 CASE
+    body                     WHEN value.value_status = 'valid'::text THEN 'valid'::text
+    body                     ELSE 'not_reported'::text
+    body                 END AS "case",
+    body             value.value_source,
+    body             value.footnote_marks,
+    body             (((((value.data_year::text || '|mv1|'::text) || value.area_name) || '|'::text) || value.vehicle_class) || '|'::text) || value.ownership,
+    body             value.capture_id,
+    body             value.release_id
+    body            FROM silver_vehicle_registrations.fhwa_mv1_figure value
+    body         )
+    body  SELECT served.measure_id,
+    body     served.measure_id AS metric_key,
+    body     measure.measure_label,
+    body     measure.unit,
+    body     measure.basis,
+    body     measure.publisher,
+    body     make_date(served.data_year::integer, 1, 1) AS period_start,
+    body     make_date(served.data_year::integer, 12, 31) AS period_end,
+    body     served.data_year,
+    body     served.source_area,
+    body     served.geo_id,
+    body     entity.geo_sk,
+    body     served.geo_type,
+    body     served.value,
+    body     served.value_status,
+    body     served.value_source,
+    body     served.footnote_marks,
+    body     document.source_url,
+    body     capture.retrieved_at,
+    body     to_char((capture.retrieved_at AT TIME ZONE 'UTC'::text), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'::text) AS release_key,
+    body     md5(served.record_key) AS source_record_id,
+    body     served.capture_id,
+    body     release.run_id,
+    body     release.release_id,
+    body     release.published_at
+    body    FROM served
+    body      JOIN control.vehicle_registrations_release release ON release.release_id = served.release_id
+    body      JOIN control.vehicle_registrations_document document ON document.release_id = served.release_id AND document.capture_id = served.capture_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = served.capture_id
+    body      JOIN silver_vehicle_registrations.dim_measure measure ON measure.measure_id = served.measure_id
+    body      LEFT JOIN silver_ref.dim_geo_entity entity ON entity.geo_id = served.geo_id
+    body   WHERE release.status = 'published'::text;
+
+v gold_vehicle_registrations.wisdot_registration_latest
+    column data_year smallint
+    column table_part text
+    column county_code text
+    column county_name text
+    column geo_id text
+    column geo_type text
+    column row_kind text
+    column line_key text
+    column cvt_name text
+    column cvt_code text
+    column cvt_kind text
+    column vehicle_type text
+    column value bigint
+    column value_status text
+    column value_source text
+    column page_number integer
+    column source_url text
+    column retrieved_at timestamp with time zone
+    column capture_id uuid
+    column release_id uuid
+    column published_at timestamp with time zone
+    body SELECT DISTINCT ON (value.data_year, value.table_part, value.county_code, value.line_key, value.vehicle_type) value.data_year,
+    body     value.table_part,
+    body     value.county_code,
+    body     value.county_name,
+    body         CASE
+    body             WHEN value.county_code <> ''::text THEN county.geo_id
+    body             WHEN value.table_part = 'county'::text AND value.row_kind = 'sum'::text THEN 'state:55'::text
+    body             ELSE NULL::text
+    body         END AS geo_id,
+    body         CASE
+    body             WHEN value.county_code <> ''::text THEN 'county'::text
+    body             WHEN value.table_part = 'county'::text AND value.row_kind = 'sum'::text THEN 'state'::text
+    body             ELSE NULL::text
+    body         END AS geo_type,
+    body     value.row_kind,
+    body     value.line_key,
+    body     value.cvt_name,
+    body     value.cvt_code,
+    body     value.cvt_kind,
+    body     value.vehicle_type,
+    body     value.value,
+    body     value.value_status,
+    body     value.value_source,
+    body     value.page_number,
+    body     document.source_url,
+    body     capture.retrieved_at,
+    body     value.capture_id,
+    body     release.release_id,
+    body     release.published_at
+    body    FROM silver_vehicle_registrations.wisdot_count value
+    body      JOIN control.vehicle_registrations_release release ON release.release_id = value.release_id
+    body      JOIN control.vehicle_registrations_document document ON document.release_id = value.release_id AND document.capture_id = value.capture_id
+    body      JOIN raw_capture.response_capture capture ON capture.capture_id = value.capture_id
+    body      LEFT JOIN silver_vehicle_registrations.wisdot_county county ON county.county_code = value.county_code
+    body   WHERE release.status = 'published'::text
+    body   ORDER BY value.data_year, value.table_part, value.county_code, value.line_key, value.vehicle_type, release.published_at DESC, release.release_id DESC;
+
 r raw_bls.bls_datasets
     column program text NOT NULL
     column year integer NOT NULL
@@ -20127,3 +20514,110 @@ r silver_usda_ers.observation_revision
     constraint usda_ers_revision_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
     index observation_revision_pkey CREATE UNIQUE INDEX observation_revision_pkey ON silver_usda_ers.observation_revision USING btree (capture_id, source_row_index)
     index usda_ers_revision_run_idx CREATE INDEX usda_ers_revision_run_idx ON silver_usda_ers.observation_revision USING btree (run_id)
+
+r silver_vehicle_registrations.dim_measure
+    column measure_id text NOT NULL
+    column publisher text NOT NULL
+    column source_column text NOT NULL
+    column measure_label text NOT NULL
+    column unit text NOT NULL
+    column basis text NOT NULL
+    column parser_contract_version text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint dim_measure_pkey PRIMARY KEY (measure_id)
+    constraint dim_measure_publisher_check CHECK ((publisher = ANY (ARRAY['wisdot_rpt28'::text, 'fhwa_mv1'::text])))
+    index dim_measure_pkey CREATE UNIQUE INDEX dim_measure_pkey ON silver_vehicle_registrations.dim_measure USING btree (measure_id)
+
+r silver_vehicle_registrations.fhwa_mv1_figure
+    column data_year smallint NOT NULL
+    column area_name text NOT NULL
+    column vehicle_class text NOT NULL
+    column ownership text NOT NULL
+    column release_id uuid NOT NULL
+    column source_label text NOT NULL
+    column state_fips text
+    column footnote_marks text[] NOT NULL DEFAULT ARRAY[]::text[]
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column value_source text NOT NULL
+    column value numeric
+    column value_status text NOT NULL
+    constraint fhwa_mv1_figure_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint fhwa_mv1_figure_data_year_check CHECK (((data_year >= 1990) AND (data_year <= 2100)))
+    constraint fhwa_mv1_figure_ownership_check CHECK ((ownership = ANY (ARRAY['private_commercial'::text, 'publicly_owned'::text, 'total'::text])))
+    constraint fhwa_mv1_figure_pkey PRIMARY KEY (data_year, area_name, vehicle_class, ownership, release_id)
+    constraint fhwa_mv1_figure_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.vehicle_registrations_release(release_id)
+    constraint fhwa_mv1_figure_source_row_index_check CHECK ((source_row_index > 0))
+    constraint fhwa_mv1_figure_state_fips_check CHECK (((state_fips IS NULL) OR (state_fips ~ '^[0-9]{2}$'::text)))
+    constraint fhwa_mv1_figure_value_check CHECK ((value >= (0)::numeric))
+    constraint fhwa_mv1_figure_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'not_reported'::text])))
+    constraint fhwa_mv1_figure_vehicle_class_check CHECK ((vehicle_class = ANY (ARRAY['automobiles'::text, 'buses'::text, 'trucks'::text, 'motorcycles'::text, 'all_motor_vehicles'::text])))
+    constraint vehicle_registrations_mv1_other_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint vehicle_registrations_mv1_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    index fhwa_mv1_figure_pkey CREATE UNIQUE INDEX fhwa_mv1_figure_pkey ON silver_vehicle_registrations.fhwa_mv1_figure USING btree (data_year, area_name, vehicle_class, ownership, release_id)
+    index vehicle_registrations_mv1_capture_idx CREATE INDEX vehicle_registrations_mv1_capture_idx ON silver_vehicle_registrations.fhwa_mv1_figure USING btree (capture_id)
+    index vehicle_registrations_mv1_release_idx CREATE INDEX vehicle_registrations_mv1_release_idx ON silver_vehicle_registrations.fhwa_mv1_figure USING btree (release_id)
+
+r silver_vehicle_registrations.quarantine
+    column quarantine_sk bigint NOT NULL DEFAULT nextval('silver_vehicle_registrations.quarantine_quarantine_sk_seq'::regclass)
+    column release_id uuid NOT NULL
+    column run_id uuid NOT NULL
+    column capture_id uuid NOT NULL
+    column source_row_index integer NOT NULL
+    column error_code text NOT NULL
+    column error_summary text NOT NULL
+    column created_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint quarantine_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint quarantine_capture_id_source_row_index_error_code_key UNIQUE (capture_id, source_row_index, error_code)
+    constraint quarantine_pkey PRIMARY KEY (quarantine_sk)
+    constraint quarantine_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.vehicle_registrations_release(release_id)
+    constraint quarantine_run_id_fkey FOREIGN KEY (run_id) REFERENCES control.ingestion_run(run_id)
+    constraint quarantine_source_row_index_check CHECK ((source_row_index >= 0))
+    index quarantine_capture_id_source_row_index_error_code_key CREATE UNIQUE INDEX quarantine_capture_id_source_row_index_error_code_key ON silver_vehicle_registrations.quarantine USING btree (capture_id, source_row_index, error_code)
+    index quarantine_pkey CREATE UNIQUE INDEX quarantine_pkey ON silver_vehicle_registrations.quarantine USING btree (quarantine_sk)
+
+r silver_vehicle_registrations.wisdot_count
+    column data_year smallint NOT NULL
+    column table_part text NOT NULL
+    column county_code text NOT NULL
+    column line_key text NOT NULL
+    column vehicle_type text NOT NULL
+    column release_id uuid NOT NULL
+    column row_kind text NOT NULL
+    column county_name text NOT NULL
+    column cvt_name text NOT NULL
+    column cvt_code text NOT NULL
+    column cvt_kind text NOT NULL
+    column capture_id uuid NOT NULL
+    column page_number integer NOT NULL
+    column source_row_index integer NOT NULL
+    column value_source text NOT NULL
+    column value bigint
+    column value_status text NOT NULL
+    constraint vehicle_registrations_wisdot_other_value_absent CHECK (((value_status = 'valid'::text) OR (value IS NULL)))
+    constraint vehicle_registrations_wisdot_valid_value_present CHECK (((value_status <> 'valid'::text) OR (value IS NOT NULL)))
+    constraint wisdot_count_capture_id_fkey FOREIGN KEY (capture_id) REFERENCES raw_capture.response_capture(capture_id)
+    constraint wisdot_count_county_code_check CHECK ((county_code ~ '^([0-9]{2})?$'::text))
+    constraint wisdot_count_cvt_kind_check CHECK ((cvt_kind = ANY (ARRAY[''::text, 'T'::text, 'V'::text, 'C'::text])))
+    constraint wisdot_count_data_year_check CHECK (((data_year >= 1990) AND (data_year <= 2100)))
+    constraint wisdot_count_page_number_check CHECK ((page_number > 0))
+    constraint wisdot_count_pkey PRIMARY KEY (data_year, table_part, county_code, line_key, vehicle_type, release_id)
+    constraint wisdot_count_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.vehicle_registrations_release(release_id)
+    constraint wisdot_count_row_kind_check CHECK ((row_kind = ANY (ARRAY['cvt'::text, 'county'::text, 'unknown'::text, 'sum'::text])))
+    constraint wisdot_count_source_row_index_check CHECK ((source_row_index > 0))
+    constraint wisdot_count_table_part_check CHECK ((table_part = ANY (ARRAY['cvt'::text, 'county'::text])))
+    constraint wisdot_count_value_check CHECK ((value >= 0))
+    constraint wisdot_count_value_status_check CHECK ((value_status = ANY (ARRAY['valid'::text, 'blank'::text])))
+    constraint wisdot_count_vehicle_type_check CHECK ((vehicle_type ~ '^[A-Z]{3,4}$'::text))
+    index vehicle_registrations_wisdot_count_capture_idx CREATE INDEX vehicle_registrations_wisdot_count_capture_idx ON silver_vehicle_registrations.wisdot_count USING btree (capture_id)
+    index vehicle_registrations_wisdot_count_release_idx CREATE INDEX vehicle_registrations_wisdot_count_release_idx ON silver_vehicle_registrations.wisdot_count USING btree (release_id)
+    index wisdot_count_pkey CREATE UNIQUE INDEX wisdot_count_pkey ON silver_vehicle_registrations.wisdot_count USING btree (data_year, table_part, county_code, line_key, vehicle_type, release_id)
+
+r silver_vehicle_registrations.wisdot_county
+    column county_code text NOT NULL
+    column county_name text NOT NULL
+    column geo_id text NOT NULL
+    column updated_at timestamp with time zone NOT NULL DEFAULT now()
+    constraint wisdot_county_county_code_check CHECK ((county_code ~ '^[0-9]{2}$'::text))
+    constraint wisdot_county_pkey PRIMARY KEY (county_code)
+    index wisdot_county_pkey CREATE UNIQUE INDEX wisdot_county_pkey ON silver_vehicle_registrations.wisdot_county USING btree (county_code)

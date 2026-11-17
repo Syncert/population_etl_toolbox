@@ -617,6 +617,11 @@
       "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql"
     },
     {
+      "id": "publisher-vehicle-registrations",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/publisher.sql"
+    },
+    {
       "id": "publisher-bls-qcew",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/publisher.sql"

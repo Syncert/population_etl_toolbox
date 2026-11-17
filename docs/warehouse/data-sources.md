@@ -41,6 +41,7 @@ Marks: ● the publisher's own figure · ◐ built by the warehouse (summed, ave
 | [Hospital beds and occupancy by week](#hhs_hospital_capacity) | U.S. Department of Health and Human Services | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
 | [COVID-19 case records by county, month and age](#cdc_covid_cases) | Centers for Disease Control and Prevention | ◐ | ◐ | ◐ |  |  |  |  | 2020–2024 | Operator-triggered (frozen) | Not loaded yet |
 | [Influenza-like illness by state and week (ILINet)](#cdc_ilinet) | Centers for Disease Control and Prevention | ◐ | ◐ |  |  |  |  |  | 1997–present (states 2010–) | Weekly (Fri) | Not loaded yet |
+| [Registered vehicles by type (WisDOT Report 28, FHWA MV-1)](#vehicle_registrations) | Wisconsin Department of Transportation; Federal Highway Administration | ● | ● | ◌ |  |  |  | ◌ | 2015–present (Wisconsin counties: years WisDOT links) | Monthly (5th) | Not loaded yet |
 | [LEHD Origin-Destination Employment Statistics](#census_lodes) | U.S. Census Bureau |  | ◐ | ◐ |  |  |  |  | 2002–2023 | Monthly | Partly loaded |
 | [Building Permits Survey](#census_bps) | U.S. Census Bureau | ● | ● | ● |  | ● |  |  | 2000–2026 | Monthly | Loaded |
 | [House Price Index (annual, all transactions)](#fhfa_hpi) | Federal Housing Finance Agency |  |  | ● |  |  |  |  | 1975–2025 | Monthly | Loaded |
@@ -342,6 +343,21 @@ Other areas: Census regions and divisions and county subdivisions (PEP), CPI and
 - **Status (live count 2026-10-31):** Partly loaded. Only 2023 is loaded; the registry declares 2002–2023. The scheduled run captures only the newest year.
 
 ## Housing
+
+<a id="vehicle_registrations"></a>
+### Registered vehicles by type (`VEHICLE_REGISTRATIONS`)
+
+- **Publishers:** Wisconsin Department of Transportation (Division of Motor Vehicles); Federal Highway Administration
+- **Code:** `src/data_ingestion_toolbox/vehicle_registrations` · DAG `vehicle_registrations_ingest` · Monthly, 5th 15:00 UTC ([operations](../user-guides/VEHICLE_REGISTRATIONS_PIPELINE_OPERATIONS.md))
+- **Publisher releases:** WisDOT DMV Report 28, "Valid Vehicle Type By County within CVT" (calendar year, PDF), linked from `wisconsindot.gov/Pages/about-wisdot/newsroom/statistics/veh-info.aspx` and its previous-years page; FHWA Highway Statistics table MV-1, "State Motor-Vehicle Registrations" (yearly, Excel, `www.fhwa.dot.gov/policyinformation/statistics/<year>/xls/mv1.xlsx`). Public Domain U.S. and Wisconsin government works.
+- **Credential:** none
+- **Years:** Report 28 for every calendar year the two WisDOT pages link; MV-1 from 2015 (a year FHWA has not posted answers 404 and is recorded as not posted).
+- **Measures:** Report 28: registered autocycles (AUCY), automobiles (AUTO), motorcycles (CYCL), trailers (TRLR) and trucks (TRUK, which includes pick-ups, vans and most SUVs) and their printed Sum, per Wisconsin county and city, village or town. MV-1: automobiles, buses, trucks, motorcycles and all motor vehicles, private and commercial, publicly owned and total, per state, the District and the nation. Each figure keeps the publisher's text; FHWA's stored decimals (estimates) are kept; a blank or dashed cell is not reported, never zero.
+- **Placement:** A Wisconsin county by WisDOT's county code (alphabetical 01–71, Menominee 73); the statewide Sum on Wisconsin; an MV-1 row by its state name. City, village and town lines, and vehicles WisDOT places in no county, are kept in `gold_vehicle_registrations.wisdot_registration_latest` but not served as a geography.
+- **Capture and control:** `control.vehicle_registrations_release`, `control.vehicle_registrations_document` (index pages, each Report 28 and each MV-1 year; a document repeating its published capture is `unchanged`; printed totals that disagree are recorded on the document)
+- **Silver:** `silver_vehicle_registrations.wisdot_count`, `silver_vehicle_registrations.fhwa_mv1_figure`, `silver_vehicle_registrations.wisdot_county`, `silver_vehicle_registrations.dim_measure`, `silver_vehicle_registrations.quarantine`
+- **Gold:** `gold_vehicle_registrations.registration_revision`, `gold_vehicle_registrations.registration_latest`, `gold_vehicle_registrations.wisdot_registration_latest`, `gold_vehicle_registrations.fhwa_mv1_latest`
+- **Status:** Not loaded yet (added 2026-11-17, plan `vehicle-fleet-tables`).
 
 <a id="census_bps"></a>
 ### Building Permits Survey (`CENSUS_BPS`)

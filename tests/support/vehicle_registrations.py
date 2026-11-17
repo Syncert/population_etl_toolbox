@@ -33,7 +33,12 @@ from data_ingestion_toolbox.vehicle_registrations.silver_vehicle_registrations.l
     publish_release,
     replay_release,
 )
-from tests.support.warehouse_scope import delete_capture_graph, source_run_ids
+from tests.support.warehouse_scope import (
+    delete_capture_graph,
+    delete_harvested_glossary_rows,
+    glossary_registration_exists,
+    source_run_ids,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = REPOSITORY_ROOT / "tests/fixtures/vehicle_registrations"
@@ -72,7 +77,9 @@ class FixtureClient:
         if url in self.overrides:
             return httpx.Response(200, content=self.overrides[url], request=request)
         if url in FILES:
-            return httpx.Response(200, content=fixture_bytes(FILES[url]), request=request)
+            return httpx.Response(
+                200, content=fixture_bytes(FILES[url]), request=request
+            )
         return httpx.Response(404, content=b"<html>not found</html>", request=request)
 
     def close(self) -> None:
@@ -117,14 +124,22 @@ def reviewed_warehouse(
     connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
 ) -> Callable[[], connection]:
-    """Remove all vehicle registrations state after the test."""
+    """Remove all vehicle registrations state, and its harvested catalog, after the test."""
     baseline = source_run_ids(connection_factory, SOURCE_CODE)
+    preexisting_glossary = glossary_registration_exists(connection_factory, SOURCE_CODE)
 
     def run() -> None:
         owned = sorted(source_run_ids(connection_factory, SOURCE_CODE) - baseline)
         database_connection = connection_factory()
         try:
             with database_connection.cursor() as cursor:
+                delete_harvested_glossary_rows(
+                    cursor, SOURCE_CODE, preexisting=preexisting_glossary
+                )
+                cursor.execute(
+                    "DELETE FROM control.publisher_ready_event WHERE source_code = %s",
+                    (SOURCE_CODE,),
+                )
                 cleanup_vehicle_registrations(cursor)
                 delete_capture_graph(cursor, owned)
             database_connection.commit()

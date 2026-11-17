@@ -684,6 +684,51 @@ WAREHOUSE_SOURCES: tuple[WarehouseSource, ...] = (
         catalog_source_code="CDC_ILINET",
     ),
     WarehouseSource(
+        code="VEHICLE_REGISTRATIONS",
+        name="Registered vehicles by type (WisDOT Report 28, FHWA MV-1)",
+        publisher="Wisconsin Department of Transportation; Federal Highway Administration",
+        topic="Housing",
+        module="vehicle_registrations",
+        dag="vehicle_registrations_ingest",
+        cadence="Monthly, 5th 15:00 UTC",
+        release=(
+            "WisDOT Report 28 once a year for the calendar year; FHWA Highway "
+            "Statistics MV-1 once a year"
+        ),
+        grains={"nation": "n", "state": "n", "county": "n"},
+        years=[(2015, 2025)],
+        years_note=(
+            "Wisconsin counties and municipalities for the calendar years WisDOT links; "
+            "states and the nation from FHWA MV-1 2015 onward"
+        ),
+        datasets=[
+            "WisDOT Report 28 registrations by county and municipality (PDF)",
+            "FHWA Highway Statistics table MV-1 (Excel)",
+        ],
+        measures=(
+            "Per Wisconsin county and municipality: registered autocycles, automobiles, "
+            "motorcycles, trailers and trucks and their sum, as WisDOT printed them. Per "
+            "state and the nation: automobiles, buses, trucks, motorcycles and all motor "
+            "vehicles by private, public and total ownership, as FHWA published them, "
+            "estimates kept with their decimals; blanks and dashes kept as not reported."
+        ),
+        raw=[],
+        control=[
+            "control.vehicle_registrations_release",
+            "control.vehicle_registrations_document",
+        ],
+        silver=[
+            "silver_vehicle_registrations.wisdot_count",
+            "silver_vehicle_registrations.fhwa_mv1_figure",
+        ],
+        gold=[
+            "gold_vehicle_registrations.registration_revision",
+            "gold_vehicle_registrations.registration_latest",
+        ],
+        credential="none",
+        catalog_source_code="VEHICLE_REGISTRATIONS",
+    ),
+    WarehouseSource(
         code="CENSUS_GOVFIN",
         name="State and local government finances",
         publisher="U.S. Census Bureau",

@@ -153,7 +153,9 @@ def parse_rpt28(raw_bytes: bytes) -> Rpt28Parse:
         found_table = _TABLE.search(text)
         table = found_table.group(1) if found_table else None
         if table is None:
-            return _whole("unregistered_layout", f"page {page_index + 1} names no table")
+            return _whole(
+                "unregistered_layout", f"page {page_index + 1} names no table"
+            )
         if table not in {"1", "2"}:
             break
         if data_year is None:
@@ -252,7 +254,9 @@ def parse_rpt28(raw_bytes: bytes) -> Rpt28Parse:
             else:
                 quarantined.append(
                     SetAside(
-                        index, "repeated_line_differs", "a line printed twice with other counts"
+                        index,
+                        "repeated_line_differs",
+                        "a line printed twice with other counts",
                     )
                 )
             continue
@@ -310,7 +314,9 @@ def _identify(line: str, part: str) -> tuple[dict, int] | None:
     )
 
 
-def _offsets(raw_rows: list[tuple[_Section, dict, list]]) -> dict[int, dict[str, float]]:
+def _offsets(
+    raw_rows: list[tuple[_Section, dict, list]],
+) -> dict[int, dict[str, float]]:
     """For each section, each column's measured right-edge distance."""
     by_section: dict[int, dict[str, list[int]]] = {}
     document: dict[str, list[int]] = {}
@@ -318,11 +324,17 @@ def _offsets(raw_rows: list[tuple[_Section, dict, list]]) -> dict[int, dict[str,
         if len(numbers) != len(section.columns):
             continue
         for (label, edge), (_text, end) in zip(section.columns, numbers):
-            by_section.setdefault(id(section), {}).setdefault(label, []).append(end - edge)
+            by_section.setdefault(id(section), {}).setdefault(label, []).append(
+                end - edge
+            )
             document.setdefault(label, []).append(end - edge)
-    type_offsets = [d for label, ds in document.items() if label != SUM_COLUMN for d in ds]
+    type_offsets = [
+        d for label, ds in document.items() if label != SUM_COLUMN for d in ds
+    ]
     fallback = {
-        "type": statistics.median(type_offsets) if type_offsets else _DEFAULT_OFFSET["type"],
+        "type": statistics.median(type_offsets)
+        if type_offsets
+        else _DEFAULT_OFFSET["type"],
         SUM_COLUMN: statistics.median(document[SUM_COLUMN])
         if document.get(SUM_COLUMN)
         else _DEFAULT_OFFSET[SUM_COLUMN],
@@ -354,7 +366,8 @@ def _assign(
     placed: dict[str, str] = {}
     for text, end in numbers:
         label = min(
-            section.columns, key=lambda column: abs(column[1] + measured[column[0]] - end)
+            section.columns,
+            key=lambda column: abs(column[1] + measured[column[0]] - end),
         )[0]
         if label in placed:
             return None
@@ -362,7 +375,10 @@ def _assign(
     if SUM_COLUMN not in placed:
         return None
     values = {label: int(text.replace(",", "")) for label, text in placed.items()}
-    if sum(v for label, v in values.items() if label != SUM_COLUMN) != values[SUM_COLUMN]:
+    if (
+        sum(v for label, v in values.items() if label != SUM_COLUMN)
+        != values[SUM_COLUMN]
+    ):
         return None
     return {
         label: Cell(placed[label], values[label], "valid")
@@ -402,7 +418,15 @@ def _disagreements(lines: list[Rpt28Line]) -> list[tuple[str, str, str, int, int
         for column in columns:
             summed = sum(_value(member, column) for member in members)
             if summed != _value(total, column):
-                found.append(("cvt_lines_to_county_sum", code, column, _value(total, column), summed))
+                found.append(
+                    (
+                        "cvt_lines_to_county_sum",
+                        code,
+                        column,
+                        _value(total, column),
+                        summed,
+                    )
+                )
     for code, total in sorted(county_sums.items()):
         county = table_two.get(code)
         if county is None:
@@ -410,11 +434,25 @@ def _disagreements(lines: list[Rpt28Line]) -> list[tuple[str, str, str, int, int
         for column in columns:
             if _value(county, column) != _value(total, column):
                 found.append(
-                    ("county_sum_to_table_two", code, column, _value(county, column), _value(total, column))
+                    (
+                        "county_sum_to_table_two",
+                        code,
+                        column,
+                        _value(county, column),
+                        _value(total, column),
+                    )
                 )
     if state_sum is not None:
         for column in columns:
             summed = sum(_value(line, column) for line in table_two.values())
             if summed != _value(state_sum, column):
-                found.append(("counties_to_state_sum", "", column, _value(state_sum, column), summed))
+                found.append(
+                    (
+                        "counties_to_state_sum",
+                        "",
+                        column,
+                        _value(state_sum, column),
+                        summed,
+                    )
+                )
     return found

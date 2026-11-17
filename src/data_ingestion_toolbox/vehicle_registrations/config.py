@@ -59,7 +59,9 @@ class VehicleRegistrationsConfig(BaseModel):
         "population-etl-toolbox vehicle registrations ingestion (public-data warehouse)"
     )
 
-    @field_validator("postgres_conn_id", "user_agent", "wisdot_base_url", "fhwa_base_url")
+    @field_validator(
+        "postgres_conn_id", "user_agent", "wisdot_base_url", "fhwa_base_url"
+    )
     @classmethod
     def _non_empty(cls, value: str) -> str:
         if not value.strip():

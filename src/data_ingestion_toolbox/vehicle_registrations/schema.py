@@ -18,21 +18,27 @@ if TYPE_CHECKING:
 
 _PACKAGE = Path(__file__).resolve().parent
 
-#: Silver first, then the views that read it.
+#: Silver first, then the views that read it, then the publisher.
 DDL_FILES = [
     _PACKAGE / "DDL" / "silver_vehicle_registrations.sql",
     _PACKAGE / "gold_vehicle_registrations" / "DDL" / "gold_vehicle_registrations.sql",
+    _PACKAGE / "gold_vehicle_registrations" / "DDL" / "publisher.sql",
 ]
 
 REQUIRED_RELATIONS = (
     "control.vehicle_registrations_release",
     "control.vehicle_registrations_document",
     "silver_vehicle_registrations.wisdot_county",
+    "silver_vehicle_registrations.dim_measure",
     "silver_vehicle_registrations.quarantine",
     "silver_vehicle_registrations.wisdot_count",
     "silver_vehicle_registrations.fhwa_mv1_figure",
     "gold_vehicle_registrations.wisdot_registration_latest",
     "gold_vehicle_registrations.fhwa_mv1_latest",
+    "gold_vehicle_registrations.registration_revision",
+    "gold_vehicle_registrations.registration_latest",
+    "gold_vehicle_registrations.measure_export",
+    "gold_vehicle_registrations.metric_publisher",
 )
 
 

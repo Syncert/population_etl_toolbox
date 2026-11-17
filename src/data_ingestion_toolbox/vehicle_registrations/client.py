@@ -25,7 +25,9 @@ from data_ingestion_toolbox.capture import allowlisted_response_headers
 from .config import VehicleRegistrationsConfig
 
 #: A Report 28 calendar-year link, as both index pages write it.
-RPT28_LINK = re.compile(r'href="(?P<path>/Documents/dmv/shared/rpt-28-cal-(?P<yy>\d{2})\.pdf)"')
+RPT28_LINK = re.compile(
+    r'href="(?P<path>/Documents/dmv/shared/rpt-28-cal-(?P<yy>\d{2})\.pdf)"'
+)
 
 
 class VehicleRegistrationsFetchError(RuntimeError):
@@ -36,7 +38,9 @@ class VehicleRegistrationsFetchError(RuntimeError):
         self.code = code
         self.status = status
         status_text = f"; HTTP {status}" if status is not None else ""
-        super().__init__(f"vehicle registrations request failed ({code}{status_text}) at {endpoint}")
+        super().__init__(
+            f"vehicle registrations request failed ({code}{status_text}) at {endpoint}"
+        )
 
 
 class VehicleRegistrationsPayloadError(VehicleRegistrationsFetchError):
@@ -60,7 +64,9 @@ class FetchedDocument:
 def report28_links(html: bytes) -> dict[int, str]:
     """Calendar year -> path of each Report 28 an index page links."""
     text = html.decode("utf-8", "replace")
-    return {2000 + int(m.group("yy")): m.group("path") for m in RPT28_LINK.finditer(text)}
+    return {
+        2000 + int(m.group("yy")): m.group("path") for m in RPT28_LINK.finditer(text)
+    }
 
 
 def _check_html(raw: bytes, path: str) -> None:
@@ -105,7 +111,9 @@ def fetch_document(
     check, media_type = CHECKS[kind]
     url = f"{base_url}{path}"
     own_client = client is None
-    active = client or httpx.Client(timeout=runtime.timeout_seconds, follow_redirects=True)
+    active = client or httpx.Client(
+        timeout=runtime.timeout_seconds, follow_redirects=True
+    )
     final_status: int | None = None
     final_error: BaseException | None = None
     try:
@@ -113,7 +121,9 @@ def fetch_document(
             try:
                 response = active.get(url, headers={"User-Agent": runtime.user_agent})
             except httpx.HTTPError as exc:
-                final_error = VehicleRegistrationsFetchError(path, code=type(exc).__name__)
+                final_error = VehicleRegistrationsFetchError(
+                    path, code=type(exc).__name__
+                )
             else:
                 final_status = response.status_code
                 raw_bytes = response.content
@@ -136,7 +146,9 @@ def fetch_document(
             if attempt < runtime.max_attempts:
                 if on_retry is not None and final_error is not None:
                     on_retry(final_error)
-                sleep(min(runtime.min_spacing_seconds * 2 ** (attempt - 1) + 1.0, 120.0))
+                sleep(
+                    min(runtime.min_spacing_seconds * 2 ** (attempt - 1) + 1.0, 120.0)
+                )
         raise VehicleRegistrationsFetchError(
             path, code="retry_exhausted", status=final_status
         ) from final_error

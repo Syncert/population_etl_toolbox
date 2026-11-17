@@ -29,7 +29,9 @@ def vehicle_warehouse(
     return vehicles.reviewed_warehouse(postgres_connection_factory, request)
 
 
-def _rows(factory: Callable[[], connection], sql: str, parameters: tuple = ()) -> list[tuple]:
+def _rows(
+    factory: Callable[[], connection], sql: str, parameters: tuple = ()
+) -> list[tuple]:
     reader = factory()
     try:
         with reader.cursor() as cursor:
@@ -44,7 +46,9 @@ def test_a_release_captures_every_document_and_records_unpublished_years(
 ) -> None:
     """Covers: ETL-138 — two index pages, one Report 28, MV-1 2023-2025 (2025 404)."""
     client = vehicles.FixtureClient()
-    release_id, changed, published = vehicles.load_release(vehicle_warehouse, client=client)
+    release_id, changed, published = vehicles.load_release(
+        vehicle_warehouse, client=client
+    )
     assert release_id is not None and published == 1 and changed > 0
     documents = dict(
         _rows(
@@ -202,7 +206,9 @@ def test_a_report_in_another_layout_is_set_aside_by_name(
             f"https://wisconsindot.gov{vehicles.RPT28_PATH}": b"%PDF-1.4 not a report"
         }
     )
-    release_id, _changed, published = vehicles.load_release(vehicle_warehouse, client=broken)
+    release_id, _changed, published = vehicles.load_release(
+        vehicle_warehouse, client=broken
+    )
     assert release_id is not None and published == 1
     assert _rows(
         vehicle_warehouse,

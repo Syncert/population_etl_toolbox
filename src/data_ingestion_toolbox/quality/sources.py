@@ -2729,7 +2729,9 @@ def vehicle_registrations_set_aside(
         "SELECT COUNT(*) FROM control.vehicle_registrations_release WHERE status = 'published'",
     )
     if published == 0:
-        return [RuleOutcome("silver_vehicle_registrations.quarantine", "not_applicable")]
+        return [
+            RuleOutcome("silver_vehicle_registrations.quarantine", "not_applicable")
+        ]
     offenders, offenders_total = _offenders(
         cursor,
         """
