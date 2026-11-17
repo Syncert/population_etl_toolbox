@@ -49,6 +49,19 @@ at Table 3.
 - A county's Sum line repeats at the foot of each of its pages. An identical
   repeat is counted once. A repeat that differs is set aside
   (`repeated_line_differs`).
+- Only the text a reader sees is read. The 2021 to 2024 reports carry an
+  earlier copy of their text under the printed page: painted over with white
+  boxes (2021, 2022) or drawn invisible (2024). That text is dropped before
+  the page is read. A line printed over another one is counted once when a
+  clean copy of it is on the same page (`overprinted_count` in the parse).
+- The 2020 report splits a county table that does not fit the page across
+  two pages: AUCY to TRLR and the Sum, then TRUK and the Sum, line for line.
+  The two halves are joined when both print the same Sum. 2020 headings name
+  the county without its code (`County Name: ADAMS`), and `County Name: NA` is
+  vehicles in no county. 2020 also prints `OUT OF STATE` lines.
+- A Sum printed at the foot of a page outside its own table (2020 prints the
+  next county's Sum there) is counted as a repeat when the report keeps the
+  same Sum under that county's table, and is set aside otherwise.
 - A blank cell is `blank`, with no number.
 - WisDOT's county codes are alphabetical (01 Adams to 71 Wood), and
   Menominee is 73. Each code places a county on its FIPS code.
@@ -56,8 +69,9 @@ at Table 3.
   (`control.vehicle_registrations_document.disagreements`), and the lines are
   kept as printed. The checks are: a county's CVT lines against its Sum, the
   county Sum against Table 2, and the counties against the statewide Sum.
-  The 2025 report has one disagreement: Dodge County's CVT lines are a
-  partial listing.
+  The reports read on 2026-11-17 (2015 to 2022, 2024 and 2025) have no
+  disagreement. The test fixture, which keeps only the start of Dodge
+  County, has one.
 
 ## How MV-1 is read
 
@@ -99,6 +113,11 @@ airflow dags trigger glossary_harvest
 After a parser contract change, a plain run reparses every document, because
 the unchanged check compares the contract.
 
+The Report 28 parser needs `pypdf` in the Airflow images. `make deploy-up`
+does not rebuild the images when `pyproject.toml` dependencies change, so
+after such a change run `docker compose build` for the Airflow services
+before `make deploy-up`.
+
 ## Checks after a run
 
 ```sql
@@ -137,6 +156,8 @@ ROLLBACK;
 ## Size
 
 Read on 2026-11-17: the 2025 Report 28 is 102 pages (about 2,200 printed
-lines, about 7 seconds to parse). An MV-1 workbook is about 52 rows. A full
+lines, about 7 seconds to parse). The reports for 2015 to 2022, 2024 and
+2025 keep between 2,171 and 2,224 lines each, with none set aside. An MV-1
+workbook is about 52 rows. A full
 load is a few tens of thousands of figures per Report 28 year and under 1,000
 per MV-1 year.

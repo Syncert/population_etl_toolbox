@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS silver_vehicle_registrations.wisdot_count (
     line_key TEXT NOT NULL,
     vehicle_type TEXT NOT NULL CHECK (vehicle_type ~ '^[A-Z]{3,4}$'),
     release_id UUID NOT NULL REFERENCES control.vehicle_registrations_release(release_id),
-    row_kind TEXT NOT NULL CHECK (row_kind IN ('cvt', 'county', 'unknown', 'sum')),
+    row_kind TEXT NOT NULL,
     county_name TEXT NOT NULL,
     cvt_name TEXT NOT NULL,
     cvt_code TEXT NOT NULL,
@@ -123,6 +123,14 @@ CREATE TABLE IF NOT EXISTS silver_vehicle_registrations.wisdot_count (
     CONSTRAINT vehicle_registrations_wisdot_other_value_absent
         CHECK (value_status = 'valid' OR value IS NULL)
 );
+
+-- Named and re-declared so a warehouse built before 2020's out-of-state
+-- lines were read takes the wider list on the next manifest apply.
+ALTER TABLE silver_vehicle_registrations.wisdot_count
+    DROP CONSTRAINT IF EXISTS wisdot_count_row_kind_check;
+ALTER TABLE silver_vehicle_registrations.wisdot_count
+    ADD CONSTRAINT wisdot_count_row_kind_check
+    CHECK (row_kind IN ('cvt', 'county', 'unknown', 'out_of_state', 'sum'));
 
 CREATE INDEX IF NOT EXISTS vehicle_registrations_wisdot_count_capture_idx
     ON silver_vehicle_registrations.wisdot_count (capture_id);

@@ -1735,7 +1735,7 @@ INSERT INTO silver_vehicle_registrations.dim_measure (
     'wisdot_rpt28:auto', 'wisdot_rpt28', 'AUTO', 'WisDOT AUTO: Automobiles (passenger vehicles)',
     'vehicles',
     'vehicles WisDOT counts as valid registrations of type AUTO for the calendar year, by the owner''s county, as Report 28 prints them',
-    'wisdot_rpt28_pdf_layout:v1'
+    'wisdot_rpt28_pdf_layout:v2'
 ) ON CONFLICT DO NOTHING;
 
 INSERT INTO silver_vehicle_registrations.wisdot_count (
