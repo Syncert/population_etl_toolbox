@@ -20603,7 +20603,7 @@ r silver_vehicle_registrations.wisdot_count
     constraint wisdot_count_page_number_check CHECK ((page_number > 0))
     constraint wisdot_count_pkey PRIMARY KEY (data_year, table_part, county_code, line_key, vehicle_type, release_id)
     constraint wisdot_count_release_id_fkey FOREIGN KEY (release_id) REFERENCES control.vehicle_registrations_release(release_id)
-    constraint wisdot_count_row_kind_check CHECK ((row_kind = ANY (ARRAY['cvt'::text, 'county'::text, 'unknown'::text, 'sum'::text])))
+    constraint wisdot_count_row_kind_check CHECK ((row_kind = ANY (ARRAY['cvt'::text, 'county'::text, 'unknown'::text, 'out_of_state'::text, 'sum'::text])))
     constraint wisdot_count_source_row_index_check CHECK ((source_row_index > 0))
     constraint wisdot_count_table_part_check CHECK ((table_part = ANY (ARRAY['cvt'::text, 'county'::text])))
     constraint wisdot_count_value_check CHECK ((value >= 0))

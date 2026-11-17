@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 from data_ingestion_toolbox.fbi_ucr.registry import STATE_CODE_CONTRACT
 
-RPT28_CONTRACT_VERSION = "wisdot_rpt28_pdf_layout:v1"
+RPT28_CONTRACT_VERSION = "wisdot_rpt28_pdf_layout:v2"
 MV1_CONTRACT_VERSION = "fhwa_mv1_xlsx:v1"
 INDEX_CONTRACT_VERSION = "wisdot_veh_info_html:v1"
 
