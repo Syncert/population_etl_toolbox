@@ -3,7 +3,7 @@ id: acs-environment-profile-tables
 depends_on:
   - focus-counties
 parallel_safe: true
-complexity: small
+complexity: low
 verify:
   - python -m pytest tests/unit/census tests/unit/semantics -q
   - python -m pytest tests/dags -m dag -q
