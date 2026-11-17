@@ -152,6 +152,8 @@ def test_capture_and_control_foundation_bootstraps(
         ("control", "cdc_covid_cases_slice"),
         ("control", "cdc_ilinet_release"),
         ("control", "cdc_ilinet_download"),
+        ("control", "vehicle_registrations_release"),
+        ("control", "vehicle_registrations_document"),
         ("control", "census_bps_slice"),
         ("control", "bls_qcew_slice"),
         ("control", "bea_table_capture"),
