@@ -41,6 +41,7 @@ from data_ingestion_toolbox.nces_ipeds import schema as nces_ipeds_schema
 from data_ingestion_toolbox.hhs_hospital_capacity import schema as hhs_schema
 from data_ingestion_toolbox.cdc_covid_cases import schema as covid_schema
 from data_ingestion_toolbox.cdc_ilinet import schema as ilinet_schema
+from data_ingestion_toolbox.vehicle_registrations import schema as vehicle_schema
 from data_ingestion_toolbox.census_saipe_sahie import schema as sae_schema
 from data_ingestion_toolbox.census_govfin import schema as govfin_schema
 from data_ingestion_toolbox.bea import schema as bea_schema
@@ -129,6 +130,13 @@ SOURCES = [
         "ingest_fluview_",
         ilinet_schema,
         "CDC_ILINET",
+    ),
+    (
+        "vehicle_registrations_ingest",
+        "ensure_vehicle_registrations_schema",
+        "ingest_vehicle_registrations",
+        vehicle_schema,
+        "VEHICLE_REGISTRATIONS",
     ),
     (
         "census_govfin_ingest",

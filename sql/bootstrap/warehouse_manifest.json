@@ -157,6 +157,11 @@
       "path": "src/data_ingestion_toolbox/cdc_ilinet/DDL/silver_cdc_ilinet.sql"
     },
     {
+      "id": "silver-vehicle-registrations",
+      "phase": "silver",
+      "path": "src/data_ingestion_toolbox/vehicle_registrations/DDL/silver_vehicle_registrations.sql"
+    },
+    {
       "id": "silver-bls-qcew",
       "phase": "silver",
       "path": "src/data_ingestion_toolbox/bls_qcew/DDL/silver_bls_qcew.sql"
@@ -407,6 +412,11 @@
       "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/gold_cdc_ilinet.sql"
     },
     {
+      "id": "gold-vehicle-registrations",
+      "phase": "gold",
+      "path": "src/data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/gold_vehicle_registrations.sql"
+    },
+    {
       "id": "gold-bls-qcew",
       "phase": "gold",
       "path": "src/data_ingestion_toolbox/bls_qcew/gold_bls_qcew/DDL/gold_bls_qcew.sql"
@@ -605,6 +615,11 @@
       "id": "publisher-cdc-ilinet",
       "phase": "publisher",
       "path": "src/data_ingestion_toolbox/cdc_ilinet/gold_cdc_ilinet/DDL/publisher.sql"
+    },
+    {
+      "id": "publisher-vehicle-registrations",
+      "phase": "publisher",
+      "path": "src/data_ingestion_toolbox/vehicle_registrations/gold_vehicle_registrations/DDL/publisher.sql"
     },
     {
       "id": "publisher-bls-qcew",

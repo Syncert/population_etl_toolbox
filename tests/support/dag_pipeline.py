@@ -1153,6 +1153,23 @@ def stub_cdc_ilinet(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ilinet_capture, "fetch_download", download)
 
 
+def stub_vehicle_registrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve WisDOT's index pages, the 2025 Report 28 and MV-1 2023 and 2024.
+
+    Every other MV-1 year answers 404, which the capture records as not
+    posted, exactly as FHWA answers a year it has not published.
+    """
+    from data_ingestion_toolbox.vehicle_registrations import capture as vehicle_capture
+    from data_ingestion_toolbox.vehicle_registrations.client import fetch_document
+    from tests.support.vehicle_registrations import FixtureClient
+
+    def document(*args: Any, **kwargs: Any):  # noqa: ANN202
+        kwargs["client"] = FixtureClient()
+        return fetch_document(*args, **kwargs)
+
+    monkeypatch.setattr(vehicle_capture, "fetch_document", document)
+
+
 def stub_cdc_covid_cases(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the two fixture state-months, their index and the view document."""
     from data_ingestion_toolbox.cdc_covid_cases import capture as covid_capture
@@ -2165,6 +2182,7 @@ def iter_provider_stubs() -> Iterable[tuple[str, Callable[[pytest.MonkeyPatch], 
         ("hhs_hospital_capacity", stub_hhs_hospital_capacity),
         ("cdc_covid_cases", stub_cdc_covid_cases),
         ("cdc_ilinet", stub_cdc_ilinet),
+        ("vehicle_registrations", stub_vehicle_registrations),
         ("census_govfin", stub_census_govfin),
         ("census_bps", stub_census_building_permits),
         ("bls_qcew", stub_bls_qcew),

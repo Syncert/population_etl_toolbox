@@ -682,6 +682,42 @@ PRODUCTS: tuple[DataProductE2E, ...] = (
         ),
     ),
     DataProductE2E(
+        product_id="vehicle_registrations.by_type",
+        source="VEHICLE_REGISTRATIONS",
+        publisher_schema="gold_vehicle_registrations",
+        datasets=("wisdot_rpt28", "fhwa_mv1"),
+        fixtures=(
+            "tests/fixtures/vehicle_registrations/veh-info.html",
+            "tests/fixtures/vehicle_registrations/veh-info-prev.html",
+            "tests/fixtures/vehicle_registrations/rpt-28-cal-25-dane-and-state.pdf",
+            "tests/fixtures/vehicle_registrations/mv1-2023.xlsx",
+            "tests/fixtures/vehicle_registrations/mv1-2024.xlsx",
+        ),
+        serving_relations=(
+            "gold_vehicle_registrations.wisdot_registration_latest",
+            "gold_vehicle_registrations.fhwa_mv1_latest",
+            "gold_vehicle_registrations.registration_revision",
+            "gold_vehicle_registrations.registration_latest",
+        ),
+        source_api_routes=(),
+        neutral_api_routes=(
+            "/api/v1/catalog/metrics",
+            "/api/v1/catalog/capabilities",
+            "/api/v1/observations",
+        ),
+        owner=(
+            "tests/e2e/test_vehicle_registrations_pipeline.py::"
+            "test_dane_and_madison_fleet_by_type_reaches_the_neutral_api"
+        ),
+        api_absence_reason=(
+            "Vehicle registrations publish no source-specific HTTP route "
+            "(vehicle-fleet-tables): each county, municipality, state and "
+            "national figure is the neutral observation shape with the "
+            "publisher's own cell text as a dimension, so "
+            "`/api/v1/observations` serves it through the dispatch registry."
+        ),
+    ),
+    DataProductE2E(
         product_id="census_govfin.taxes_and_revenue",
         source="CENSUS_GOVFIN",
         publisher_schema="gold_census_govfin",

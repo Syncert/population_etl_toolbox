@@ -43,6 +43,7 @@ from tests.support import cms_ltc as cms_support
 from tests.support import nces_ipeds as ipeds_support
 from tests.support import cdc_covid_cases as covid_support
 from tests.support import cdc_ilinet as ilinet_support
+from tests.support import vehicle_registrations as vehicle_support
 from tests.support import hhs_hospital_capacity as hhs_support
 from tests.support import census_sae as sae_support
 from tests.support import census_bps as bps_support
@@ -1015,6 +1016,18 @@ def published_ilinet_metric(
 
 
 @pytest.fixture
+def published_vehicle_metric(
+    postgres_connection_factory: Callable[[], connection],
+    request: pytest.FixtureRequest,
+) -> str:
+    """Publish WisDOT Report 28 and FHWA MV-1 through their real pipeline."""
+    factory = vehicle_support.reviewed_warehouse(postgres_connection_factory, request)
+    vehicle_support.load_release(factory)
+    harvest_publisher(factory, Publisher("gold_vehicle_registrations"))
+    return _one_published_code(factory, "VEHICLE_REGISTRATIONS")
+
+
+@pytest.fixture
 def published_hhs_metric(
     postgres_connection_factory: Callable[[], connection],
     request: pytest.FixtureRequest,
@@ -1357,6 +1370,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
     published_hhs_metric: str,
     published_covid_metric: str,
     published_ilinet_metric: str,
+    published_vehicle_metric: str,
     published_bps_metric: str,
     published_qcew_metric: str,
     published_bea_metric: str,
@@ -1429,6 +1443,7 @@ def test_every_registered_source_answers_each_current_catalog_code(
         ("HHS_HOSPITAL_CAPACITY", published_hhs_metric),
         ("CDC_COVID_CASES", published_covid_metric),
         ("CDC_ILINET", published_ilinet_metric),
+        ("VEHICLE_REGISTRATIONS", published_vehicle_metric),
         ("BLS", published_bls_metric),
         ("CENSUS_BPS", published_bps_metric),
         ("FBI_UCR", published_fbi_metric),
@@ -1597,6 +1612,7 @@ def test_every_source_fixture_corpus_reaches_every_grain_its_pipeline_publishes(
     published_hhs_metric: str,
     published_covid_metric: str,
     published_ilinet_metric: str,
+    published_vehicle_metric: str,
     published_cdc_county_metric: str,
     published_cdc_tract_metric: str,
     published_fred_metric: str,

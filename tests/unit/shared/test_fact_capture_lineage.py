@@ -282,6 +282,20 @@ FACTS = [
         "silver_cdc_ilinet.week_value",
         "valid",
     ),
+    # A blank Report 28 cell is `blank`, an MV-1 dash `not_reported`, with no
+    # number either way.
+    FactContract(
+        "VEHICLE_REGISTRATIONS",
+        SRC / "vehicle_registrations/DDL/silver_vehicle_registrations.sql",
+        "silver_vehicle_registrations.wisdot_count",
+        "valid",
+    ),
+    FactContract(
+        "VEHICLE_REGISTRATIONS_MV1",
+        SRC / "vehicle_registrations/DDL/silver_vehicle_registrations.sql",
+        "silver_vehicle_registrations.fhwa_mv1_figure",
+        "valid",
+    ),
     FactContract(
         "FBI_UCR",
         SRC / "fbi_ucr/DDL/silver_fbi.sql",

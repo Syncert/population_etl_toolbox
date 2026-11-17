@@ -39,7 +39,7 @@ HEATING_FUEL = "B25040"
 
 def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> None:
     """Covers: ETL-114 — births, parents' work and family income for areas, counties, places and metros only."""
-    assert CONFIG.added_tables[-5:-2] == FAMILY_TABLES
+    assert CONFIG.added_tables[-7:-4] == FAMILY_TABLES
     for table in FAMILY_TABLES:
         assert table in CONFIG.curated_tables
         assert table not in CONFIG.tract_tables
@@ -51,7 +51,7 @@ def test_the_family_tables_are_curated_but_never_requested_at_tract_grain() -> N
 
 def test_heating_fuel_is_curated_added_and_a_dane_focus_table_only() -> None:
     """Covers: ETL-114 — B25040 is curated for areas, places and metros, never a tract table, and Dane's tracts get it by focus."""
-    assert CONFIG.added_tables[-2] == HEATING_FUEL
+    assert CONFIG.added_tables[-4] == HEATING_FUEL
     assert HEATING_FUEL in CONFIG.curated_tables
     assert HEATING_FUEL not in CONFIG.tract_tables
     (dane,) = CONFIG.focus_counties
@@ -59,11 +59,12 @@ def test_heating_fuel_is_curated_added_and_a_dane_focus_table_only() -> None:
 
 
 DEPARTURE_TIME = "B08302"
+VEHICLE_TABLES = ["B25044", "B25046"]
 
 
-def test_departure_time_is_curated_last_added_and_a_dane_focus_table_only() -> None:
+def test_departure_time_is_curated_added_and_a_dane_focus_table_only() -> None:
     """Covers: ETL-114 — B08302 is curated for areas, places and metros, never a tract table, and Dane's tracts get it by focus."""
-    assert CONFIG.added_tables[-1] == DEPARTURE_TIME
+    assert CONFIG.added_tables[-3] == DEPARTURE_TIME
     assert DEPARTURE_TIME in CONFIG.curated_tables
     assert DEPARTURE_TIME not in CONFIG.tract_tables
     (dane,) = CONFIG.focus_counties
@@ -75,15 +76,30 @@ def test_departure_time_is_curated_last_added_and_a_dane_focus_table_only() -> N
         assert table not in dane.tables
 
 
+def test_the_vehicle_tables_are_curated_last_added_and_dane_focus_tables_only() -> None:
+    """Covers: ETL-114 — B25044 and B25046 are curated, never tract tables, and Dane's tracts get them by focus."""
+    assert CONFIG.added_tables[-2:] == VEHICLE_TABLES
+    (dane,) = CONFIG.focus_counties
+    for table in VEHICLE_TABLES:
+        assert table in CONFIG.curated_tables
+        assert table not in CONFIG.tract_tables
+        assert table in dane.tables
+
+
 def test_a_county_slice_asks_only_for_the_tables_it_lacks() -> None:
     """Covers: ETL-114 — held with or without B25103, a slice asks only for what it lacks."""
     tables = list(CONFIG.curated_tables)
-    lacking_departure = [t for t in tables if t != DEPARTURE_TIME]
+    with_departure = [t for t in tables if t not in VEHICLE_TABLES]
+    request = added_tables_request(
+        _digest(with_departure), "success", tables, CONFIG.added_tables, _digest
+    )
+    assert request is not None and request.tables == VEHICLE_TABLES
+    lacking_departure = [t for t in with_departure if t != DEPARTURE_TIME]
     request = added_tables_request(
         _digest(lacking_departure), "success", tables, CONFIG.added_tables, _digest
     )
-    assert request is not None and request.tables == [DEPARTURE_TIME]
-    later = [HEATING_FUEL, DEPARTURE_TIME]
+    assert request is not None and request.tables == [DEPARTURE_TIME, *VEHICLE_TABLES]
+    later = [HEATING_FUEL, DEPARTURE_TIME, *VEHICLE_TABLES]
     with_tax = [t for t in tables if t not in (*FAMILY_TABLES, *later)]
     request = added_tables_request(
         _digest(with_tax), "success", tables, CONFIG.added_tables, _digest
